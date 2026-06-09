@@ -1,0 +1,51 @@
+server:
+  port: ${PORT:8080}
+  forward-headers-strategy: framework
+  error:
+    include-message: always
+    include-stacktrace: never
+
+spring:
+  application:
+    name: honcho-inspector-backend
+  jackson:
+    default-property-inclusion: non_null
+  threads:
+    virtual:
+      enabled: true
+  datasource:
+    # SQLite. Use a file path; for tests, override with jdbc:sqlite::memory: (no shared in-mem db between connections).
+    # Default puts the db in the resolved honcho-inspector config dir, e.g. /etc/honcho-inspector/honcho-inspector.db on Linux.
+    url: ${HONCHO_DB_PATH:jdbc:sqlite:${HONCHO_DB_FILE:honcho-inspector.db}}
+    driver-class-name: org.sqlite.JDBC
+    hikari:
+      maximum-pool-size: 1
+      minimum-idle: 1
+      connection-init-sql: "PRAGMA foreign_keys = ON"
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema.sql
+      continue-on-error: false
+
+# Honcho upstream. The base URL is also accepted per-login via the LoginInput,
+# but these defaults are used for the startup banner and any default-fallback calls.
+honcho:
+  base-url: ${HONCHO_BASE_URL:https://api.honcho.dev}
+  api-version: ${HONCHO_API_VERSION:v3}
+  request-timeout-ms: ${HONCHO_REQUEST_TIMEOUT_MS:30000}
+  # OS-aware default config dir, used by HonchoConfigDirResolver.
+  config-dir: ${HONCHO_CONFIG_DIR:#{null}}
+
+# CORS allowed origins. Comma-separated list.
+cors:
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:4200,http://127.0.0.1:4200}
+
+# Session config. ttl-minutes=0 means sessions never expire (current in-memory behavior).
+session:
+  ttl-minutes: ${SESSION_TTL_MINUTES:0}
+
+logging:
+  level:
+    com.honcho.dashboard: INFO
+    org.springframework.web: INFO

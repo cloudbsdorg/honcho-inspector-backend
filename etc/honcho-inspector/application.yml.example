@@ -1,0 +1,34 @@
+# honcho-inspector example operator config
+#
+# This file shows every overridable setting. Install it at the OS-appropriate
+# path and uncomment / edit whatever you need to change:
+#
+#   Linux:     /etc/honcho-inspector/application.yml
+#   FreeBSD:   /usr/local/etc/honcho-inspector/application.yml
+#   macOS:     ~/Library/Application Support/honcho-inspector/application.yml
+#
+# Anything not set here falls back to the bundled defaults (see
+# src/main/resources/application.yml in honcho-inspector-backend).
+
+server:
+  # port: 8080
+
+# CORS — comma-separated list of allowed origins. Must include the URL the
+# browser will use to reach the honcho-inspector UI in production.
+cors:
+  # allowed-origins: "https://honcho.example.com,http://localhost:4200"
+
+# Honcho upstream. The user also enters this in the login form per session;
+# this default is used for the startup banner and any default-fallback calls.
+honcho:
+  # base-url: "https://mcp.honcho.cloudbsd.org"
+  # api-version: "v3"
+  # request-timeout-ms: 30000
+
+# Session config. ttl-minutes=0 means sessions never expire (current in-memory behavior).
+session:
+  # ttl-minutes: 0
+
+logging:
+  level:
+    com.honcho.dashboard: INFO

@@ -1,0 +1,16 @@
+target/
+.idea/
+*.iml
+.DS_Store
+.vscode/
+.classpath
+.project
+.settings/
+build/
+out/
+*.log
+HELP.md
+
+# SQLite databases (created by spring-boot:run)
+*.db
+*.db-journal
