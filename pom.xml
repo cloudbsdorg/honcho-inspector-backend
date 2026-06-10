@@ -11,7 +11,7 @@
         <relativePath/>
     </parent>
 
-    <groupId>com.honcho</groupId>
+    <groupId>com.revytechinc</groupId>
     <artifactId>honcho-inspector-backend</artifactId>
     <version>0.1.0-SNAPSHOT</version>
     <name>honcho-inspector-backend</name>

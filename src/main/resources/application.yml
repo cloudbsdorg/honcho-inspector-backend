@@ -47,5 +47,5 @@ session:
 
 logging:
   level:
-    com.honcho.dashboard: INFO
+    com.revytechinc.honchoinspector: INFO
     org.springframework.web: INFO
