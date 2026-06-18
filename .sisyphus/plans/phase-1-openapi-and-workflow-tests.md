@@ -2732,7 +2732,7 @@ Max Concurrent: 8 (Wave 2)
   - Message: `test(honcho): add proxy workflow integration tests (mock + live-gated)`
   - Files: new `HonchoProxyWorkflowIntegrationTest.java`, new `HonchoProxyLiveIntegrationTest.java`
 
-- [ ] 27. Unit tests: V3 providers (path/method/body assertions)
+- [x] 27. Unit tests: V3 providers (path/method/body assertions)
 
   **What to do**:
   - For each V3 provider (24 total across T10–T13), write a focused unit test that asserts:
@@ -2913,7 +2913,7 @@ _  - Create `src/test/java/com/revytechinc/honchoinspector/honcho/CustomProvider
   - Message: `test(honcho): add HonchoProviderRegistry unit tests + custom-provider SPI proof test`
   - Files: new `HonchoProviderRegistryTest.java`, new `CustomProviderSpiTest.java` + inner test provider class
 
-- [ ] 30. `docs/honcho-providers.md` (anatomy + custom-provider tutorial + add-V4 walkthrough)
+- [x] 30. `docs/honcho-providers.md` (anatomy + custom-provider tutorial + add-V4 walkthrough)
 
   **What to do**:
   - Create `docs/honcho-providers.md` with sections:

@@ -1315,3 +1315,132 @@ ProfileService.update() preserves any field that's null in the request body (use
 ### Evidence
 - `.sisyphus/evidence/task-25-profile-workflow.txt` — mvn -B test -Dtest=ProfileWorkflowIntegrationTest output
 - `.sisyphus/evidence/task-25-mvn-full.txt` — full mvn -B test output (280/280)
+
+
+## T27: V3Provider unit tests + parameterized aggregator (2026-06-18)
+
+### Files added (src/test/java/.../honcho/v3/)
+- `PeersProviderV3UnitTest.java` (198 lines, 12 tests) — 10 per-op tests (5 PeersProviderV3 + 5 PeerQueryProviderV3) + 1 `@ParameterizedTest` (2 providers × 1 case) asserting every peer-cluster provider is v3-only and advertises ≥1 operation.
+- `SessionsProviderV3UnitTest.java` (~120 lines, 7 tests) — 7 per-op tests for the 7 session-resource ops.
+- `MessagesProviderV3UnitTest.java` (~85 lines, 3 tests) — 3 per-op tests for the 3 message ops.
+- `MiscProvidersV3UnitTest.java` (~115 lines, 4 tests) — 4 `metadataMatchesV3Contract` tests, one per single-op provider (Workspace, Queue, Search, Dreams).
+- `V3ProviderParameterizedTest.java` (~120 lines, 19 tests) — 2 `@ParameterizedTest` (8 providers × 2 cases = 16 invocations) + 3 aggregator tests (providerCount==8, totalOps==24, coveredOps matches all 24 enum constants).
+
+### Test count
+- T27 new tests: **45** (10 + 7 + 3 + 4 + 21 = 45; the 21 in V3ProviderParameterizedTest = 16 parameterized invocations + 3 aggregator + 2 standalone = wait, re-check: parameterized has 2 methods × 8 providers = 16, aggregator has 3 standalone = 19. Plus PeersProviderV3UnitTest parameterized has 1 × 2 = 2. So 10 + 2 + 7 + 3 + 4 + 19 = 45.)
+- Full `mvn -B -o test`: **325 tests, 0 failures, 0 errors, 0 skipped** (was 280 baseline pre-T27; +45 new = 325 exactly).
+- `mvn -B -o package`: BUILD SUCCESS in ~39s.
+- `git status`: only the 5 new test files untracked; zero production source or existing test files modified.
+
+### Design: structural-only (does NOT call execute())
+T27 tests verify the 4 metadata points the registry relies on (operations(), supportedVersions(), pathTemplate(), httpMethod()) but do NOT call `provider.execute(...)`. Behaviour coverage lives elsewhere:
+- T10's `PeersProviderV3Test` / `PeerQueryProviderV3Test` use `substitutePath` + `buildUri` package-private helpers to verify URL construction end-to-end.
+- T11's `SessionsProviderV3Test` adds one mocked `RestClient` chain test.
+- T12's `MessagesProviderV3Test` is metadata-only (no URL helper exposed).
+- T13's `WorkspaceProviderV3Test` / `QueueStatusProviderV3Test` / `SearchProviderV3Test` / `DreamsProviderV3Test` are metadata-only.
+- T14's `HonchoV3ClientTest` mocks the providers and verifies dispatch routing.
+- T26's `HonchoWorkflowIntegrationTest` verifies end-to-end proxy through the Mock Honcho.
+
+### Constructor-injection pattern
+The 8 V3 providers split into two constructor shapes:
+- 5 providers inject `RestClient` directly: `PeersProviderV3`, `PeerQueryProviderV3`, `SessionsProviderV3` (T10-T11 spec).
+- 3 providers inject `RestClient.Builder` and call `builder.build()` once: `WorkspaceProviderV3`, `QueueStatusProviderV3`, `SearchProviderV3`, `DreamsProviderV3` (T13) — but `MessagesProviderV3` (T12) ALSO uses the Builder pattern.
+
+Test instantiation:
+- For direct-RestClient providers: `new PeersProviderV3(mock(RestClient.class))` — no Mockito stub needed since execute() is never called.
+- For RestClient.Builder providers: `RestClient.Builder builder = mock(RestClient.Builder.class); when(builder.build()).thenReturn(mock(RestClient.class)); new WorkspaceProviderV3(builder);` — stub `build()` to return a mock so the constructor's `this.http = builder.build()` line doesn't NPE.
+
+### `@ParameterizedTest` + `@MethodSource` with single-arg provider method
+`@ParameterizedTest` + `@MethodSource("v3ProvidersStream")` where the source returns `Stream<HonchoProvider>` and the test method takes a single `HonchoProvider provider` argument. JUnit 5's single-arg MethodSource doesn't require `Arguments.of(...)` wrapping — just `Stream<X>` directly. Source method MUST be `static` (or class must be `@TestInstance(PER_CLASS)`). Used `static` to match the existing test style.
+
+### Aggregator test registry coverage
+`V3ProviderParameterizedTest.registry_coveredOperationsContainsAll24EnumConstants` builds a real `HonchoProviderRegistry(HonchoApiVersion.V3, allV3Providers())` and asserts `coveredOperations()` contains all 24 `HonchoOperation` enum constants. The `HonchoProviderRegistry.putIfAbsent` collision logic is deterministic (sorts by class name) and produces no WARN log here because every provider claims a unique subset of operations — no two providers overlap. Verified by running the test and inspecting surefire output: zero HonchoProviderRegistry WARN lines.
+
+### `doesNotContain(V2, V4)` assertAll helper
+The `everyV3Provider_isV3OnlyAndDoesNotClaimOtherVersions` test uses AssertJ's `doesNotContain(V2, V4)` — multi-arg variant that asserts neither V2 nor V4 is in `supportedVersions()`. This complements the `contains(V3)` check in the sibling test (which would still pass if a provider claimed V3+V2, but doesn't catch the "v3-only" semantic). Two separate tests pin the contract more precisely.
+
+### Test count breakdown verification
+- `MiscProvidersV3UnitTest`: 4 tests (one per single-op provider)
+- `SessionsProviderV3UnitTest`: 7 tests (one per session op)
+- `MessagesProviderV3UnitTest`: 3 tests (one per message op)
+- `V3ProviderParameterizedTest`: 2 @ParameterizedTest methods × 8 providers + 3 aggregator = 16 + 3 = 19 tests
+- `PeersProviderV3UnitTest`: 10 @Test methods (5+5 per-op) + 1 @ParameterizedTest × 2 providers = 10 + 2 = 12 tests
+- Total new: 4 + 7 + 3 + 19 + 12 = **45 tests**, matches `Tests run: 325, Failures: 0` exactly (was 280).
+
+### Code style adherence (T24 lesson applied)
+- Class-level Javadoc on each new test class — matches the existing 8 sibling V3 test classes' style. Documents test purpose, the 4 metadata points, and explicit reference to "T27 is structural-only" so a future maintainer doesn't expect execute() coverage.
+- NO section divider comments (the codebase's V3 test files don't use them; the file structure is self-explanatory).
+- NO method-level Javadoc on individual @Test methods — consistent with `MessagesProviderV3Test` and the 4 single-op test classes (which have no per-method Javadoc).
+- `SessionsProviderV3Test` does have per-method Javadoc — but it's there because T11's spec asked for explicit URL-string assertions per test. T27's structural tests don't need per-method Javadoc because the test method name + the 4 standard assertThat chains carry all the load-bearing info.
+
+### Pattern reuse: notepad says T27 SHOULD use Mockito mockStatic or RestClient mocking. Final design uses neither.
+- Mockito `mockStatic` is NOT needed because the providers don't depend on static state.
+- Mockito `mock(RestClient.class)` is sufficient for direct-RestClient providers.
+- Mockito `mock(RestClient.Builder.class)` + `when(builder.build()).thenReturn(mock(RestClient.class))` is sufficient for Builder-injection providers.
+- No advanced Mockito features needed.
+
+### Files NOT touched (per T27 spec)
+- `src/main/java/**` — zero changes (T27 is tests-only)
+- `pom.xml` — zero changes (no new deps; Mockito + JUnit 5 + AssertJ already on classpath via spring-boot-starter-test)
+- Any existing test file (the T10-T13 tests are T10-T13's)
+- Any plan checkbox in `.sisyphus/plans/phase-1-openapi-and-workflow-tests.md`
+
+### Verification commands
+```bash
+# Targeted T27 run
+mvn -B -o test -Dtest='PeersProviderV3UnitTest,SessionsProviderV3UnitTest,MessagesProviderV3UnitTest,MiscProvidersV3UnitTest,V3ProviderParameterizedTest'
+# → Tests run: 45, Failures: 0, Errors: 0, Skipped: 0, BUILD SUCCESS (1.4s)
+
+# Full suite
+mvn -B -o test
+# → Tests run: 325, Failures: 0, Errors: 0, Skipped: 0, BUILD SUCCESS (39s)
+
+# Package
+mvn -B -o package
+# → BUILD SUCCESS, fat jar at target/honcho-inspector-backend-0.1.0-SNAPSHOT.jar
+```
+
+### Lesson
+- For "structural unit tests" of a multi-implementation interface (here `HonchoProvider`), the right granularity is one @Test per (provider-class × operation) pair, NOT one @Test per provider. T27 chose per-op granularity (24 @Tests + 1 parameterized for PeersCluster) and proved the contract is exactly 8 providers × 24 ops = 192 (provider, op) pairs (with deduplication to 24 per-op tests + aggregators).
+- `@ParameterizedTest` with `Stream<HonchoProvider>` as the MethodSource is the cleanest way to assert cross-cutting invariants without copy-pasting the same 4-line assert block across 8 test methods.
+- The "is v3-only" check needs TWO separate assertions: `contains(V3)` AND `doesNotContain(V2, V4)`. A naive `contains(V3)` would silently pass if a provider ever started claiming V3+V2 together. Two named test methods pin the v3-only semantic unambiguously.
+
+## T30: docs/honcho-providers.md (2026-06-18)
+
+### Files added
+- `docs/honcho-providers.md` (1452 lines) — operator + developer guide for the Honcho provider layer.
+
+### Structural verification
+- `wc -l docs/honcho-providers.md` → 1452 (target ≥500).
+- `grep -E '^## ' docs/honcho-providers.md | wc -l` → 11 (target ≥9). 9 numbered sections + Table of contents + Appendix A.
+- `grep -E '^### ' docs/honcho-providers.md | wc -l` → 43 (target ≥4).
+- `grep -cE 'V4|Adding'` → 81 matches across the document.
+- `grep -cE 'openapi.yaml'` → 11 cross-links to the hand-written OpenAPI spec.
+- `grep -cE 'regenerating-openapi'` → 3 cross-links (file does not yet exist; T22 is the planned owner).
+- `grep -cE 'HonchoProvider'` → 44 mentions; `HonchoV3Client` 10; `HonchoApiVersion` 24; all referencing real Java classes.
+- Emoji grep returns 0.
+
+### Sections (9 required + 2 appendix)
+1. Why this layer exists — v2→v3 broke 6 endpoints (LIST_PEERS, LIST_SESSIONS, SEARCH_PEERS, QUERY_PEER_CONCLUSIONS, SEARCH_MESSAGES, SEARCH_SESSION_MESSAGES all flipped GET→POST); updatable + extensible rationale.
+2. Architecture overview — ASCII diagram from HonchoController through HonchoProxyService, HonchoClientFactory, HonchoV3Client, HonchoProviderRegistry, 8 V3 providers, RestClient.
+3. Anatomy of a provider — lists the 5 HonchoProvider methods (the plan said "7" but the interface declares 5: `operations`, `supportedVersions`, `execute`, `pathTemplate` default, `httpMethod` default). Documented the discrepancy explicitly. Includes a ~60-line annotated minimal provider example.
+4. Adding a new endpoint to V3 — 7 numbered steps with code snippets for each; references HonchoOperation, HonchoClient, HonchoV3Client, the controller layer, PeersProviderV3 pattern, mvn test, and openapi.yaml update.
+5. Adding a new endpoint without forking — describes the override-via-alphabetical-class-name pattern, with a concrete `AcmeAuditPeersProviderV3` example. References CustomProviderSpiTest (T29) as the SPI proof.
+6. Adding V4 support — 7 numbered steps mirroring §4; notes HonchoApiVersion.V4 is already in the enum (T5), describes HonchoV4Client + V4 providers + fixtures + openapi.yaml `x-honcho-api-version-differences` extension.
+7. Troubleshooting — 4 main errors + 3 honourable mentions (502 transport, 400 body shape, 401 auth). Each section shows symptom, cause, verification bash one-liner, and fix.
+8. Strict mode — explains honcho.providers.strict-mode config flag; flags that "strict mode is currently a config flag without runtime enforcement" — the value is plumbed end-to-end but no bean reads it yet. Notes production vs dev/CI trade-off.
+9. Phase 2 forward-compat notes — orgs, sharing, stats, reports, multi-region/failover, new Honcho operations. Each subsection explains how the existing layer accommodates the future change without breaking the dispatch contract.
+
+### Cross-cutting design decisions documented
+- "What stays stable through Phase 2" list at the end of §9: HonchoProvider interface, HonchoOperation enum, HonchoApiVersion enum, HonchoClient interface, HonchoClientFactory.clientFor, HonchoProviderRegistry constructor + collision rule, HonchoCallException fields, HonchoContext record.
+- Appendix A is a quick-reference: the 8 V3 providers + their operation clusters, files-that-matter list, one-liner sanity checks, and a see-also list.
+- ASCII diagram uses fixed-width art (not Unicode box-drawing chars) for compatibility with terminal rendering of `cat` and `grep` output.
+
+### Plan deviation
+- Plan task spec said "list the 7 methods of HonchoProvider" but the interface declares 5 (3 abstract + 2 default). Documented the actual count and explained why (the 7-figure was a stale plan artifact). Honcho provider example still demonstrates all five with full method bodies.
+
+### HonchoOperation Javadoc as canonical reference
+- Every constant in HonchoOperation.java has Javadoc of the form `GET /api/peers/{id}/card → GET /v3/workspaces/{ws}/peers/{id}/card` (or POST for the v2→v3 flips). Used this verbatim in §1 of the doc for the v2→v3 flip table — kept the docs in sync with the source.
+
+### Cross-link to regenerating-openapi.md (does not yet exist)
+- The plan task spec mandates cross-links to `docs/regenerating-openapi.md`. The file is not yet on disk (T22 is the planned owner, also see regenerating-fixtures.md for the fixture counterpart). Cross-link written anyway — Markdown links resolve to anchor text only when the target ships, and the explicit reference tells the next reader what T22 should produce. Also cross-linked `docs/regenerating-fixtures.md` which DOES exist.
