@@ -47,7 +47,7 @@ public class ProfileController {
     @Schema(
         name = "ProfileCreateInput",
         description = "Body for `POST /api/profiles`. The API key is encrypted with AES-256-GCM server-side immediately upon receipt; only the encrypted blob is ever persisted.",
-        example = "{\"label\":\"Production\",\"apiKey\":\"hmc_5f4dcc3b5aa765d61d8327deb882cf99\",\"baseUrl\":\"https://api.honcho.dev\",\"workspaceId\":\"ws_abc123\",\"honchoUserName\":\"alice\"}"
+        example = "{\"label\":\"Production\",\"apiKey\":\"hmc_5f4dcc3b5aa765d61d8327deb882cf99\",\"baseUrl\":\"https://api.honcho.dev\",\"workspaceId\":\"ws_abc123\",\"honchoUserName\":\"alice\",\"apiVersion\":\"v3\"}"
     )
     public record ProfileCreateDto(
         @Schema(description = "Human-readable label shown in the UI", example = "Production", requiredMode = Schema.RequiredMode.REQUIRED)
@@ -63,13 +63,16 @@ public class ProfileController {
         @NotBlank String workspaceId,
 
         @Schema(description = "Honcho-side user name sent in the `X-Honcho-User-Name` header on every proxied request", example = "alice", requiredMode = Schema.RequiredMode.REQUIRED)
-        @NotBlank String honchoUserName
+        @NotBlank String honchoUserName,
+
+        @Schema(description = "Honcho API version this profile targets (e.g. `v2`, `v3`). Optional; null/blank falls back to the server default (`honcho.api-version`, `v3`).", example = "v3", nullable = true)
+        String apiVersion
     ) {}
 
     @Schema(
         name = "ProfileUpdateInput",
         description = "Body for `PUT /api/profiles/{id}`. Every field is optional; only the fields present in the JSON are written. Re-encrypting the API key is allowed (pass a new plaintext value).",
-        example = "{\"label\":\"Production (US-East)\",\"apiKey\":\"hmc_NEWKEY\"}"
+        example = "{\"label\":\"Production (US-East)\",\"apiKey\":\"hmc_NEWKEY\",\"apiVersion\":\"v3\"}"
     )
     public record ProfileUpdateDto(
         @Schema(description = "New label, or null to leave unchanged", example = "Production (US-East)")
@@ -85,7 +88,10 @@ public class ProfileController {
         String workspaceId,
 
         @Schema(description = "New Honcho user name, or null to leave unchanged", example = "alice")
-        String honchoUserName
+        String honchoUserName,
+
+        @Schema(description = "New Honcho API version, or null to leave unchanged.", example = "v3", nullable = true)
+        String apiVersion
     ) {}
 
     @Schema(
@@ -123,7 +129,8 @@ public class ProfileController {
         var p = profiles.create(
             current.user().id(),
             body.label(), body.apiKey(), body.baseUrl(),
-            body.workspaceId(), body.honchoUserName()
+            body.workspaceId(), body.honchoUserName(),
+            body.apiVersion()
         );
         return ResponseEntity.status(201).body(p);
     }
@@ -193,7 +200,8 @@ public class ProfileController {
         return profiles.update(
             current.user().id(), id,
             body.label(), body.apiKey(), body.baseUrl(),
-            body.workspaceId(), body.honchoUserName()
+            body.workspaceId(), body.honchoUserName(),
+            body.apiVersion()
         ).<ResponseEntity<?>>map(ResponseEntity::ok)
          .orElseGet(() -> ResponseEntity.status(404).body(new ErrorResponse("profile not found")));
     }

@@ -26,7 +26,8 @@ public class ProfileDao {
         rs.getString("workspace_id"),
         rs.getString("honcho_user_name"),
         Instant.parse(rs.getString("created_at")),
-        Instant.parse(rs.getString("updated_at"))
+        Instant.parse(rs.getString("updated_at")),
+        rs.getString("api_version")
     );
 
     public Profile findById(String id) {
@@ -43,20 +44,21 @@ public class ProfileDao {
 
     public void insert(Profile p) {
         jdbc.update(
-            "INSERT INTO honcho_profiles (id, user_id, label, api_key_encrypted, base_url, workspace_id, honcho_user_name, created_at, updated_at) "
-            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO honcho_profiles (id, user_id, label, api_key_encrypted, base_url, workspace_id, honcho_user_name, created_at, updated_at, api_version) "
+                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             p.id(), p.userId(), p.label(), p.apiKeyEncrypted(),
             p.baseUrl(), p.workspaceId(), p.honchoUserName(),
-            p.createdAt().toString(), p.updatedAt().toString()
+            p.createdAt().toString(), p.updatedAt().toString(),
+            p.apiVersion()
         );
     }
 
     public void update(Profile p) {
         jdbc.update(
-            "UPDATE honcho_profiles SET label = ?, api_key_encrypted = ?, base_url = ?, workspace_id = ?, honcho_user_name = ?, updated_at = ? "
-            + "WHERE id = ?",
+            "UPDATE honcho_profiles SET label = ?, api_key_encrypted = ?, base_url = ?, workspace_id = ?, honcho_user_name = ?, updated_at = ?, api_version = ? "
+                + "WHERE id = ?",
             p.label(), p.apiKeyEncrypted(), p.baseUrl(), p.workspaceId(), p.honchoUserName(),
-            p.updatedAt().toString(), p.id()
+            p.updatedAt().toString(), p.apiVersion(), p.id()
         );
     }
 

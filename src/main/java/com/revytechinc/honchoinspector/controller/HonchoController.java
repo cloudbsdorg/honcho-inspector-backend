@@ -2,9 +2,12 @@ package com.revytechinc.honchoinspector.controller;
 
 import com.revytechinc.honchoinspector.auth.AuthService;
 import com.revytechinc.honchoinspector.auth.ProfileService;
+import com.revytechinc.honchoinspector.config.HonchoProperties;
 import com.revytechinc.honchoinspector.config.OpenApiConfig;
 import com.revytechinc.honchoinspector.filter.SessionAuthFilter;
+import com.revytechinc.honchoinspector.honcho.HonchoApiVersion;
 import com.revytechinc.honchoinspector.honcho.HonchoCallException;
+import com.revytechinc.honchoinspector.honcho.HonchoClientFactory;
 import com.revytechinc.honchoinspector.model.ErrorResponse;
 import com.revytechinc.honchoinspector.model.HonchoContext;
 import com.revytechinc.honchoinspector.service.HonchoProxyService;
@@ -44,10 +47,12 @@ public class HonchoController {
 
     private final HonchoProxyService honcho;
     private final ProfileService profiles;
+    private final HonchoProperties properties;
 
-    public HonchoController(HonchoProxyService honcho, ProfileService profiles) {
+    public HonchoController(HonchoProxyService honcho, ProfileService profiles, HonchoProperties properties) {
         this.honcho = honcho;
         this.profiles = profiles;
+        this.properties = properties;
     }
 
     @GetMapping("/peers")
@@ -65,7 +70,7 @@ public class HonchoController {
     public ResponseEntity<?> listPeers(HttpServletRequest req,
                                        @Parameter(description = "Forwarded as query string to Honcho")
                                        @RequestParam(required = false) Map<String, String> allParams) {
-        return call(req, (ctx, ws) -> honcho.get(ctx, "/v3/workspaces/" + ws + "/peers", allParams));
+        return call(req, (ctx, ws) -> honcho.listPeers(ctx, allParams));
     }
 
     @PostMapping("/peers")
@@ -81,7 +86,7 @@ public class HonchoController {
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
     public ResponseEntity<?> createPeer(HttpServletRequest req, @RequestBody Object body) {
-        return call(req, (ctx, ws) -> honcho.post(ctx, "/v3/workspaces/" + ws + "/peers", null, body));
+        return call(req, (ctx, ws) -> honcho.createPeer(ctx, body));
     }
 
     @GetMapping("/peers/{peerId}/card")
@@ -101,7 +106,7 @@ public class HonchoController {
         @Parameter(description = "Honcho peer id", example = "alice")
         @PathVariable String peerId
     ) {
-        return call(req, (ctx, ws) -> honcho.get(ctx, "/v3/workspaces/" + ws + "/peers/" + peerId + "/card", null));
+        return call(req, (ctx, ws) -> honcho.getPeerCard(ctx, peerId));
     }
 
     @PostMapping("/peers/{peerId}/card")
@@ -122,7 +127,7 @@ public class HonchoController {
         @PathVariable String peerId,
         @RequestBody Object body
     ) {
-        return call(req, (ctx, ws) -> honcho.put(ctx, "/v3/workspaces/" + ws + "/peers/" + peerId + "/card", null, body));
+        return call(req, (ctx, ws) -> honcho.updatePeerCard(ctx, peerId, body));
     }
 
     @GetMapping("/peers/{peerId}/representation")
@@ -142,7 +147,7 @@ public class HonchoController {
         @Parameter(description = "Honcho peer id", example = "alice")
         @PathVariable String peerId
     ) {
-        return call(req, (ctx, ws) -> honcho.get(ctx, "/v3/workspaces/" + ws + "/peers/" + peerId + "/representation", null));
+        return call(req, (ctx, ws) -> honcho.getPeerRepresentation(ctx, peerId));
     }
 
     @PostMapping("/peers/{peerId}/chat")
@@ -163,7 +168,7 @@ public class HonchoController {
         @PathVariable String peerId,
         @RequestBody Object body
     ) {
-        return call(req, (ctx, ws) -> honcho.post(ctx, "/v3/workspaces/" + ws + "/peers/" + peerId + "/chat", null, body));
+        return call(req, (ctx, ws) -> honcho.peerChat(ctx, peerId, body));
     }
 
     @PostMapping("/peers/{peerId}/search")
@@ -184,7 +189,7 @@ public class HonchoController {
         @PathVariable String peerId,
         @RequestBody Object body
     ) {
-        return call(req, (ctx, ws) -> honcho.post(ctx, "/v3/workspaces/" + ws + "/peers/" + peerId + "/search", null, body));
+        return call(req, (ctx, ws) -> honcho.searchPeers(ctx, peerId, body));
     }
 
     @GetMapping("/peers/{peerId}/conclusions")
@@ -206,7 +211,7 @@ public class HonchoController {
         @Parameter(description = "Forwarded as query string to Honcho (e.g. `limit`, `page`)")
         @RequestParam(required = false) Map<String, String> allParams
     ) {
-        return call(req, (ctx, ws) -> honcho.get(ctx, "/v3/workspaces/" + ws + "/peers/" + peerId + "/conclusions", allParams));
+        return call(req, (ctx, ws) -> honcho.listPeerConclusions(ctx, peerId, allParams));
     }
 
     @GetMapping("/peers/{peerId}/sessions")
@@ -228,7 +233,7 @@ public class HonchoController {
         @Parameter(description = "Forwarded as query string to Honcho")
         @RequestParam(required = false) Map<String, String> allParams
     ) {
-        return call(req, (ctx, ws) -> honcho.get(ctx, "/v3/workspaces/" + ws + "/peers/" + peerId + "/sessions", allParams));
+        return call(req, (ctx, ws) -> honcho.listPeerSessions(ctx, peerId, allParams));
     }
 
     @PostMapping("/peers/{peerId}/conclusions/query")
@@ -249,7 +254,7 @@ public class HonchoController {
         @PathVariable String peerId,
         @RequestBody Object body
     ) {
-        return call(req, (ctx, ws) -> honcho.post(ctx, "/v3/workspaces/" + ws + "/peers/" + peerId + "/conclusions/query", null, body));
+        return call(req, (ctx, ws) -> honcho.queryPeerConclusions(ctx, peerId, body));
     }
 
     @GetMapping("/sessions")
@@ -267,7 +272,7 @@ public class HonchoController {
     public ResponseEntity<?> listSessions(HttpServletRequest req,
                                           @Parameter(description = "Forwarded as query string to Honcho")
                                           @RequestParam(required = false) Map<String, String> allParams) {
-        return call(req, (ctx, ws) -> honcho.get(ctx, "/v3/workspaces/" + ws + "/sessions", allParams));
+        return call(req, (ctx, ws) -> honcho.listSessions(ctx, allParams));
     }
 
     @PostMapping("/sessions")
@@ -283,7 +288,7 @@ public class HonchoController {
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
     public ResponseEntity<?> createSession(HttpServletRequest req, @RequestBody Object body) {
-        return call(req, (ctx, ws) -> honcho.post(ctx, "/v3/workspaces/" + ws + "/sessions", null, body));
+        return call(req, (ctx, ws) -> honcho.createSession(ctx, body));
     }
 
     @GetMapping("/sessions/{sessionId}")
@@ -303,7 +308,7 @@ public class HonchoController {
         @Parameter(description = "Honcho session id", example = "sess_abc123")
         @PathVariable String sessionId
     ) {
-        return call(req, (ctx, ws) -> honcho.get(ctx, "/v3/workspaces/" + ws + "/sessions/" + sessionId, null));
+        return call(req, (ctx, ws) -> honcho.getSession(ctx, sessionId));
     }
 
     @DeleteMapping("/sessions/{sessionId}")
@@ -323,7 +328,7 @@ public class HonchoController {
         @Parameter(description = "Honcho session id", example = "sess_abc123")
         @PathVariable String sessionId
     ) {
-        return call(req, (ctx, ws) -> honcho.delete(ctx, "/v3/workspaces/" + ws + "/sessions/" + sessionId));
+        return call(req, (ctx, ws) -> honcho.deleteSession(ctx, sessionId));
     }
 
     @GetMapping("/sessions/{sessionId}/messages")
@@ -345,7 +350,7 @@ public class HonchoController {
         @Parameter(description = "Forwarded as query string to Honcho (e.g. `limit`, `page`)")
         @RequestParam(required = false) Map<String, String> allParams
     ) {
-        return call(req, (ctx, ws) -> honcho.get(ctx, "/v3/workspaces/" + ws + "/sessions/" + sessionId + "/messages", allParams));
+        return call(req, (ctx, ws) -> honcho.listSessionMessages(ctx, sessionId, allParams));
     }
 
     @PostMapping("/sessions/{sessionId}/messages")
@@ -366,7 +371,7 @@ public class HonchoController {
         @PathVariable String sessionId,
         @RequestBody Object body
     ) {
-        return call(req, (ctx, ws) -> honcho.post(ctx, "/v3/workspaces/" + ws + "/sessions/" + sessionId + "/messages", null, body));
+        return call(req, (ctx, ws) -> honcho.addMessage(ctx, sessionId, body));
     }
 
     @GetMapping("/sessions/{sessionId}/context")
@@ -388,7 +393,7 @@ public class HonchoController {
         @Parameter(description = "Forwarded as query string to Honcho (e.g. `tokens`, `summary=true|false`)")
         @RequestParam(required = false) Map<String, String> allParams
     ) {
-        return call(req, (ctx, ws) -> honcho.get(ctx, "/v3/workspaces/" + ws + "/sessions/" + sessionId + "/context", allParams));
+        return call(req, (ctx, ws) -> honcho.getSessionContext(ctx, sessionId, tokensFrom(allParams), summaryFrom(allParams)));
     }
 
     @GetMapping("/sessions/{sessionId}/summaries")
@@ -408,7 +413,7 @@ public class HonchoController {
         @Parameter(description = "Honcho session id", example = "sess_abc123")
         @PathVariable String sessionId
     ) {
-        return call(req, (ctx, ws) -> honcho.get(ctx, "/v3/workspaces/" + ws + "/sessions/" + sessionId + "/summaries", null));
+        return call(req, (ctx, ws) -> honcho.getSessionSummaries(ctx, sessionId));
     }
 
     @GetMapping("/sessions/{sessionId}/peers")
@@ -428,7 +433,7 @@ public class HonchoController {
         @Parameter(description = "Honcho session id", example = "sess_abc123")
         @PathVariable String sessionId
     ) {
-        return call(req, (ctx, ws) -> honcho.get(ctx, "/v3/workspaces/" + ws + "/sessions/" + sessionId + "/peers", null));
+        return call(req, (ctx, ws) -> honcho.getSessionPeers(ctx, sessionId));
     }
 
     @PostMapping("/sessions/{sessionId}/search")
@@ -449,7 +454,7 @@ public class HonchoController {
         @PathVariable String sessionId,
         @RequestBody Object body
     ) {
-        return call(req, (ctx, ws) -> honcho.post(ctx, "/v3/workspaces/" + ws + "/sessions/" + sessionId + "/search", null, body));
+        return call(req, (ctx, ws) -> honcho.searchSessionMessages(ctx, sessionId, body));
     }
 
     @GetMapping("/queue-status")
@@ -465,7 +470,7 @@ public class HonchoController {
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
     public ResponseEntity<?> queueStatus(HttpServletRequest req) {
-        return call(req, (ctx, ws) -> honcho.get(ctx, "/v3/workspaces/" + ws + "/queue/status", null));
+        return call(req, (ctx, ws) -> honcho.getQueueStatus(ctx));
     }
 
     @PostMapping("/search")
@@ -481,23 +486,29 @@ public class HonchoController {
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
     public ResponseEntity<?> workspaceSearch(HttpServletRequest req, @RequestBody Object body) {
-        return call(req, (ctx, ws) -> honcho.post(ctx, "/v3/workspaces/" + ws + "/search", null, body));
+        return call(req, (ctx, ws) -> honcho.searchMessages(ctx, body));
     }
 
     @PostMapping("/dream")
     @Operation(
         summary = "Schedule a memory-consolidation dream",
-        description = "Proxies `POST /v3/workspaces/{workspaceId}/schedule_dream`. Body forwarded to Honcho unchanged."
+        description = "Proxies `POST /v3/workspaces/{workspaceId}/schedule_dream`. Body forwarded to Honcho unchanged. The upstream v3 path is `…/peers/{peerId}/dreams`, so the proxy reads `peerId` from the request body and forwards the rest of the body to Honcho verbatim."
     )
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Honcho response (dream scheduled)"),
-        @ApiResponse(responseCode = "400", description = "Missing `X-Honcho-Profile-Id` header",
+        @ApiResponse(responseCode = "400", description = "Missing `X-Honcho-Profile-Id` header or body is missing the required `peerId` field",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
         @ApiResponse(responseCode = "404", description = "Profile not found / not owned by current user",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
-    public ResponseEntity<?> scheduleDream(HttpServletRequest req, @RequestBody Object body) {
-        return call(req, (ctx, ws) -> honcho.post(ctx, "/v3/workspaces/" + ws + "/schedule_dream", null, body));
+    public ResponseEntity<?> scheduleDream(HttpServletRequest req, @RequestBody Map<String, Object> body) {
+        if (body == null || !body.containsKey("peerId") || body.get("peerId") == null
+            || body.get("peerId").toString().isBlank()) {
+            return ResponseEntity.status(400)
+                .body(new ErrorResponse("request body must include a non-blank 'peerId' field"));
+        }
+        var peerId = body.get("peerId").toString();
+        return call(req, (ctx, ws) -> honcho.scheduleDream(ctx, peerId, body));
     }
 
     @GetMapping("/workspace/info")
@@ -514,8 +525,8 @@ public class HonchoController {
     })
     public ResponseEntity<?> workspaceInfo(HttpServletRequest req) {
         return call(req, (ctx, wsId) -> {
-            var ws = honcho.get(ctx, "/v3/workspaces/" + wsId, null);
-            var queue = honcho.get(ctx, "/v3/workspaces/" + wsId + "/queue/status", null);
+            var ws = honcho.getWorkspaceInfo(ctx);
+            var queue = honcho.getQueueStatus(ctx);
             return Map.of("workspace", ws, "queue", queue);
         });
     }
@@ -533,9 +544,14 @@ public class HonchoController {
         if (pwk == null) {
             return ResponseEntity.status(404).body(new ErrorResponse("profile not found"));
         }
+        var apiVersion = HonchoClientFactory.resolveVersion(
+            pwk.profile().apiVersion(),
+            HonchoApiVersion.fromString(properties.apiVersion())
+        );
         var ctx = new HonchoContext(
             pwk.apiKey(), pwk.profile().baseUrl(),
-            pwk.profile().workspaceId(), pwk.profile().honchoUserName()
+            pwk.profile().workspaceId(), pwk.profile().honchoUserName(),
+            apiVersion
         );
         try {
             var result = call.invoke(ctx, ctx.workspaceId());
@@ -546,6 +562,38 @@ public class HonchoController {
         } catch (Exception e) {
             return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
         }
+    }
+
+    /**
+     * Parse the {@code tokens} entry from a free-form query-parameter map into
+     * an {@link Integer} (or {@code null} if absent/blank/non-numeric). The
+     * Honcho endpoint accepts an integer token budget; we surface
+     * parse failures as {@code null} so a malformed query string falls
+     * through to "no override" rather than a 400 from the proxy.
+     */
+    private static Integer tokensFrom(Map<String, String> allParams) {
+        if (allParams == null) return null;
+        var raw = allParams.get("tokens");
+        if (raw == null || raw.isBlank()) return null;
+        try {
+            return Integer.parseInt(raw.trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    /**
+     * Parse the {@code summary} entry from a free-form query-parameter map
+     * into a {@link Boolean} (or {@code null} if absent/blank). Accepts
+     * {@code "true"} / {@code "false"} (case-insensitive); anything else
+     * returns {@code null} so the typed {@link HonchoProxyService}
+     * method omits the key entirely.
+     */
+    private static Boolean summaryFrom(Map<String, String> allParams) {
+        if (allParams == null) return null;
+        var raw = allParams.get("summary");
+        if (raw == null || raw.isBlank()) return null;
+        return Boolean.parseBoolean(raw.trim());
     }
 
     @FunctionalInterface

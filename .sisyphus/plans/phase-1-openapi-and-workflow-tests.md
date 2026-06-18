@@ -1967,7 +1967,7 @@ Max Concurrent: 8 (Wave 2)
   - Message: `refactor(honcho): rewrite HonchoProxyService to use factory + per-profile version routing`
   - Files: `service/HonchoProxyService.java`, potentially `HonchoCallException` import paths
 
-- [ ] 16. `HonchoController` refactor (thin: extracts path/body, delegates)
+- [x] 16. `HonchoController` refactor (thin: extracts path/body, delegates)
 
   **What to do**:
   - Rewrite `src/main/java/com/revytechinc/honchoinspector/controller/HonchoController.java`:

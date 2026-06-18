@@ -35,7 +35,10 @@ public record Profile(
     Instant createdAt,
 
     @Schema(description = "ISO-8601 instant the profile was last updated", example = "2026-06-17T22:00:00Z")
-    Instant updatedAt
+    Instant updatedAt,
+
+    @Schema(description = "Honcho API surface version this profile targets (e.g. `v2`, `v3`). Nullable: profiles created before T16 lack this value and the controller falls back to the server default. Honcho v3 is the product default.", example = "v3", nullable = true)
+    String apiVersion
 ) {
     public Profile {
         if (id == null || id.isBlank()) throw new IllegalArgumentException("id required");
@@ -47,5 +50,8 @@ public record Profile(
         if (honchoUserName == null || honchoUserName.isBlank()) throw new IllegalArgumentException("honchoUserName required");
         if (createdAt == null) throw new IllegalArgumentException("createdAt required");
         if (updatedAt == null) throw new IllegalArgumentException("updatedAt required");
+        // apiVersion is intentionally not validated: nullable + blankable so
+        // pre-T16 rows (column added by SchemaMigrator, never set by user)
+        // load cleanly. HonchoClientFactory.resolveVersion handles blank.
     }
 }
