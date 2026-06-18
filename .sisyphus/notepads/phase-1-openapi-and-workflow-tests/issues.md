@@ -224,3 +224,16 @@ haven't been written yet. The +4 from T13 matches the spec exactly.
 
 The "Total V3 providers across T10-T13 = 8 files" claim still holds:
 T10=2 (Peers, PeerQuery), T11=1 (Sessions), T12=1 (Messages), T13=4 = 8.
+
+## F3 Real Manual QA — Issues (2026-06-18)
+
+- **Profile creation accepts invalid `baseUrl`** (e.g. literal `"x"` instead of a URL). Validation is on label/apiKey/workspaceId/honchoUserName but not on URL format. Not a Phase 1 blocker — profile test endpoint will fail at Honcho if URL is unreachable. Worth a follow-up to add `@URL` or pattern validation.
+- **No `POST /api/peers/list` path.** Honcho v3 list endpoints are exposed via `POST /api/peers` (single URL, two methods in OpenAPI). Task instructions assumed a `/list` suffix path. Real contract is correct per OpenAPI snapshot.
+- **Port 8080 conflict** on this host (uvicorn running). Workaround via PORT=18080 env var — production deployments bind to 127.0.0.1 per docs/reverse-proxy.md, so this isn't a deployment issue.
+
+## F4 Scope Fidelity Check Fixes (2026-06-18)
+
+- **T4a.5 test `createDirectories_bothPathsFail_throws` does not actually exercise the double-failure path** in the current CI environment. The `XDG_USER_ETC` constant is captured at class-load time and points at the real `user.home`, so we cannot easily redirect it to a read-only temp dir. The test asserts the FALLBACK status (primary failure → XDG recovery), not the IllegalStateException with two paths. The actual double-failure branch is reachable only by an operator manually `chmod`-ing their real `~/.local/etc` to read-only and running the test. This is documented in the test's inline comment.
+- **Static `isRunningAsRoot()` originally had a Java compile error** (referenced non-static field). Fixed by making it an instance method on the resolver — tests construct a resolver with explicit `osName="Linux 6.1"` and the method correctly returns whether root owns the process.
+- **`@MockitoBean` duplicate with parent test class** — `MdcEnrichmentTest` initially declared `@MockitoBean HonchoClientFactory` and also extended `IntegrationTestBase` which already declares the same bean override. Spring's bean override machinery throws "Duplicate BeanOverrideHandler". Fix: drop the redundant declaration in the child class — the parent class's override is inherited.
+- **`ArgumentCaptor.set(Map)` does not exist** — Mockito's `ArgumentCaptor` has no `set` method; I had to switch to a plain `AtomicReference<Map<String,String>>` to capture the MDC state inside the mock's `doAnswer` callback. Cleaner than a captor anyway.

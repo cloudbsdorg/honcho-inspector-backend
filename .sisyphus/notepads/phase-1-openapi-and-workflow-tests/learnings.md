@@ -1652,3 +1652,71 @@ The two exclusion mechanisms compose safely:
 **Honcho v3 list-peers endpoint reality vs. spec assumption:** Plan §26 mentioned `GET /v3/workspaces/{ws}/peers`. The actual upstream contract is `POST /v3/workspaces/{ws}/peers/list` (v3 changed this from v2's GET). The live test tries GET first per the plan; on 404/405 it falls back to POST `/peers/list`. Either way the assertion is "endpoint exists and returns a JSON array". Honcho v3 has no `GET /peers/{peerId}` endpoint for verifying a created peer, so the create-test re-lists and searches for the unique peer id by name.
 
 **Workspace-id requirement as runtime check, not annotation:** The plan originally listed TWO `@EnabledIfEnvironmentVariable` annotations (one for `HONCHO_LIVE_TEST=1`, one for `HONCHO_LIVE_WORKSPACE_ID=inspector-tests`). The task spec simplified to ONE annotation; `HONCHO_LIVE_WORKSPACE_ID` is now read at runtime in `@BeforeAll` with a clear AssertJ failure message. This is friendlier for operators — they can target any workspace id (e.g. `inspector-tests`, `live-2026-06`, whatever) without touching test source.
+
+## F3 Real Manual QA — Findings (2026-06-18)
+
+- **Port 8080 occupied by another uvicorn service on this host.** Used `PORT=18080` env var (documented in README) to bring up Spring Boot on a free port. Spring Boot `server.port` accepts PORT env var.
+- **Register endpoint returns `{id, username, isAdmin, createdAt}` — no `sessionId`.** Task instructions said "extract sessionId from register" but the actual contract is register-then-login. Logged in separately to get sessionId, then used for subsequent calls.
+- **28 paths in springdoc snapshot, OpenAPI version 3.0.1.** All paths return expected status codes:
+  - `GET /api/health` → 200
+  - `GET /v3/api-docs` → 200 (37,917 bytes)
+  - `GET /swagger-ui.html` → 302
+  - `POST /api/auth/register` → 201 (first user becomes admin)
+  - `POST /api/auth/login` → 200 + sessionId
+  - `GET /api/auth/me` → 200 with valid session, 401 otherwise
+  - `POST /api/auth/logout` → 200, then session invalid
+  - `POST /api/profiles` → 201 with encrypted apiKeyEncrypted field
+  - `GET /api/profiles` → 200 array
+  - `GET /api/profiles/{id}/reveal` → 200 + plaintext apiKey (round-trips correctly)
+  - `POST /api/profiles/{id}/test` → attempts upstream call (401 from Honcho with fake key, proves wiring)
+  - `DELETE /api/profiles/{id}` → 204
+  - `PUT /api/profiles/{id}` → 200 with updated fields
+  - `POST /api/peers`, `GET /api/peers`, `POST /api/workspace/info`, `POST /api/search`, `POST /api/queue-status`, `POST /api/dream` → all forward to Honcho (401 with fake key, expected)
+- **Negative paths verified:**
+  - `GET /api/peers` no session → 401 ✓
+  - `GET /api/sessions` no session → 401 ✓
+  - `GET /api/profiles` no session → 401 ✓
+  - `GET /api/auth/me` no session → 401 ✓
+  - `GET /api/peers` bad session → 401 ✓
+  - `GET /api/peers` good session, no profile header → 400 "missing X-Honcho-Profile-Id header" ✓
+  - `POST /api/auth/register` duplicate username → 409 ✓
+  - `POST /api/auth/login` wrong password → 401 ✓
+  - `GET /api/profiles/{foreign-id}/reveal` → 404 ✓ (cross-user isolation enforced)
+  - `POST /api/dream` missing peerId → 400 with descriptive error ✓
+  - `POST /api/auth/register` missing password → 400 validation ✓
+  - `POST /api/auth/login` empty body → 400 validation ✓
+- **Test suite: 341/341 pass, 0 skipped, 0 failed.** Re-ran twice (initial + final) with same result.
+- **`LiveHonchoProxyIT` correctly tagged `@Tag("live")`** and excluded by `-DexcludedGroups='drift,live'`. Default `mvn test` skips it as required.
+- **No secrets leaked in `server.log`.** Grep for `qa-secret-key` / `qa-pass-12345` / `password` found zero matches — log scrubbing works.
+- **AesGcm encryption verified end-to-end:** apiKey `qa-secret-key-12345` → encrypted `yg05axG5OopBAcQWcYee1fkz4GX0Y2Nzx5f3ZYOUMtR+Cn+b53le/SMtn62zNpY=` → decrypted back to original plaintext via reveal endpoint.
+
+## F4 Scope Fidelity Check Fixes (2026-06-18)
+
+Fixed 10 F4 violations across T4a, T4b, T4, and T26:
+
+### T4a — Config-dir resilience
+- `HonchoConfigDirResolver` gained `XDG_USER_ETC` constant (`~/.local/etc/honcho-inspector`), `resolveOrCreate()` method, and `isRunningAsRoot()` helper. The new public API is `ResolveResult(Path, Status)` with `Status` enum `{CREATED, EXISTS, FALLBACK}`.
+- `StartupInfoLogger` now calls `resolveOrCreate()` and logs `[created]` / `[exists]` / `[fallback: <path>]` tags. Verified the log line in test output: `config-dir=/home/mlapointe/.local/etc/honcho-inspector [fallback: /home/mlapointe/.local/etc/honcho-inspector]`.
+- `HonchoConfigDirResolverTest` gained 5 new tests. 1 test (`runningAsRoot_skipsFallback`) is skipped on non-root CI machines via `Assumptions.assumeTrue(isRunningAsRoot())`. 14 run + 1 skipped for this class.
+
+### T4b — MDC enrichment
+- `SessionAuthFilter` now sets MDC `session_id` + `user_id` and clears them in a finally block. Existing `AuthService.CurrentUser` record required accessing `current.user().id()` (not `current.id()`).
+- `HonchoProxyService` sets MDC `profile_id` + `honcho_version` in `call()` (the generic dispatch entry point). Uses a `boolean putProfile/putVersion` guard to avoid unnecessary `MDC.remove` when fields were never set.
+- `HonchoV3Client.call()` sets MDC `peer_id` from `pathVars.get("peerId")`.
+- `HonchoContext` gained a 6-arg canonical constructor with `profileId`; the existing 4-arg and 5-arg constructors are preserved as backward-compat shims (so older test fixtures still compile).
+- New `MdcEnrichmentTest` covers all three integration points with 4 tests, using `AtomicReference<Map<String,String>>` to capture MDC state inside the spy call.
+
+### T4 — HonchoPropertiesTest
+- New test class with 3 nested test classes (Defaults, EnvOverrides, EnvUpperCase) verifying that `HonchoProperties` correctly binds from env vars, applies Java defaults when unset, and accepts uppercase values.
+- Note: `@TestPropertySource` sets properties as system properties, not env vars. Spring relaxed binding maps `honcho.providers.strict-mode` correctly, but the uppercase-underscore `HONCHO_PROVIDERS_STRICT_MODE` form does NOT bind under TestPropertySource (only under actual env vars). The test uses the property-name form to be portable.
+
+### T26 — HonchoWorkflowIntegrationTest
+- Added 4 missing tests: `createPeerHappyPath`, `getPeerRepresentation`, `listPeerSessions`, `searchMessages`. Total now 14 tests.
+- All 14 pass in ~9s.
+
+### LiveHonchoProxyIT
+- Added second `@EnabledIfEnvironmentVariable(named = "HONCHO_LIVE_WORKSPACE_ID", matches = "inspector-tests")` annotation. Updated class Javadoc to document the dual gating.
+
+### Final test count
+- **Tests run: 354, Failures: 0, Errors: 0, Skipped: 1** (the runningAsRoot test).
+- 12 files changed: 4 new (HonchoPropertiesTest, MdcEnrichmentTest) + 8 modified (3 main src, 3 test src, 2 notepad files).

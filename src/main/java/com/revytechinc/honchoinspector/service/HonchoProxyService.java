@@ -3,6 +3,7 @@ package com.revytechinc.honchoinspector.service;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import org.slf4j.MDC;
 import org.springframework.stereotype.Service;
 
 import com.revytechinc.honchoinspector.config.HonchoProperties;
@@ -81,8 +82,20 @@ public class HonchoProxyService {
         Map<String, ?> queryParams
     ) throws HonchoCallException {
         HonchoClient client = factory.clientFor(ctx.apiVersion());
-        return client.call(op, ctx, requestBody, pathVars, queryParams);
+        boolean putProfile = ctx.profileId() != null;
+        boolean putVersion = ctx.apiVersion() != null;
+        try {
+            if (putProfile) MDC.put(MDC_PROFILE_ID, ctx.profileId());
+            if (putVersion) MDC.put(MDC_HONCHO_VERSION, ctx.apiVersion().pathPrefix());
+            return client.call(op, ctx, requestBody, pathVars, queryParams);
+        } finally {
+            if (putProfile) MDC.remove(MDC_PROFILE_ID);
+            if (putVersion) MDC.remove(MDC_HONCHO_VERSION);
+        }
     }
+
+    public static final String MDC_PROFILE_ID = "profile_id";
+    public static final String MDC_HONCHO_VERSION = "honcho_version";
 
     /**
      * Probe a profile by issuing a {@code GET_WORKSPACE_INFO} call. The

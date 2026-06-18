@@ -13,13 +13,17 @@ import com.revytechinc.honchoinspector.honcho.HonchoApiVersion;
  * will populate {@code apiVersion} from the resolved version; until
  * then the no-version constructor defaults to {@link HonchoApiVersion#V3}
  * which matches the {@code honcho.api-version} default.
+ *
+ * <p>Carries the originating {@code profileId} so MDC fields can be
+ * tagged per upstream call (T4b).
  */
 public record HonchoContext(
     String apiKey,
     String baseUrl,
     String workspaceId,
     String userName,
-    HonchoApiVersion apiVersion
+    HonchoApiVersion apiVersion,
+    String profileId
 ) {
     public HonchoContext {
         if (apiKey == null || apiKey.isBlank()) throw new IllegalArgumentException("apiKey required");
@@ -30,13 +34,25 @@ public record HonchoContext(
     }
 
     /**
-     * Backward-compatible constructor. Delegates to the canonical
-     * 5-arg form with {@link HonchoApiVersion#V3} (the product default).
-     * Kept in place so existing call sites — {@code HonchoController},
-     * {@code ProfileController}, and the {@code HonchoProviderSkeletonTest}
-     * fixture — continue to compile until T15/T16 update them.
+     * Backward-compatible 4-arg form. Delegates to the canonical 6-arg
+     * constructor with {@link HonchoApiVersion#V3} (the product default)
+     * and {@code profileId=null}.
      */
     public HonchoContext(String apiKey, String baseUrl, String workspaceId, String userName) {
-        this(apiKey, baseUrl, workspaceId, userName, HonchoApiVersion.V3);
+        this(apiKey, baseUrl, workspaceId, userName, HonchoApiVersion.V3, null);
+    }
+
+    /**
+     * Backward-compatible 5-arg form. Delegates to the canonical 6-arg
+     * constructor with {@code profileId=null}.
+     */
+    public HonchoContext(
+        String apiKey,
+        String baseUrl,
+        String workspaceId,
+        String userName,
+        HonchoApiVersion apiVersion
+    ) {
+        this(apiKey, baseUrl, workspaceId, userName, apiVersion, null);
     }
 }

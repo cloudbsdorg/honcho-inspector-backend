@@ -187,6 +187,77 @@ class HonchoWorkflowIntegrationTest extends IntegrationTestBase {
             .andExpect(jsonPath("$.error").value("missing " + HonchoController.PROFILE_HEADER + " header"));
     }
 
+    @Test
+    @DisplayName("POST /api/peers happy path returns the CREATE_PEER fixture (canonical name)")
+    void createPeerHappyPath() throws Exception {
+        Map<String, Object> body = Map.of("name", "happy-path-peer");
+
+        mvc.perform(withAuth(post("/api/peers"), sessionId, profileId)
+                .contentType(JSON)
+                .content(toJson(body)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.id").value("fixture-capture-1781766883"))
+            .andExpect(jsonPath("$.workspace_id").value("default"))
+            .andExpect(jsonPath("$.metadata.source").value("fixture-capture"));
+    }
+
+    @Test
+    @DisplayName("GET /api/peers/{peerId}/representation returns the GET_REPRESENTATION fixture")
+    void getPeerRepresentation() throws Exception {
+        mvc.perform(withAuth(get("/api/peers/alice/representation"), sessionId, profileId))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.representation").value(org.hamcrest.Matchers.containsString("backend engineer")));
+
+        JsonNode meta = readFixtureMeta("get-peer-representation.json");
+        assertThat(meta.get("method").asText())
+            .as("GET_REPRESENTATION upstream contract is GET")
+            .isEqualTo("GET");
+        assertThat(meta.get("endpoint").asText())
+            .as("upstream path includes /representation")
+            .endsWith("/representation");
+    }
+
+    @Test
+    @DisplayName("GET /api/peers/{peerId}/sessions returns the LIST_PEER_SESSIONS fixture")
+    void listPeerSessions() throws Exception {
+        mvc.perform(withAuth(get("/api/peers/alice/sessions"), sessionId, profileId))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.total").value(2))
+            .andExpect(jsonPath("$.items").isArray())
+            .andExpect(jsonPath("$.items[0].id").value("fixture-session-001"))
+            .andExpect(jsonPath("$.items[1].id").value("fixture-session-002"))
+            .andExpect(jsonPath("$.page").value(1))
+            .andExpect(jsonPath("$.size").value(50))
+            .andExpect(jsonPath("$.pages").value(1));
+
+        JsonNode meta = readFixtureMeta("list-peer-sessions.json");
+        assertThat(meta.get("method").asText())
+            .as("LIST_PEER_SESSIONS upstream contract is GET")
+            .isEqualTo("GET");
+    }
+
+    @Test
+    @DisplayName("POST /api/search returns the SEARCH_MESSAGES fixture")
+    void searchMessages() throws Exception {
+        Map<String, Object> body = Map.of("query", "fixture");
+
+        mvc.perform(withAuth(post("/api/search"), sessionId, profileId)
+                .contentType(JSON)
+                .content(toJson(body)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$").isArray())
+            .andExpect(jsonPath("$[0].id").value("IxYA8tK7iEU5IW0IDFEf3"))
+            .andExpect(jsonPath("$[0].workspace_id").value("default"));
+
+        JsonNode meta = readFixtureMeta("search-messages.json");
+        assertThat(meta.get("method").asText())
+            .as("SEARCH_MESSAGES upstream contract is POST (v2 was GET)")
+            .isEqualTo("POST");
+        assertThat(meta.get("endpoint").asText())
+            .as("upstream path is /v3/workspaces/{ws}/search")
+            .endsWith("/search");
+    }
+
     /**
      * Read the {@code _meta} block from a fixture JSON file on the test
      * classpath. Used by the v2→v3 contract tests to assert that the

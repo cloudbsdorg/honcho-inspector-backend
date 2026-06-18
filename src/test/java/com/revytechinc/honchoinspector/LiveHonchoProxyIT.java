@@ -22,10 +22,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Live, environment-gated Honcho proxy integration test.
  *
- * <p><b>Gating:</b> This test is auto-skipped unless {@code HONCHO_LIVE_TEST=1}
- * is set in the environment (see {@link EnabledIfEnvironmentVariable} on the
- * class). Additionally, three connection details must be present at setup
- * time:
+ * <p><b>Gating:</b> This test is auto-skipped unless both
+ * {@code HONCHO_LIVE_TEST=1} <em>and</em> {@code HONCHO_LIVE_WORKSPACE_ID=inspector-tests}
+ * are set in the environment (see the two {@link EnabledIfEnvironmentVariable}
+ * annotations on the class). Additionally, three connection details must be
+ * present at setup time:
  * <ul>
  *   <li>{@code HONCHO_LIVE_URL} &mdash; base URL of the live Honcho
  *       (e.g. {@code https://honcho.cloudbsd.org}).</li>
@@ -55,6 +56,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 @Tag("live")
 @EnabledIfEnvironmentVariable(named = "HONCHO_LIVE_TEST", matches = "1")
+@EnabledIfEnvironmentVariable(named = "HONCHO_LIVE_WORKSPACE_ID", matches = "inspector-tests")
 class LiveHonchoProxyIT {
 
     private static final String ENV_URL = "HONCHO_LIVE_URL";

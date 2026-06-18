@@ -56,10 +56,23 @@ public class StartupInfoLogger {
             .filter(p -> !p.isBlank())
             .collect(Collectors.joining(","));
         var profileStr = profiles.isEmpty() ? "default" : profiles;
-        var configDirPath = configDir != null ? configDir.resolve().toString() : "(resolver not available)";
+        var configDirEntry = formatConfigDir(configDir);
         log.info(
             "honcho-inspector backend ready: port={}, profiles=[{}], config-dir={}, honcho={} (api={}, timeout={}ms), cors={}, session-ttl={}m",
-            port, profileStr, configDirPath, honchoBaseUrl, honchoApiVersion, honchoTimeoutMs, corsOrigins, sessionTtlMinutes
+            port, profileStr, configDirEntry, honchoBaseUrl, honchoApiVersion, honchoTimeoutMs, corsOrigins, sessionTtlMinutes
         );
+    }
+
+    private static String formatConfigDir(HonchoConfigDirResolver resolver) {
+        if (resolver == null) {
+            return "(resolver not available)";
+        }
+        HonchoConfigDirResolver.ResolveResult result = resolver.resolveOrCreate();
+        String pathStr = result.path().toString();
+        return switch (result.status()) {
+            case CREATED -> pathStr + " [created]";
+            case EXISTS -> pathStr + " [exists]";
+            case FALLBACK -> pathStr + " [fallback: " + pathStr + "]";
+        };
     }
 }

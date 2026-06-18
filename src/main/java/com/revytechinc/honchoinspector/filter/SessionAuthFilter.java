@@ -5,6 +5,7 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.slf4j.MDC;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -16,6 +17,9 @@ public class SessionAuthFilter extends OncePerRequestFilter {
 
     public static final String CURRENT_USER_ATTR = "honcho.currentUser";
     public static final String SESSION_HEADER = "X-Session-Id";
+
+    public static final String MDC_SESSION_ID = "session_id";
+    public static final String MDC_USER_ID = "user_id";
 
     private static final Set<String> PUBLIC_PATHS = Set.of(
         "/api/auth/login",
@@ -51,6 +55,13 @@ public class SessionAuthFilter extends OncePerRequestFilter {
         }
 
         request.setAttribute(CURRENT_USER_ATTR, current);
-        chain.doFilter(request, response);
+        try {
+            if (sessionId != null) MDC.put(MDC_SESSION_ID, sessionId);
+            if (current.user() != null && current.user().id() != null) MDC.put(MDC_USER_ID, current.user().id());
+            chain.doFilter(request, response);
+        } finally {
+            MDC.remove(MDC_SESSION_ID);
+            MDC.remove(MDC_USER_ID);
+        }
     }
 }

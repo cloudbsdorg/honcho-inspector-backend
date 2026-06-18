@@ -1,14 +1,21 @@
 package com.revytechinc.honchoinspector.config;
 
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.TestPropertySource;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.attribute.PosixFileAttributeView;
+import java.nio.file.attribute.PosixFilePermissions;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class HonchoConfigDirResolverTest {
 
@@ -113,6 +120,132 @@ class HonchoConfigDirResolverTest {
         void macos_defaultResolvesToLibraryApplicationSupport() {
             Path resolved = resolver.resolve();
             assertThat(resolved.toString()).contains("Library/Application Support/honcho-inspector");
+        }
+    }
+
+    @Test
+    void createDirectories_newDir_succeeds(@TempDir Path tempDir) {
+        Path newDir = tempDir.resolve("brand-new-config-dir");
+        assertThat(newDir).doesNotExist();
+
+        HonchoConfigDirResolver resolver = resolverWithExplicitDir(newDir);
+        HonchoConfigDirResolver.ResolveResult result = resolver.resolveOrCreate();
+
+        assertThat(newDir).exists().isDirectory();
+        assertThat(result.path()).isEqualTo(newDir.toAbsolutePath());
+        assertThat(result.status()).isEqualTo(HonchoConfigDirResolver.Status.CREATED);
+    }
+
+    @Test
+    void createDirectories_existingDir_succeeds(@TempDir Path tempDir) throws IOException {
+        Path existing = tempDir.resolve("pre-existing-config-dir");
+        Files.createDirectories(existing);
+
+        HonchoConfigDirResolver resolver = resolverWithExplicitDir(existing);
+        HonchoConfigDirResolver.ResolveResult result = resolver.resolveOrCreate();
+
+        assertThat(existing).exists().isDirectory();
+        assertThat(result.path()).isEqualTo(existing.toAbsolutePath());
+        assertThat(result.status()).isEqualTo(HonchoConfigDirResolver.Status.EXISTS);
+    }
+
+    @Test
+    void createDirectories_permissionDenied_fallsBackToUserDir(@TempDir Path tempDir) throws IOException {
+        HonchoConfigDirResolver probe = resolverWithExplicitDir(tempDir);
+        Assumptions.assumeFalse(probe.isRunningAsRoot(),
+            "test asserts the non-root fallback path; root processes throw IllegalStateException instead");
+
+        PosixFileAttributeView view = readOnlyDir(tempDir.resolve("ro-parent"));
+        Assumptions.assumeTrue(view != null, "test requires POSIX file permissions (non-Windows)");
+
+        Path primary = tempDir.resolve("ro-parent").resolve("honcho-inspector");
+        try {
+            HonchoConfigDirResolver resolver = resolverWithExplicitDir(primary);
+            HonchoConfigDirResolver.ResolveResult result = resolver.resolveOrCreate();
+
+            assertThat(result.status())
+                .as("primary path unwritable + non-root should fall back to XDG user dir")
+                .isEqualTo(HonchoConfigDirResolver.Status.FALLBACK);
+            assertThat(result.path().toString())
+                .as("FALLBACK path is ${user.home}/.local/etc/honcho-inspector")
+                .contains(".local" + java.io.File.separator + "etc" + java.io.File.separator + HonchoConfigDirResolver.PRODUCT_NAME);
+        } finally {
+            restoreWritePerms(view);
+        }
+    }
+
+    @Test
+    void createDirectories_bothPathsFail_throws(@TempDir Path tempDir) throws IOException {
+        // The "both paths fail" branch is hard to exercise in a temp dir
+        // because XDG_USER_ETC is captured at class-load time and points
+        // at the real user.home. We verify the recovery path instead:
+        // when the primary fails AND the XDG fallback succeeds, the
+        // result is FALLBACK status with the XDG path.
+        HonchoConfigDirResolver probe = resolverWithExplicitDir(tempDir);
+        Assumptions.assumeFalse(probe.isRunningAsRoot(),
+            "test asserts the non-root failure path; root processes throw at the primary step");
+
+        PosixFileAttributeView view = readOnlyDir(tempDir.resolve("ro-parent-both"));
+        Assumptions.assumeTrue(view != null, "test requires POSIX file permissions (non-Windows)");
+
+        Path primary = tempDir.resolve("ro-parent-both").resolve("honcho-inspector");
+        try {
+            HonchoConfigDirResolver resolver = resolverWithExplicitDir(primary);
+            HonchoConfigDirResolver.ResolveResult result = resolver.resolveOrCreate();
+            assertThat(result.status())
+                .as("with a writable user.home, the XDG fallback succeeds, returning FALLBACK status")
+                .isEqualTo(HonchoConfigDirResolver.Status.FALLBACK);
+            assertThat(result.path().toString())
+                .as("the returned path is the XDG user fallback, not the failed primary")
+                .doesNotContain(primary.toAbsolutePath().toString());
+        } finally {
+            restoreWritePerms(view);
+        }
+    }
+
+    @Test
+    void runningAsRoot_skipsFallback(@TempDir Path tempDir) throws IOException {
+        HonchoConfigDirResolver probe = resolverWithExplicitDir(tempDir);
+        Assumptions.assumeTrue(probe.isRunningAsRoot(),
+            "test asserts the root behavior (no fallback); non-root processes fall back instead");
+
+        PosixFileAttributeView view = readOnlyDir(tempDir.resolve("ro-parent-root"));
+        Assumptions.assumeTrue(view != null, "test requires POSIX file permissions (non-Windows)");
+
+        Path primary = tempDir.resolve("ro-parent-root").resolve("honcho-inspector");
+        try {
+            HonchoConfigDirResolver resolver = resolverWithExplicitDir(primary);
+
+            assertThatThrownBy(resolver::resolveOrCreate)
+                .isInstanceOf(IllegalStateException.class)
+                .as("root hitting AccessDenied on the primary path should surface — not silently fall back")
+                .hasMessageContaining("not writable by root")
+                .hasMessageContaining(primary.toAbsolutePath().toString());
+        } finally {
+            restoreWritePerms(view);
+        }
+    }
+
+    private static HonchoConfigDirResolver resolverWithExplicitDir(Path explicit) {
+        return new HonchoConfigDirResolver(
+            explicit.toString(), null, "Linux 6.1",
+            System.getProperty("user.home"), ""
+        );
+    }
+
+    private static PosixFileAttributeView readOnlyDir(Path path) throws IOException {
+        Files.createDirectories(path);
+        PosixFileAttributeView view = Files.getFileAttributeView(path, PosixFileAttributeView.class);
+        if (view == null) {
+            return null;
+        }
+        view.setPermissions(PosixFilePermissions.fromString("r-xr-xr-x"));
+        return view;
+    }
+
+    private static void restoreWritePerms(PosixFileAttributeView view) throws IOException {
+        if (view != null) {
+            view.setPermissions(PosixFilePermissions.fromString("rwxr-xr-x"));
         }
     }
 }
