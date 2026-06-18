@@ -188,11 +188,11 @@ flowchart TD
 
 ### 3. Wave Execution Timeline & Critical Path
 
-How the 35 tasks roll out across waves.
+How the 36 tasks roll out across waves.
 
 ```mermaid
 flowchart LR
-  W1["Wave 1: Foundation<br/>9 tasks<br/>springdoc + schema + config +<br/>config-dir resilience +<br/>HonchoApiVersion + HonchoProvider<br/>+ HonchoClient + Factory"]
+  W1["Wave 1: Foundation<br/>10 tasks<br/>springdoc + schema + config +<br/>config-dir resilience +<br/>JSONL logging +<br/>HonchoApiVersion + HonchoProvider<br/>+ HonchoClient + Factory"]
   W2["Wave 2: Honcho Layer<br/>10 tasks<br/>8 V3 Providers + V3Client +<br/>ProxyService + Controller refactor +<br/>HonchoContext + application.yml"]
   W3["Wave 3: OpenAPI + Tests<br/>8 tasks<br/>openapi.yaml + springdoc snapshot +<br/>drift check + recorded fixtures +<br/>HonchoMockConfig + 3 workflow tests"]
   W4["Wave 4: Docs + CI<br/>8 tasks<br/>provider/factory/SPI unit tests +<br/>honcho-providers.md +<br/>regenerating-openapi.md +<br/>CI workflow + negative-path tests"]
@@ -219,7 +219,7 @@ flowchart LR
   class DONE done
 ```
 
-**Max parallelism:** Wave 2 = 10 tasks (the bottleneck wave). Wave 1 grew from 8 to 9 tasks (added T4a config-dir resilience); average wave = 8.75 tasks.
+**Max parallelism:** Wave 2 = 10 tasks (the bottleneck wave). Wave 1 grew from 8 to 10 tasks (added T4a config-dir resilience + T4b JSONL logging); average wave = 9 tasks.
 
 ### 4. Request Lifecycle: Login → Profile → Honcho Call
 
@@ -337,7 +337,7 @@ What's in this plan vs what's explicitly deferred.
 
 ```mermaid
 flowchart TB
-  subgraph P1["PHASE 1 (this plan - 35 tasks + 4 final reviewers)"]
+  subgraph P1["PHASE 1 (this plan - 36 tasks + 4 final reviewers)"]
     direction TB
     P1A["OpenAPI spec<br/>hand-written YAML + springdoc live + drift check"]
     P1B["Provider x Factory refactor<br/>8 V3 providers + Client + Factory + Registry"]
@@ -568,7 +568,7 @@ Max Concurrent: 8 (Wave 2)
 | T34 (negative-path tests) | T24, T25, T26 | F1–F4 |
 
 ### Agent Dispatch Summary
-- **Wave 1 (9 tasks, max parallel = 9)**: T1–T2 → `quick`; T3–T6 → `quick`; T7–T8, T4a → `quick`
+- **Wave 1 (10 tasks, max parallel = 10)**: T1–T2 → `quick`; T3–T6 → `quick`; T7–T8, T4a, T4b → `quick`
 - **Wave 2 (10 tasks, max parallel = 8)**: T9 → `unspecified-high`; T10–T13 → `unspecified-high`; T14 → `unspecified-high`; T15–T16 → `unspecified-high`; T17–T18 → `quick`
 - **Wave 3 (8 tasks, max parallel = 8)**: T19 → `writing`; T20–T21 → `quick` + `unspecified-high`; T22–T26 → `unspecified-high`
 - **Wave 4 (8 tasks, max parallel = 8)**: T27–T29 → `unspecified-high`; T30–T32 → `writing`; T33 → `quick`; T34 → `unspecified-high`
@@ -974,6 +974,205 @@ Max Concurrent: 8 (Wave 2)
   **Commit**: YES (groups with Wave 1 final commit)
   - Message: `feat(config): ensure config dir exists; fall back to ~/.local/etc/<product>/ when system path unwritable`
   - Files: `config/HonchoConfigDirResolver.java`, `config/StartupInfoLogger.java`, modified `HonchoConfigDirResolverTest.java`, `docs/SECURITY.md`
+
+- [ ] 4b. Structured JSONL logging + rotation/retention policy
+
+  **What to do**:
+  - **Format requirement (user-specified)**: every log line is a single JSON object on its own line (JSONL / NDJSON). No plain-text logs. This makes logs ingestible by Loki / Elasticsearch / Datadog / `jq` without parsing.
+  - Add dependency to `pom.xml`:
+    - `net.logstash.logback:logstash-logback-encoder:7.4` (current stable, supports Logback 1.4.x which ships with Spring Boot 3.5).
+  - Create `src/main/resources/logback-spring.xml`:
+    - **Two appenders**:
+      1. **JSONL file appender** (`RollingFileAppender` with `LogstashEncoder`):
+         - File: `${HONCHO_CONFIG_DIR}/logs/honcho-inspector.jsonl`
+         - JSONL event schema (fixed fields, populated via MDC where applicable):
+           - `@timestamp` (ISO-8601 UTC, e.g., `2026-06-17T22:34:56.789Z`)
+           - `level` (`INFO` / `WARN` / `ERROR` / `DEBUG`)
+           - `logger_name` (e.g., `com.revytechinc.honchoinspector.controller.HonchoController`)
+           - `thread_name`
+           - `message` (the rendered message)
+           - `stack_trace` (only on exceptions, multi-line joined inside the JSON string)
+           - `service` (constant: `honcho-inspector-backend`)
+           - `version` (constant: `${project.version}` from pom — injected via `<property>`)
+           - MDC fields when set: `request_id`, `user_id`, `session_id`, `profile_id`, `honcho_version`, `peer_id`
+         - **SCRUBBING**: configure a `MaskingJsonProviderDecorator` (or regex pattern in `replace` field) to mask:
+           - `apiKey=...`, `api_key=...`, `Bearer ...` → `apiKey=***`, `Bearer ***`
+           - `password=...`, `pass=...` → `***`
+           - This prevents accidental API key / password leaks in JSONL files.
+         - **Rotation**: `SizeAndTimeBasedRollingPolicy`:
+           - `fileNamePattern`: `${HONCHO_CONFIG_DIR}/logs/honcho-inspector.%d{yyyy-MM-dd}.%i.jsonl.gz`
+           - `maxFileSize`: `${HONCHO_LOG_MAX_FILE_SIZE:-100MB}` (roll mid-day if size exceeded)
+           - `maxHistory`: `${HONCHO_LOG_MAX_HISTORY:-30}` days
+           - `totalSizeCap`: `${HONCHO_LOG_TOTAL_SIZE_CAP:-500MB}` (across all rotated files)
+           - Compress rotated files with gzip.
+      2. **JSONL console appender** (`ConsoleAppender` with `LogstashEncoder`):
+         - Same event schema as the file appender.
+         - Rationale: containerized deployments (Docker, Kubernetes, systemd) capture stdout; emitting JSONL there too keeps ingestion consistent. Local dev can `tail -f` and pipe through `jq .message` for readable output.
+    - **Loggers**:
+      - Root: `INFO`
+      - `com.revytechinc.honchoinspector`: `INFO` (overridable via `HONCHO_LOG_LEVEL`)
+      - `org.springframework.web`: `INFO` (overridable)
+      - `org.hibernate.SQL`: `WARN` (overridable — never log SQL by default; noise + potential data leak)
+      - `net.logstash.logback`: `WARN` (don't spam its own logs)
+    - **Spring profile behavior**:
+      - Default profile: JSONL to file + console.
+      - `dev` profile: append a `LogstashEncoder` to console with a more compact event set (drop MDC unless present). Document this.
+  - Add to `src/main/resources/application.yml`:
+    ```yaml
+    logging:
+      config: classpath:logback-spring.xml
+      file:
+        name: ${HONCHO_LOG_FILE:#{null}}
+    honcho:
+      log:
+        level: ${HONCHO_LOG_LEVEL:INFO}
+        max-file-size: ${HONCHO_LOG_MAX_FILE_SIZE:100MB}
+        max-history: ${HONCHO_LOG_MAX_HISTORY:30}
+        total-size-cap: ${HONCHO_LOG_TOTAL_SIZE_CAP:500MB}
+    ```
+  - Extend `HonchoProperties` (from T4) with nested `log.level`, `log.maxFileSize`, `log.maxHistory`, `log.totalSizeCap`. Bind via `@ConfigurationProperties`.
+  - MDC enrichment: in `SessionAuthFilter`, set MDC fields `session_id`, `user_id` on each request (clear in a `finally` block). In `HonchoProxyService` / new `HonchoClient`, set MDC `profile_id`, `honcho_version`, `peer_id` per outbound call.
+  - Create `docs/logging.md` with:
+    - **Policy section** (machine-readable):
+      ```
+      retention_days:    30           # HONCHO_LOG_MAX_HISTORY
+      max_file_size_mb:  100          # HONCHO_LOG_MAX_FILE_SIZE
+      total_cap_mb:      500          # HONCHO_LOG_TOTAL_SIZE_CAP
+      format:            jsonl        # JSON Lines, one event per line
+      rotation:          daily + size-trigger
+      compression:       gzip          # .jsonl.gz
+      location:          $HONCHO_CONFIG_DIR/logs/
+      scrub_fields:      [apiKey, Bearer, password]
+      ```
+    - **Event schema reference** (full field list with examples).
+    - **Operational examples**:
+      - Tail live JSONL: `tail -F $HONCHO_CONFIG_DIR/logs/honcho-inspector.jsonl | jq -c '{ts:.@timestamp, level, msg:.message, logger:.logger_name}'`
+      - Filter by level: `jq -c 'select(.level=="ERROR")' honcho-inspector.2026-06-17.jsonl.gz | gunzip`
+      - Find requests for a user: `jq -c 'select(.user_id=="42")' honcho-inspector.*.jsonl.gz`
+      - Search Honcho upstream errors: `jq -c 'select(.logger_name|test("Honcho") and .level=="ERROR")' honcho-inspector.*.jsonl.gz`
+    - **Sizing math**: 500 MB cap ≈ 6 months at 3 MB/day; bump if traffic warrants.
+    - **Compliance note**: with EU/GDPR, `session_id` and `user_id` are PII. Document retention justification (incident response, debug). Operators in regulated environments may need to lower `max_history`.
+  - Update `docs/SECURITY.md` Section 6 (new section "Logging"):
+    - Note: JSONL format chosen for ingestion; API keys/passwords scrubbed via regex; PII (session_id, user_id) present but justified.
+  - Update `README.md` Dev workflow + Configuration sections: list `HONCHO_LOG_*` env vars.
+  - Add tests:
+    - `LogbackConfigTest`: load `logback-spring.xml`, assert two appenders registered with the expected encoder classes.
+    - `JsonlFormatTest`: log a message, read the file back, assert each line is valid JSON with `@timestamp`, `level`, `message`, `logger_name` fields.
+    - `LogRotationTest` (uses temp dir + override env vars):
+      - Set `HONCHO_LOG_MAX_FILE_SIZE=1KB` and `HONCHO_LOG_MAX_HISTORY=2`.
+      - Log 10,000 short messages.
+      - Assert: more than 1 rotated file exists, oldest files are deleted (≤2 history retained), total file count ≤ `maxHistory` + 1 active.
+    - `LogScrubbingTest`: log a message containing `"apiKey": "secret-123"` and `"Bearer abc.def.ghi"`; assert neither secret appears in the JSONL file (replaced with `***`).
+    - `LogMdcTest`: simulate a request through `SessionAuthFilter`, assert MDC fields appear in the emitted JSONL event, assert MDC is cleared after the request.
+
+  **Must NOT do**:
+  - Do NOT log plaintext API keys, session IDs are OK (necessary for debug correlation), but no passwords / no plaintext `Bearer ...` tokens.
+  - Do NOT use plain-text appenders anywhere (the user requirement is JSONL end-to-end).
+  - Do NOT log SQL by default (org.hibernate.SQL stays at WARN).
+  - Do NOT use `System.out` / `System.err` directly anywhere in app code — go through SLF4J.
+  - Do NOT exceed 500 MB total on disk by default — operators must opt into larger.
+
+  **Recommended Agent Profile**:
+  - **Category**: `unspecified-high`
+  - **Skills**: []
+  - **Reason**: New dependency + new XML config + 4 new tests + MDC integration across filter/service; multi-file but well-scoped.
+
+  **Parallelization**:
+  - **Can Run In Parallel**: YES
+  - **Parallel Group**: Wave 1 (with T1–T8, T4a)
+  - **Blocks**: T2 (OpenAPI metadata output may include log levels); T15 (ProxyService refactor benefits from MDC)
+  - **Blocked By**: None (logback-spring.xml is loaded after context init; can land alongside any Wave 1 task)
+
+  **References**:
+  - `pom.xml` — add `logstash-logback-encoder:7.4`
+  - `src/main/resources/logback-spring.xml` — new file (template from logstash-logback-encoder docs)
+  - `src/main/resources/application.yml` — wire `logging.config` + new `honcho.log.*` keys
+  - `src/main/java/com/revytechinc/honchoinspector/filter/SessionAuthFilter.java` — set MDC per request
+  - `src/main/java/com/revytechinc/honchoinspector/service/HonchoProxyService.java` — set MDC per upstream call
+  - `docs/logging.md` — new doc (policy + schema + ops examples)
+  - `docs/SECURITY.md` — add Section 6 (logging)
+  - `README.md` — update Dev workflow + Configuration sections
+  - `config/HonchoProperties.java` (T4) — extend with `log.*` nested fields
+  - External: https://github.com/logfellow/logstash-logback-encoder (current docs for LogstashEncoder, SizeAndTimeBasedRollingPolicy, MaskingJsonProviderDecorator)
+
+  **Acceptance Criteria**:
+  - [ ] `logstash-logback-encoder:7.4` in `pom.xml`
+  - [ ] `logback-spring.xml` exists with JSONL file + JSONL console appenders
+  - [ ] Each line in `honcho-inspector.jsonl` is valid JSON with the documented event schema
+  - [ ] API keys, Bearer tokens, passwords are masked (`***`) in JSONL output
+  - [ ] Files rotate on size (`max-file-size`) AND time (daily); rotated files are `.jsonl.gz`
+  - [ ] At most `max-history` rotated files retained; `total-size-cap` enforced
+  - [ ] MDC fields (`session_id`, `user_id`, `profile_id`, `honcho_version`, `peer_id`) appear in events when set, and are cleared between requests
+  - [ ] `docs/logging.md` exists with policy, schema, ops examples
+  - [ ] `docs/SECURITY.md` Section 6 added
+  - [ ] `README.md` lists `HONCHO_LOG_*` env vars
+  - [ ] All 5 new tests pass; existing 34 tests still pass (39 total now)
+
+  **QA Scenarios (MANDATORY)**:
+  ```
+  Scenario: JSONL events have full schema
+    Tool: Bash (mvn + python3 jq)
+    Preconditions: Spring Boot started in test mode with temp HONCHO_CONFIG_DIR
+    Steps:
+      1. `mvn -q test -Dtest=JsonlFormatTest`
+      2. After test runs, read the produced JSONL file
+      3. `python3 -c "import json,sys; [json.loads(l) for l in open(sys.argv[1])]" /tmp/honcho-inspector-test/logs/honcho-inspector.jsonl`
+      4. Assert exit 0; every line parsed
+      5. Assert each event has @timestamp, level, logger_name, message, service, version
+    Expected Result: All lines are valid JSON; schema complete
+    Evidence: .sisyphus/evidence/task-4b-jsonl-valid.txt
+
+  Scenario: Log scrubbing masks secrets
+    Tool: Bash (mvn + grep)
+    Preconditions: LogbackConfigTest running with secret strings in MDC
+    Steps:
+      1. `mvn -q test -Dtest=LogScrubbingTest`
+      2. Read output JSONL, grep for the test secret string
+      3. Assert: 0 occurrences of the literal secret; ≥1 occurrence of "***"
+    Expected Result: No secrets in logs; masking confirmed
+    Evidence: .sisyphus/evidence/task-4b-scrubbing.txt
+
+  Scenario: Rotation under size pressure
+    Tool: Bash (mvn + shell)
+    Preconditions: HONCHO_LOG_MAX_FILE_SIZE=1KB, max_history=2
+    Steps:
+      1. `mvn -q test -Dtest=LogRotationTest`
+      2. Count files in temp logs dir after test
+      3. Assert: ≤ 3 files total (active + max_history rotated)
+      4. Assert: any rotated file ends in `.jsonl.gz`
+    Expected Result: Rotation + retention enforced
+    Evidence: .sisyphus/evidence/task-4b-rotation.txt
+
+  Scenario: MDC propagation across request
+    Tool: Bash (mvn)
+    Steps:
+      1. `mvn -q test -Dtest=LogMdcTest`
+      2. Assert: events emitted during the filter contain session_id/user_id MDC fields
+      3. Assert: no MDC leakage between requests (second request's events have different session_id)
+    Expected Result: MDC correct + cleared
+    Evidence: .sisyphus/evidence/task-4b-mdc.txt
+
+  Scenario: Full suite green
+    Tool: Bash (mvn)
+    Steps:
+      1. `mvn test`
+      2. Assert: "Tests run: 39" (34 prior + 5 new)
+    Expected Result: All 39 tests pass
+    Evidence: .sisyphus/evidence/task-4b-mvn-full.txt
+
+  Scenario: Operator can ingest JSONL with jq
+    Tool: Bash (jq)
+    Preconditions: Sample JSONL file committed at docs/logging.md (or generated)
+    Steps:
+      1. `cat $HONCHO_CONFIG_DIR/logs/honcho-inspector.jsonl | jq -c '{ts:.@timestamp, level, msg:.message}'`
+      2. Assert: pipe produces valid JSON lines
+    Expected Result: Operator workflow validated
+    Evidence: .sisyphus/evidence/task-4b-jq-pipe.txt
+  ```
+
+  **Commit**: YES (groups with Wave 1 final commit)
+  - Message: `feat(logging): structured JSONL events + rolling retention policy`
+  - Files: `pom.xml`, new `logback-spring.xml`, `application.yml`, `HonchoProperties.java` (extended), `SessionAuthFilter.java` (MDC), `HonchoProxyService.java` (MDC), new `docs/logging.md`, `docs/SECURITY.md`, `README.md`, new tests
 
 - [ ] 5. `HonchoApiVersion` + `HonchoOperation` enums
 
