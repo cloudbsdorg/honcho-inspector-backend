@@ -141,14 +141,14 @@ flowchart TD
   HC4 -.-> HPR
   HPR --> PP3 & PQP3 & SP3 & MP3 & WP3 & QSP3 & SHP3 & DRP3
 
-  HC3 -.uses.- HOP
-  HCF -.uses.- HAPI
-  HCF -.routes.- HC3
+  HC3 -.->|"uses"| HOP
+  HCF -.->|"uses"| HAPI
+  HCF -->|"routes by version"| HC3
 
   HPS -->|"getClient(profile.apiVersion)"| HCF
   HC --> HPS
-  AS -.- AS
-  PS -.- AS
+
+  classDef new fill:#dfd,stroke:#0a0,stroke-width:2px
 
   classDef new fill:#dfd,stroke:#0a0,stroke-width:2px
   classDef modified fill:#ffd,stroke:#a80,stroke-width:2px
