@@ -66,6 +66,281 @@ Addressed gaps:
 
 ---
 
+## Visual Architecture & Workflows
+
+> All diagrams follow CloudBSD diagram conventions: **Mermaid inline**, no ASCII art, no DOT, no PlantUML. The plan is the single source of truth. SVG mockups (under `diagrams/`) are NOT used here — Phase 1 is a backend-only plan with no UI mockups needed.
+
+### 1. Deployment Topology
+
+Where this app actually runs and how traffic flows.
+
+```mermaid
+flowchart LR
+  Browser["Browser / UI<br/>(Angular dashboard)"]
+  Internet(("Internet"))
+  Nginx["nginx<br/>:443 TLS via certbot<br/>:80 redirect to HTTPS<br/>proxy_pass 127.0.0.1:8080"]
+  SpringBoot["Spring Boot 3.5<br/>127.0.0.1:8080<br/>SQLite + JdbcTemplate<br/>AES-256-GCM API keys"]
+  Honcho["Honcho<br/>https://mcp.honcho.cloudbsd.org<br/>Bearer JWT auth"]
+  DB[("SQLite<br/>honcho-inspector.db<br/>users + sessions + profiles")]
+
+  Browser -->|"HTTPS + X-Session-Id + X-Honcho-Profile-Id"| Internet
+  Internet --> Nginx
+  Nginx -->|"HTTP (loopback only)"| SpringBoot
+  SpringBoot -->|"SELECT/INSERT users, sessions, profiles"| DB
+  SpringBoot -->|"HTTPS + Authorization: Bearer + X-Honcho-User-Name"| Honcho
+
+  classDef external fill:#e8f4ff,stroke:#06c,stroke-width:2px
+  classDef internal fill:#fff4e6,stroke:#c60,stroke-width:2px
+  class Nginx,Honcho external
+  class SpringBoot,DB internal
+```
+
+**Security boundary:** Nginx is the only public listener. Spring Boot binds to `127.0.0.1` (prod). The Honcho API key never leaves the server.
+
+### 2. Honcho Layer Architecture (Provider x Factory)
+
+The new `honcho/` package — the heart of Phase 1's extensibility story.
+
+```mermaid
+flowchart TD
+  subgraph HTTP["HTTP Layer (existing - T16 refactor)"]
+    HC["HonchoController<br/>24 endpoints"]
+    AS["AuthController"]
+    PS["ProfileController"]
+  end
+
+  subgraph PROXY["Proxy Layer (T15 refactor)"]
+    HPS["HonchoProxyService<br/>bearer + user-name injection"]
+  end
+
+  subgraph HONCHO["NEW: honcho/ package"]
+    HCF["HonchoClientFactory<br/>(T8) routes by apiVersion"]
+    HC3["HonchoClient V3<br/>(T14) 24 methods"]
+    HC4["HonchoClient V4<br/>(Phase 2) placeholder"]
+
+    HPR["HonchoProviderRegistry<br/>(T9) auto-discovered @Component list"]
+
+    HAPI["HonchoApiVersion<br/>enum: V2, V3, V4"]
+    HOP["HonchoOperation<br/>(T5) 24 constants"]
+
+    subgraph V3P["8 V3 Providers (T10-T13)"]
+      PP3["PeersProviderV3<br/>list/get/create/update/delete"]
+      PQP3["PeerQueryProviderV3<br/>card/representation/conclusions/<br/>sessions/dreams"]
+      SP3["SessionsProviderV3<br/>list/get/create/delete/<br/>clone/peers/messages"]
+      MP3["MessagesProviderV3<br/>add/list/get"]
+      WP3["WorkspaceProviderV3<br/>info"]
+      QSP3["QueueStatusProviderV3<br/>status"]
+      SHP3["SearchProviderV3<br/>search"]
+      DRP3["DreamsProviderV3<br/>schedule"]
+    end
+  end
+
+  HCF -->|"version=V3"| HC3
+  HCF -.->|"version=V4 (Phase 2)"| HC4
+  HC3 --> HPR
+  HC4 -.-> HPR
+  HPR --> PP3 & PQP3 & SP3 & MP3 & WP3 & QSP3 & SHP3 & DRP3
+
+  HC3 -.uses.- HOP
+  HCF -.uses.- HAPI
+  HCF -.routes.- HC3
+
+  HPS -->|"getClient(profile.apiVersion)"| HCF
+  HC --> HPS
+  AS -.- AS
+  PS -.- AS
+
+  classDef new fill:#dfd,stroke:#0a0,stroke-width:2px
+  classDef modified fill:#ffd,stroke:#a80,stroke-width:2px
+  class HCF,HC3,HPR,HAPI,HOP,PP3,PQP3,SP3,MP3,WP3,QSP3,SHP3,DRP3 new
+  class HPS,HC modified
+```
+
+**The golden rule:** users add new endpoints or new Honcho versions by writing a new `@Component implements HonchoProvider` and registering it. No `HonchoController` changes. No `HonchoProxyService` changes.
+
+### 3. Wave Execution Timeline & Critical Path
+
+How the 34 tasks roll out across waves.
+
+```mermaid
+flowchart LR
+  W1["Wave 1: Foundation<br/>8 tasks<br/>springdoc + schema + config +<br/>HonchoApiVersion + HonchoProvider<br/>+ HonchoClient + Factory"]
+  W2["Wave 2: Honcho Layer<br/>10 tasks<br/>8 V3 Providers + V3Client +<br/>ProxyService + Controller refactor +<br/>HonchoContext + application.yml"]
+  W3["Wave 3: OpenAPI + Tests<br/>8 tasks<br/>openapi.yaml + springdoc snapshot +<br/>drift check + recorded fixtures +<br/>HonchoMockConfig + 3 workflow tests"]
+  W4["Wave 4: Docs + CI<br/>8 tasks<br/>provider/factory/SPI unit tests +<br/>honcho-providers.md +<br/>regenerating-openapi.md +<br/>CI workflow + negative-path tests"]
+  FIN["Final: 4 Reviewers<br/>F1 Plan Compliance<br/>F2 Code Quality<br/>F3 Real Manual QA<br/>F4 Scope Fidelity"]
+
+  W1 -->|"all 8 done"| W2
+  W2 -->|"all 10 done"| W3
+  W3 -->|"all 8 done"| W4
+  W4 -->|"all 8 done"| FIN
+  FIN -->|"user explicit OK"| DONE(["✅ Phase 1 complete"])
+
+  CP[/"Critical Path:<br/>T1 → T5 → T6 → T7 → T8<br/>→ T9 → T14 → T15 → T16<br/>→ T26 → F1-F4"/]
+  CP -.-> W1
+  CP -.-> W2
+  CP -.-> W3
+  CP -.-> W4
+  CP -.-> FIN
+
+  classDef wave fill:#e8f4ff,stroke:#06c
+  classDef critical fill:#fee,stroke:#c00,stroke-width:2px
+  classDef done fill:#dfd,stroke:#0a0
+  class W1,W2,W3,W4,FIN wave
+  class CP critical
+  class DONE done
+```
+
+**Max parallelism:** Wave 2 = 10 tasks (the bottleneck wave). Average wave = 8.5 tasks.
+
+### 4. Request Lifecycle: Login → Profile → Honcho Call
+
+The end-to-end happy path the integration tests (T24-T26) will exercise.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor User
+  participant Browser
+  participant Nginx
+  participant Spring as Spring Boot
+  participant DB as SQLite
+  participant Honcho
+
+  rect rgb(230, 245, 255)
+    Note over User,Honcho: PHASE A: Authentication
+    User->>Browser: POST /api/auth/register {user,pass}
+    Browser->>Nginx: HTTPS + JSON
+    Nginx->>Spring: HTTP 127.0.0.1:8080
+    Spring->>DB: SELECT users WHERE name=?
+    DB-->>Spring: empty
+    Spring->>Spring: bcrypt.hash(pass, cost=12)
+    Spring->>DB: INSERT users {name, bcrypt_hash, is_admin=1 (first user)}
+    Spring->>Spring: sessions.create() -> 24-byte hex sid
+    Spring->>DB: INSERT auth_sessions {sid, user_id}
+    Spring-->>Browser: 201 {user, sessionId}
+  end
+
+  rect rgb(255, 245, 230)
+    Note over User,Honcho: PHASE B: Profile Setup
+    User->>Browser: POST /api/profiles {label, apiKey, baseUrl, workspaceId}
+    Browser->>Nginx: HTTPS + X-Session-Id
+    Nginx->>Spring: HTTP
+    Spring->>Spring: SessionAuthFilter validates sid
+    Spring->>Spring: CryptoService.encrypt(apiKey) AES-256-GCM with HONCHO_CRYPTO_KEY
+    Spring->>DB: INSERT honcho_profiles {user_id, url, ws, encrypted_key, api_version=NULL}
+    Spring-->>Browser: 201 {profile_id, api_version: null/inherited}
+  end
+
+  rect rgb(230, 255, 230)
+    Note over User,Honcho: PHASE C: First Honcho Call
+    User->>Browser: GET /api/peers
+    Browser->>Nginx: HTTPS + X-Session-Id + X-Honcho-Profile-Id
+    Nginx->>Spring: HTTP
+    Spring->>Spring: AuthFilter OK + ProfileResolver fetches profile
+    Spring->>DB: SELECT profile + CryptoService.decrypt(apiKey)
+    DB-->>Spring: decrypted apiKey
+    Spring->>Spring: HonchoClientFactory.clientFor(profile.apiVersion or 'v3')
+    Spring->>Honcho: POST /v3/workspaces/{ws}/peers/list<br/>+ Authorization: Bearer + X-Honcho-User-Name
+    Honcho-->>Spring: 200 {peers: [...]}
+    Spring-->>Browser: 200 {peers: [...]}
+  end
+```
+
+**Note:** GETs against `/api/*` are forwarded to Honcho v3 as POSTs (Honcho v3's list endpoints are POST-only). T16 fixes the upstream method mismatch.
+
+### 5. Version Upgrade Path: How V4 Drops In
+
+The extensibility proof. The same jar supports V3 + V4 with zero changes to V3 code.
+
+```mermaid
+flowchart TD
+  subgraph BEFORE["Phase 1 ships (this plan)"]
+    B1["HonchoClientFactory"]
+    B2["HonchoApiVersion enum: V2, V3"]
+    B3["HonchoClientV3<br/>24 methods"]
+    B4["HonchoProviderRegistry"]
+    B5["8 V3 Providers"]
+
+    B1 -->|"version=V3"| B3
+    B3 --> B4
+    B4 --> B5
+    B1 -.->|"version=V4 -> throw"| BX["UnsupportedVersionException<br/>(fail-fast unless strict-mode=false)"]
+  end
+
+  subgraph AFTER["Phase 2 / Future: V4 added"]
+    A1["HonchoClientFactory<br/>(unchanged)"]
+    A2["HonchoApiVersion enum: V2, V3, V4<br/>(one enum constant added)"]
+    A3["HonchoClientV3<br/>(unchanged - all 24 methods)"]
+    A4["HonchoClientV4 NEW<br/>~24 methods"]
+    A5["HonchoProviderRegistry<br/>(unchanged - auto-discovers)"]
+    A6["8 V3 Providers<br/>(unchanged)"]
+    A7["V4 Providers NEW<br/>(e.g. PeersProviderV4)"]
+
+    A1 -->|"version=V3"| A3
+    A1 -->|"version=V4"| A4
+    A3 --> A5
+    A4 --> A5
+    A5 --> A6
+    A5 --> A7
+  end
+
+  BEFORE ==>|"User adds:<br/>1) 'V4' to HonchoApiVersion enum<br/>2) HonchoClientV4 class<br/>3) V4 provider classes<br/>(@Component auto-discovered)<br/>NO changes to: Factory, V3 client, V3 providers, Registry"| AFTER
+
+  style BEFORE fill:#fff4e6,stroke:#c60
+  style AFTER fill:#e8ffe8,stroke:#0a0
+  style BX fill:#fee,stroke:#c00
+  style A4 fill:#dfd,stroke:#0a0
+  style A7 fill:#dfd,stroke:#0a0
+```
+
+**Strict-mode safety:** if `honcho.providers.strict-mode=true` (default `false`), the registry fails boot if any provider's version has no matching `HonchoClientV*`. This catches "V4 provider ships before V4Client" mistakes.
+
+### 6. Phase 1 vs Phase 2 Boundary
+
+What's in this plan vs what's explicitly deferred.
+
+```mermaid
+flowchart TB
+  subgraph P1["PHASE 1 (this plan - 34 tasks)"]
+    direction TB
+    P1A["OpenAPI spec<br/>hand-written YAML + springdoc live + drift check"]
+    P1B["Provider x Factory refactor<br/>8 V3 providers + Client + Factory + Registry"]
+    P1C["Unit tests<br/>providers, factory, registry, SPI"]
+    P1D["Integration tests<br/>auth + profile + proxy workflows (recorded fixture)"]
+    P1E["Opt-in live tests<br/>HONCHO_LIVE_TEST=1 + HONCHO_LIVE_WORKSPACE_ID=inspector-tests"]
+    P1F["CI workflow<br/>mvn verify + drift check"]
+    P1G["Docs<br/>honcho-providers.md + regenerating-openapi.md"]
+    P1A --> P1B --> P1C --> P1D --> P1E --> P1F --> P1G
+  end
+
+  subgraph P2["PHASE 2 (separate future plan - NOT NOW)"]
+    direction TB
+    P2A["Organizations + multi-tenancy"]
+    P2B["Two-tier profile sharing<br/>per-org shared + per-user private"]
+    P2C["Signup workflow<br/>open self-register + request-join + admin approval"]
+    P2D["Role checks<br/>wire is_admin flag (currently unread)"]
+    P2E["Stats aggregation<br/>client-side pagination (Honcho v3 has no aggregates)"]
+    P2F["Reports + export"]
+    P2G["Security: rate limiting (F-01)"]
+    P2H["Security: SSRF protection on baseUrl (F-08)"]
+    P2I["Security: generic exception scrubbing (F-05, F-11)"]
+    P2A --> P2B --> P2C --> P2D --> P2E --> P2F
+    P2G -.-> P2H -.-> P2I
+  end
+
+  P1 -.->|"deferred"| P2
+
+  classDef phase1 fill:#ddf,stroke:#00c,stroke-width:2px
+  classDef phase2 fill:#fdd,stroke:#c00,stroke-width:2px,stroke-dasharray: 5 5
+  class P1 phase1
+  class P2 phase2
+```
+
+**If during execution anyone is tempted to add orgs/sharing/signup/stats/reports/rate-limiting/SSRF-protection to a Phase 1 task — STOP. That's Phase 2 scope creep. Document it as a finding, file a note, and move on.**
+
+---
+
 ## Work Objectives
 
 ### Core Objective
