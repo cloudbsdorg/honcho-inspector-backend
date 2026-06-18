@@ -1,0 +1,55 @@
+=== HonchoClient method count ===
+HonchoClient methods (Object return): 24
+HonchoController endpoints: 24
+
+=== HonchoClient method names (in declaration order) ===
+listPeers
+createPeer
+getPeerCard
+updatePeerCard
+getPeerRepresentation
+peerChat
+searchPeers
+listPeerConclusions
+listPeerSessions
+queryPeerConclusions
+listSessions
+createSession
+getSession
+deleteSession
+listSessionMessages
+addMessage
+getSessionContext
+getSessionSummaries
+getSessionPeers
+searchSessionMessages
+getQueueStatus
+searchMessages
+scheduleDream
+getWorkspaceInfo
+
+=== HonchoClient controller mapping check ===
+@DeleteMapping("/sessions/{sessionId}")
+@GetMapping("/peers")
+@GetMapping("/peers/{peerId}/card")
+@GetMapping("/peers/{peerId}/conclusions")
+@GetMapping("/peers/{peerId}/representation")
+@GetMapping("/peers/{peerId}/sessions")
+@GetMapping("/queue-status")
+@GetMapping("/sessions")
+@GetMapping("/sessions/{sessionId}")
+@GetMapping("/sessions/{sessionId}/context")
+@GetMapping("/sessions/{sessionId}/messages")
+@GetMapping("/sessions/{sessionId}/peers")
+@GetMapping("/sessions/{sessionId}/summaries")
+@GetMapping("/workspace/info")
+@PostMapping("/dream")
+@PostMapping("/peers")
+@PostMapping("/peers/{peerId}/card")
+@PostMapping("/peers/{peerId}/chat")
+@PostMapping("/peers/{peerId}/conclusions/query")
+@PostMapping("/peers/{peerId}/search")
+@PostMapping("/search")
+@PostMapping("/sessions")
+@PostMapping("/sessions/{sessionId}/messages")
+@PostMapping("/sessions/{sessionId}/search")

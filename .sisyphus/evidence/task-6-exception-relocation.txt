@@ -1,0 +1,63 @@
+=== HonchoCallException relocation evidence ===
+
+Date: 2026-06-17 23:59 UTC
+Task: T6 (HonchoProvider interface + HonchoCallException relocation)
+
+--- Summary ---
+HonchoCallException moved from nested class on HonchoProxyService
+to top-level class in com.revytechinc.honchoinspector.honcho package.
+All call sites updated to use the new import.
+
+--- 1. New location: top-level class ---
+File: src/main/java/com/revytechinc/honchoinspector/honcho/HonchoCallException.java
+  package com.revytechinc.honchoinspector.honcho;
+  public class HonchoCallException extends RuntimeException {
+      public HonchoCallException(String message, int status, String body)
+      public int status()
+      public String body()
+  }
+
+--- 2. Old location: inner class REMOVED from HonchoProxyService ---
+File: src/main/java/com/revytechinc/honchoinspector/service/HonchoProxyService.java
+  (no nested HonchoCallException class)
+  (no import of self.HonchoCallException)
+
+--- 3. Call sites updated (3 imports of new location, 0 of old) ---
+
+Imports of new location:
+  src/main/java/com/revytechinc/honchoinspector/auth/ProfileController.java:5
+  src/main/java/com/revytechinc/honchoinspector/service/HonchoProxyService.java:3
+  src/main/java/com/revytechinc/honchoinspector/controller/HonchoController.java:7
+
+Catch blocks using unqualified form:
+  src/main/java/com/revytechinc/honchoinspector/auth/ProfileController.java:249
+  src/main/java/com/revytechinc/honchoinspector/controller/HonchoController.java:543
+
+Throw sites (HonchoProxyService, 4 places): all use unqualified
+  src/main/java/com/revytechinc/honchoinspector/service/HonchoProxyService.java:55,61,84,90
+
+Old qualified references (service.HonchoProxyService.HonchoCallException): 0
+
+--- 4. Compile verification ---
+$ mvn -B compile
+[INFO] BUILD SUCCESS
+Total: 32 source files compiled
+
+--- 5. Test verification (full suite) ---
+$ mvn -B test
+Tests run: 97, Failures: 4, Errors: 0, Skipped: 0
+
+The 4 failures are ALL in the logging.* package (parallel work, not T6):
+  - JsonlFormatTest.jsonlLines_areValidJsonWithExpectedSchema (log dir not created)
+  - LogMdcTest.mdcFieldsAppearWhenSet_andAreAbsentAfterClear (log dir not created)
+  - LogRotationTest.rotatesUnderSizePressure_andRespectsMaxHistory (log dir not created)
+  - LogScrubbingTest.apiKeyAndBearerTokens_areScrubbedInJsonl (log dir not created)
+
+T6-specific test (HonchoProviderSkeletonTest): 7/7 PASS
+Baseline 87/87 (from T1-T5) preserved for all non-logging tests.
+
+--- 6. Why no re-export shim ---
+Plan allowed either (a) re-export shim at old path, or (b) update all
+call sites. Picked (b) — only 3 call sites, no public consumers
+outside this repo, and shim would create a circular import dependency
+between service/ and honcho/ packages.

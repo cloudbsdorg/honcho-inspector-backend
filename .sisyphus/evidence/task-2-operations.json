@@ -1,0 +1,293 @@
+{
+  "operations": [
+    {
+      "method": "POST",
+      "path": "/api/auth/login",
+      "tags": [
+        "auth"
+      ],
+      "summary": "Log in and obtain a session id"
+    },
+    {
+      "method": "POST",
+      "path": "/api/auth/logout",
+      "tags": [
+        "auth"
+      ],
+      "summary": "Invalidate the current session"
+    },
+    {
+      "method": "GET",
+      "path": "/api/auth/me",
+      "tags": [
+        "auth"
+      ],
+      "summary": "Get the currently authenticated user"
+    },
+    {
+      "method": "POST",
+      "path": "/api/auth/register",
+      "tags": [
+        "auth"
+      ],
+      "summary": "Register a new user"
+    },
+    {
+      "method": "POST",
+      "path": "/api/dream",
+      "tags": [
+        "honcho-proxy"
+      ],
+      "summary": "Schedule a memory-consolidation dream"
+    },
+    {
+      "method": "GET",
+      "path": "/api/health",
+      "tags": [
+        "auth"
+      ],
+      "summary": "Liveness / readiness probe"
+    },
+    {
+      "method": "GET",
+      "path": "/api/peers",
+      "tags": [
+        "honcho-proxy"
+      ],
+      "summary": "List peers in the active workspace"
+    },
+    {
+      "method": "POST",
+      "path": "/api/peers",
+      "tags": [
+        "honcho-proxy"
+      ],
+      "summary": "Create a peer in the active workspace"
+    },
+    {
+      "method": "GET",
+      "path": "/api/peers/{peerId}/card",
+      "tags": [
+        "honcho-proxy"
+      ],
+      "summary": "Get a peer's card"
+    },
+    {
+      "method": "POST",
+      "path": "/api/peers/{peerId}/card",
+      "tags": [
+        "honcho-proxy"
+      ],
+      "summary": "Replace a peer's card"
+    },
+    {
+      "method": "POST",
+      "path": "/api/peers/{peerId}/chat",
+      "tags": [
+        "honcho-proxy"
+      ],
+      "summary": "Chat with a peer"
+    },
+    {
+      "method": "GET",
+      "path": "/api/peers/{peerId}/conclusions",
+      "tags": [
+        "honcho-proxy"
+      ],
+      "summary": "List a peer's conclusions"
+    },
+    {
+      "method": "POST",
+      "path": "/api/peers/{peerId}/conclusions/query",
+      "tags": [
+        "honcho-proxy"
+      ],
+      "summary": "Semantic query over a peer's conclusions"
+    },
+    {
+      "method": "GET",
+      "path": "/api/peers/{peerId}/representation",
+      "tags": [
+        "honcho-proxy"
+      ],
+      "summary": "Get a peer's representation"
+    },
+    {
+      "method": "POST",
+      "path": "/api/peers/{peerId}/search",
+      "tags": [
+        "honcho-proxy"
+      ],
+      "summary": "Semantic search across a peer's messages"
+    },
+    {
+      "method": "GET",
+      "path": "/api/peers/{peerId}/sessions",
+      "tags": [
+        "honcho-proxy"
+      ],
+      "summary": "List sessions a peer participates in"
+    },
+    {
+      "method": "GET",
+      "path": "/api/profiles",
+      "tags": [
+        "profiles"
+      ],
+      "summary": "List the current user's profiles"
+    },
+    {
+      "method": "POST",
+      "path": "/api/profiles",
+      "tags": [
+        "profiles"
+      ],
+      "summary": "Create a new profile"
+    },
+    {
+      "method": "GET",
+      "path": "/api/profiles/{id}",
+      "tags": [
+        "profiles"
+      ],
+      "summary": "Fetch a single profile by id"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/profiles/{id}",
+      "tags": [
+        "profiles"
+      ],
+      "summary": "Update a profile (partial)"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/profiles/{id}",
+      "tags": [
+        "profiles"
+      ],
+      "summary": "Delete a profile"
+    },
+    {
+      "method": "GET",
+      "path": "/api/profiles/{id}/reveal",
+      "tags": [
+        "profiles"
+      ],
+      "summary": "Decrypt and return the profile's API key"
+    },
+    {
+      "method": "POST",
+      "path": "/api/profiles/{id}/test",
+      "tags": [
+        "profiles"
+      ],
+      "summary": "Test that the profile can reach Honcho"
+    },
+    {
+      "method": "GET",
+      "path": "/api/queue-status",
+      "tags": [
+        "honcho-proxy"
+      ],
+      "summary": "Get background-derivation queue status"
+    },
+    {
+      "method": "POST",
+      "path": "/api/search",
+      "tags": [
+        "honcho-proxy"
+      ],
+      "summary": "Workspace-wide semantic search"
+    },
+    {
+      "method": "GET",
+      "path": "/api/sessions",
+      "tags": [
+        "honcho-proxy"
+      ],
+      "summary": "List sessions in the active workspace"
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions",
+      "tags": [
+        "honcho-proxy"
+      ],
+      "summary": "Create a session"
+    },
+    {
+      "method": "GET",
+      "path": "/api/sessions/{sessionId}",
+      "tags": [
+        "honcho-proxy"
+      ],
+      "summary": "Get a session by id"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/sessions/{sessionId}",
+      "tags": [
+        "honcho-proxy"
+      ],
+      "summary": "Delete a session"
+    },
+    {
+      "method": "GET",
+      "path": "/api/sessions/{sessionId}/context",
+      "tags": [
+        "honcho-proxy"
+      ],
+      "summary": "Get optimized LLM context for a session"
+    },
+    {
+      "method": "GET",
+      "path": "/api/sessions/{sessionId}/messages",
+      "tags": [
+        "honcho-proxy"
+      ],
+      "summary": "List messages in a session"
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions/{sessionId}/messages",
+      "tags": [
+        "honcho-proxy"
+      ],
+      "summary": "Append messages to a session"
+    },
+    {
+      "method": "GET",
+      "path": "/api/sessions/{sessionId}/peers",
+      "tags": [
+        "honcho-proxy"
+      ],
+      "summary": "List peers participating in a session"
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions/{sessionId}/search",
+      "tags": [
+        "honcho-proxy"
+      ],
+      "summary": "Semantic search across a session's messages"
+    },
+    {
+      "method": "GET",
+      "path": "/api/sessions/{sessionId}/summaries",
+      "tags": [
+        "honcho-proxy"
+      ],
+      "summary": "List summaries for a session"
+    },
+    {
+      "method": "GET",
+      "path": "/api/workspace/info",
+      "tags": [
+        "honcho-proxy"
+      ],
+      "summary": "Get the active workspace + queue snapshot"
+    }
+  ],
+  "count": 36
+}

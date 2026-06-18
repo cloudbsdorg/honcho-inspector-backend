@@ -2,11 +2,19 @@ package com.revytechinc.honchoinspector.controller;
 
 import com.revytechinc.honchoinspector.auth.AuthService;
 import com.revytechinc.honchoinspector.auth.ProfileService;
+import com.revytechinc.honchoinspector.config.OpenApiConfig;
 import com.revytechinc.honchoinspector.filter.SessionAuthFilter;
+import com.revytechinc.honchoinspector.honcho.HonchoCallException;
 import com.revytechinc.honchoinspector.model.ErrorResponse;
 import com.revytechinc.honchoinspector.model.HonchoContext;
 import com.revytechinc.honchoinspector.service.HonchoProxyService;
-import com.revytechinc.honchoinspector.service.HonchoProxyService.HonchoCallException;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -22,6 +30,14 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api")
+@Tag(name = OpenApiConfig.TAG_HONCHO_PROXY,
+    description = """
+        Pass-through proxy to the Honcho v3 REST API. Every endpoint requires both `X-Session-Id` (current user) AND `X-Honcho-Profile-Id` (which encrypted Honcho profile to use).
+
+        Requests are forwarded verbatim to the profile's `baseUrl` with the profile's decrypted API key attached as `Authorization: Bearer …` and the profile's `honchoUserName` attached as `X-Honcho-User-Name`. The response body from Honcho is returned as-is; the proxy does not normalize, validate, or re-shape Honcho payloads.
+
+        On Honcho HTTP 4xx the proxy returns Honcho's status code; on 5xx and transport errors the proxy returns 502.
+        """)
 public class HonchoController {
 
     public static final String PROFILE_HEADER = "X-Honcho-Profile-Id";
@@ -35,127 +51,467 @@ public class HonchoController {
     }
 
     @GetMapping("/peers")
+    @Operation(
+        summary = "List peers in the active workspace",
+        description = "Proxies `GET /v3/workspaces/{workspaceId}/peers`. Any query parameters on the inbound request are forwarded to Honcho as-is."
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Page of peers from Honcho (Honcho v3 `Page[T]` envelope)"),
+        @ApiResponse(responseCode = "400", description = "Missing `X-Honcho-Profile-Id` header",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "404", description = "Profile not found / not owned by current user",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
     public ResponseEntity<?> listPeers(HttpServletRequest req,
+                                       @Parameter(description = "Forwarded as query string to Honcho")
                                        @RequestParam(required = false) Map<String, String> allParams) {
         return call(req, (ctx, ws) -> honcho.get(ctx, "/v3/workspaces/" + ws + "/peers", allParams));
     }
 
     @PostMapping("/peers")
+    @Operation(
+        summary = "Create a peer in the active workspace",
+        description = "Proxies `POST /v3/workspaces/{workspaceId}/peers`. The request body is forwarded to Honcho unchanged."
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Honcho response body (created peer)"),
+        @ApiResponse(responseCode = "400", description = "Missing `X-Honcho-Profile-Id` header",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "404", description = "Profile not found / not owned by current user",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
     public ResponseEntity<?> createPeer(HttpServletRequest req, @RequestBody Object body) {
         return call(req, (ctx, ws) -> honcho.post(ctx, "/v3/workspaces/" + ws + "/peers", null, body));
     }
 
     @GetMapping("/peers/{peerId}/card")
-    public ResponseEntity<?> peerCard(HttpServletRequest req, @PathVariable String peerId) {
+    @Operation(
+        summary = "Get a peer's card",
+        description = "Proxies `GET /v3/workspaces/{workspaceId}/peers/{peerId}/card`."
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Honcho peer card (string facts)"),
+        @ApiResponse(responseCode = "400", description = "Missing `X-Honcho-Profile-Id` header",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "404", description = "Profile not found / not owned by current user",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    public ResponseEntity<?> peerCard(
+        HttpServletRequest req,
+        @Parameter(description = "Honcho peer id", example = "alice")
+        @PathVariable String peerId
+    ) {
         return call(req, (ctx, ws) -> honcho.get(ctx, "/v3/workspaces/" + ws + "/peers/" + peerId + "/card", null));
     }
 
     @PostMapping("/peers/{peerId}/card")
-    public ResponseEntity<?> updatePeerCard(HttpServletRequest req, @PathVariable String peerId, @RequestBody Object body) {
+    @Operation(
+        summary = "Replace a peer's card",
+        description = "Proxies `POST /v3/workspaces/{workspaceId}/peers/{peerId}/card`. The body (an array of fact strings) is forwarded to Honcho."
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Honcho response"),
+        @ApiResponse(responseCode = "400", description = "Missing `X-Honcho-Profile-Id` header",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "404", description = "Profile not found / not owned by current user",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    public ResponseEntity<?> updatePeerCard(
+        HttpServletRequest req,
+        @Parameter(description = "Honcho peer id", example = "alice")
+        @PathVariable String peerId,
+        @RequestBody Object body
+    ) {
         return call(req, (ctx, ws) -> honcho.put(ctx, "/v3/workspaces/" + ws + "/peers/" + peerId + "/card", null, body));
     }
 
     @GetMapping("/peers/{peerId}/representation")
-    public ResponseEntity<?> peerRepresentation(HttpServletRequest req, @PathVariable String peerId) {
+    @Operation(
+        summary = "Get a peer's representation",
+        description = "Proxies `GET /v3/workspaces/{workspaceId}/peers/{peerId}/representation`. Returns a Honcho-formatted text representation of what the peer knows/believes."
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Honcho representation string"),
+        @ApiResponse(responseCode = "400", description = "Missing `X-Honcho-Profile-Id` header",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "404", description = "Profile not found / not owned by current user",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    public ResponseEntity<?> peerRepresentation(
+        HttpServletRequest req,
+        @Parameter(description = "Honcho peer id", example = "alice")
+        @PathVariable String peerId
+    ) {
         return call(req, (ctx, ws) -> honcho.get(ctx, "/v3/workspaces/" + ws + "/peers/" + peerId + "/representation", null));
     }
 
     @PostMapping("/peers/{peerId}/chat")
-    public ResponseEntity<?> peerChat(HttpServletRequest req, @PathVariable String peerId, @RequestBody Object body) {
+    @Operation(
+        summary = "Chat with a peer",
+        description = "Proxies `POST /v3/workspaces/{workspaceId}/peers/{peerId}/chat`. Body forwarded to Honcho unchanged."
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Honcho chat response"),
+        @ApiResponse(responseCode = "400", description = "Missing `X-Honcho-Profile-Id` header",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "404", description = "Profile not found / not owned by current user",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    public ResponseEntity<?> peerChat(
+        HttpServletRequest req,
+        @Parameter(description = "Honcho peer id", example = "alice")
+        @PathVariable String peerId,
+        @RequestBody Object body
+    ) {
         return call(req, (ctx, ws) -> honcho.post(ctx, "/v3/workspaces/" + ws + "/peers/" + peerId + "/chat", null, body));
     }
 
     @PostMapping("/peers/{peerId}/search")
-    public ResponseEntity<?> peerSearch(HttpServletRequest req, @PathVariable String peerId, @RequestBody Object body) {
+    @Operation(
+        summary = "Semantic search across a peer's messages",
+        description = "Proxies `POST /v3/workspaces/{workspaceId}/peers/{peerId}/search`. Body forwarded to Honcho unchanged."
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Honcho search results"),
+        @ApiResponse(responseCode = "400", description = "Missing `X-Honcho-Profile-Id` header",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "404", description = "Profile not found / not owned by current user",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    public ResponseEntity<?> peerSearch(
+        HttpServletRequest req,
+        @Parameter(description = "Honcho peer id", example = "alice")
+        @PathVariable String peerId,
+        @RequestBody Object body
+    ) {
         return call(req, (ctx, ws) -> honcho.post(ctx, "/v3/workspaces/" + ws + "/peers/" + peerId + "/search", null, body));
     }
 
     @GetMapping("/peers/{peerId}/conclusions")
-    public ResponseEntity<?> peerConclusions(HttpServletRequest req, @PathVariable String peerId,
-                                            @RequestParam(required = false) Map<String, String> allParams) {
+    @Operation(
+        summary = "List a peer's conclusions",
+        description = "Proxies `GET /v3/workspaces/{workspaceId}/peers/{peerId}/conclusions`. Query params forwarded to Honcho."
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Page of conclusions from Honcho"),
+        @ApiResponse(responseCode = "400", description = "Missing `X-Honcho-Profile-Id` header",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "404", description = "Profile not found / not owned by current user",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    public ResponseEntity<?> peerConclusions(
+        HttpServletRequest req,
+        @Parameter(description = "Honcho peer id", example = "alice")
+        @PathVariable String peerId,
+        @Parameter(description = "Forwarded as query string to Honcho (e.g. `limit`, `page`)")
+        @RequestParam(required = false) Map<String, String> allParams
+    ) {
         return call(req, (ctx, ws) -> honcho.get(ctx, "/v3/workspaces/" + ws + "/peers/" + peerId + "/conclusions", allParams));
     }
 
     @GetMapping("/peers/{peerId}/sessions")
-    public ResponseEntity<?> peerSessions(HttpServletRequest req, @PathVariable String peerId,
-                                          @RequestParam(required = false) Map<String, String> allParams) {
+    @Operation(
+        summary = "List sessions a peer participates in",
+        description = "Proxies `GET /v3/workspaces/{workspaceId}/peers/{peerId}/sessions`. Query params forwarded to Honcho."
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Page of sessions from Honcho"),
+        @ApiResponse(responseCode = "400", description = "Missing `X-Honcho-Profile-Id` header",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "404", description = "Profile not found / not owned by current user",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    public ResponseEntity<?> peerSessions(
+        HttpServletRequest req,
+        @Parameter(description = "Honcho peer id", example = "alice")
+        @PathVariable String peerId,
+        @Parameter(description = "Forwarded as query string to Honcho")
+        @RequestParam(required = false) Map<String, String> allParams
+    ) {
         return call(req, (ctx, ws) -> honcho.get(ctx, "/v3/workspaces/" + ws + "/peers/" + peerId + "/sessions", allParams));
     }
 
     @PostMapping("/peers/{peerId}/conclusions/query")
-    public ResponseEntity<?> peerConclusionsQuery(HttpServletRequest req, @PathVariable String peerId, @RequestBody Object body) {
+    @Operation(
+        summary = "Semantic query over a peer's conclusions",
+        description = "Proxies `POST /v3/workspaces/{workspaceId}/peers/{peerId}/conclusions/query`. Body forwarded to Honcho unchanged."
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Honcho query response"),
+        @ApiResponse(responseCode = "400", description = "Missing `X-Honcho-Profile-Id` header",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "404", description = "Profile not found / not owned by current user",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    public ResponseEntity<?> peerConclusionsQuery(
+        HttpServletRequest req,
+        @Parameter(description = "Honcho peer id", example = "alice")
+        @PathVariable String peerId,
+        @RequestBody Object body
+    ) {
         return call(req, (ctx, ws) -> honcho.post(ctx, "/v3/workspaces/" + ws + "/peers/" + peerId + "/conclusions/query", null, body));
     }
 
     @GetMapping("/sessions")
+    @Operation(
+        summary = "List sessions in the active workspace",
+        description = "Proxies `GET /v3/workspaces/{workspaceId}/sessions`. Query params forwarded to Honcho."
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Page of sessions from Honcho"),
+        @ApiResponse(responseCode = "400", description = "Missing `X-Honcho-Profile-Id` header",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "404", description = "Profile not found / not owned by current user",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
     public ResponseEntity<?> listSessions(HttpServletRequest req,
+                                          @Parameter(description = "Forwarded as query string to Honcho")
                                           @RequestParam(required = false) Map<String, String> allParams) {
         return call(req, (ctx, ws) -> honcho.get(ctx, "/v3/workspaces/" + ws + "/sessions", allParams));
     }
 
     @PostMapping("/sessions")
+    @Operation(
+        summary = "Create a session",
+        description = "Proxies `POST /v3/workspaces/{workspaceId}/sessions`. Body forwarded to Honcho unchanged."
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Honcho response (created session)"),
+        @ApiResponse(responseCode = "400", description = "Missing `X-Honcho-Profile-Id` header",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "404", description = "Profile not found / not owned by current user",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
     public ResponseEntity<?> createSession(HttpServletRequest req, @RequestBody Object body) {
         return call(req, (ctx, ws) -> honcho.post(ctx, "/v3/workspaces/" + ws + "/sessions", null, body));
     }
 
     @GetMapping("/sessions/{sessionId}")
-    public ResponseEntity<?> getSession(HttpServletRequest req, @PathVariable String sessionId) {
+    @Operation(
+        summary = "Get a session by id",
+        description = "Proxies `GET /v3/workspaces/{workspaceId}/sessions/{sessionId}`."
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Honcho session record"),
+        @ApiResponse(responseCode = "400", description = "Missing `X-Honcho-Profile-Id` header",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "404", description = "Profile not found / not owned by current user",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    public ResponseEntity<?> getSession(
+        HttpServletRequest req,
+        @Parameter(description = "Honcho session id", example = "sess_abc123")
+        @PathVariable String sessionId
+    ) {
         return call(req, (ctx, ws) -> honcho.get(ctx, "/v3/workspaces/" + ws + "/sessions/" + sessionId, null));
     }
 
     @DeleteMapping("/sessions/{sessionId}")
-    public ResponseEntity<?> deleteSession(HttpServletRequest req, @PathVariable String sessionId) {
+    @Operation(
+        summary = "Delete a session",
+        description = "Proxies `DELETE /v3/workspaces/{workspaceId}/sessions/{sessionId}`."
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Honcho response (typically empty on success)"),
+        @ApiResponse(responseCode = "400", description = "Missing `X-Honcho-Profile-Id` header",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "404", description = "Profile not found / not owned by current user",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    public ResponseEntity<?> deleteSession(
+        HttpServletRequest req,
+        @Parameter(description = "Honcho session id", example = "sess_abc123")
+        @PathVariable String sessionId
+    ) {
         return call(req, (ctx, ws) -> honcho.delete(ctx, "/v3/workspaces/" + ws + "/sessions/" + sessionId));
     }
 
     @GetMapping("/sessions/{sessionId}/messages")
-    public ResponseEntity<?> listMessages(HttpServletRequest req, @PathVariable String sessionId,
-                                          @RequestParam(required = false) Map<String, String> allParams) {
+    @Operation(
+        summary = "List messages in a session",
+        description = "Proxies `GET /v3/workspaces/{workspaceId}/sessions/{sessionId}/messages`. Query params forwarded to Honcho."
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Page of messages from Honcho"),
+        @ApiResponse(responseCode = "400", description = "Missing `X-Honcho-Profile-Id` header",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "404", description = "Profile not found / not owned by current user",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    public ResponseEntity<?> listMessages(
+        HttpServletRequest req,
+        @Parameter(description = "Honcho session id", example = "sess_abc123")
+        @PathVariable String sessionId,
+        @Parameter(description = "Forwarded as query string to Honcho (e.g. `limit`, `page`)")
+        @RequestParam(required = false) Map<String, String> allParams
+    ) {
         return call(req, (ctx, ws) -> honcho.get(ctx, "/v3/workspaces/" + ws + "/sessions/" + sessionId + "/messages", allParams));
     }
 
     @PostMapping("/sessions/{sessionId}/messages")
-    public ResponseEntity<?> addMessages(HttpServletRequest req, @PathVariable String sessionId, @RequestBody Object body) {
+    @Operation(
+        summary = "Append messages to a session",
+        description = "Proxies `POST /v3/workspaces/{workspaceId}/sessions/{sessionId}/messages`. Body forwarded to Honcho unchanged."
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Honcho response"),
+        @ApiResponse(responseCode = "400", description = "Missing `X-Honcho-Profile-Id` header",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "404", description = "Profile not found / not owned by current user",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    public ResponseEntity<?> addMessages(
+        HttpServletRequest req,
+        @Parameter(description = "Honcho session id", example = "sess_abc123")
+        @PathVariable String sessionId,
+        @RequestBody Object body
+    ) {
         return call(req, (ctx, ws) -> honcho.post(ctx, "/v3/workspaces/" + ws + "/sessions/" + sessionId + "/messages", null, body));
     }
 
     @GetMapping("/sessions/{sessionId}/context")
-    public ResponseEntity<?> sessionContext(HttpServletRequest req, @PathVariable String sessionId,
-                                            @RequestParam(required = false) Map<String, String> allParams) {
+    @Operation(
+        summary = "Get optimized LLM context for a session",
+        description = "Proxies `GET /v3/workspaces/{workspaceId}/sessions/{sessionId}/context`. Query params forwarded to Honcho (e.g. `tokens`, `summary`)."
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Honcho context payload (messages + optional summary)"),
+        @ApiResponse(responseCode = "400", description = "Missing `X-Honcho-Profile-Id` header",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "404", description = "Profile not found / not owned by current user",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    public ResponseEntity<?> sessionContext(
+        HttpServletRequest req,
+        @Parameter(description = "Honcho session id", example = "sess_abc123")
+        @PathVariable String sessionId,
+        @Parameter(description = "Forwarded as query string to Honcho (e.g. `tokens`, `summary=true|false`)")
+        @RequestParam(required = false) Map<String, String> allParams
+    ) {
         return call(req, (ctx, ws) -> honcho.get(ctx, "/v3/workspaces/" + ws + "/sessions/" + sessionId + "/context", allParams));
     }
 
     @GetMapping("/sessions/{sessionId}/summaries")
-    public ResponseEntity<?> sessionSummaries(HttpServletRequest req, @PathVariable String sessionId) {
+    @Operation(
+        summary = "List summaries for a session",
+        description = "Proxies `GET /v3/workspaces/{workspaceId}/sessions/{sessionId}/summaries`."
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Honcho summaries list"),
+        @ApiResponse(responseCode = "400", description = "Missing `X-Honcho-Profile-Id` header",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "404", description = "Profile not found / not owned by current user",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    public ResponseEntity<?> sessionSummaries(
+        HttpServletRequest req,
+        @Parameter(description = "Honcho session id", example = "sess_abc123")
+        @PathVariable String sessionId
+    ) {
         return call(req, (ctx, ws) -> honcho.get(ctx, "/v3/workspaces/" + ws + "/sessions/" + sessionId + "/summaries", null));
     }
 
     @GetMapping("/sessions/{sessionId}/peers")
-    public ResponseEntity<?> sessionPeers(HttpServletRequest req, @PathVariable String sessionId) {
+    @Operation(
+        summary = "List peers participating in a session",
+        description = "Proxies `GET /v3/workspaces/{workspaceId}/sessions/{sessionId}/peers`."
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Honcho peer list"),
+        @ApiResponse(responseCode = "400", description = "Missing `X-Honcho-Profile-Id` header",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "404", description = "Profile not found / not owned by current user",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    public ResponseEntity<?> sessionPeers(
+        HttpServletRequest req,
+        @Parameter(description = "Honcho session id", example = "sess_abc123")
+        @PathVariable String sessionId
+    ) {
         return call(req, (ctx, ws) -> honcho.get(ctx, "/v3/workspaces/" + ws + "/sessions/" + sessionId + "/peers", null));
     }
 
     @PostMapping("/sessions/{sessionId}/search")
-    public ResponseEntity<?> sessionSearch(HttpServletRequest req, @PathVariable String sessionId, @RequestBody Object body) {
+    @Operation(
+        summary = "Semantic search across a session's messages",
+        description = "Proxies `POST /v3/workspaces/{workspaceId}/sessions/{sessionId}/search`. Body forwarded to Honcho unchanged."
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Honcho search results"),
+        @ApiResponse(responseCode = "400", description = "Missing `X-Honcho-Profile-Id` header",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "404", description = "Profile not found / not owned by current user",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    public ResponseEntity<?> sessionSearch(
+        HttpServletRequest req,
+        @Parameter(description = "Honcho session id", example = "sess_abc123")
+        @PathVariable String sessionId,
+        @RequestBody Object body
+    ) {
         return call(req, (ctx, ws) -> honcho.post(ctx, "/v3/workspaces/" + ws + "/sessions/" + sessionId + "/search", null, body));
     }
 
     @GetMapping("/queue-status")
+    @Operation(
+        summary = "Get background-derivation queue status",
+        description = "Proxies `GET /v3/workspaces/{workspaceId}/queue/status`. Useful for showing dream/derivation backlog in the admin UI."
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Honcho queue status (work-unit counts)"),
+        @ApiResponse(responseCode = "400", description = "Missing `X-Honcho-Profile-Id` header",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "404", description = "Profile not found / not owned by current user",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
     public ResponseEntity<?> queueStatus(HttpServletRequest req) {
         return call(req, (ctx, ws) -> honcho.get(ctx, "/v3/workspaces/" + ws + "/queue/status", null));
     }
 
     @PostMapping("/search")
+    @Operation(
+        summary = "Workspace-wide semantic search",
+        description = "Proxies `POST /v3/workspaces/{workspaceId}/search`. Body forwarded to Honcho unchanged."
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Honcho search results"),
+        @ApiResponse(responseCode = "400", description = "Missing `X-Honcho-Profile-Id` header",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "404", description = "Profile not found / not owned by current user",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
     public ResponseEntity<?> workspaceSearch(HttpServletRequest req, @RequestBody Object body) {
         return call(req, (ctx, ws) -> honcho.post(ctx, "/v3/workspaces/" + ws + "/search", null, body));
     }
 
     @PostMapping("/dream")
+    @Operation(
+        summary = "Schedule a memory-consolidation dream",
+        description = "Proxies `POST /v3/workspaces/{workspaceId}/schedule_dream`. Body forwarded to Honcho unchanged."
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Honcho response (dream scheduled)"),
+        @ApiResponse(responseCode = "400", description = "Missing `X-Honcho-Profile-Id` header",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "404", description = "Profile not found / not owned by current user",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
     public ResponseEntity<?> scheduleDream(HttpServletRequest req, @RequestBody Object body) {
         return call(req, (ctx, ws) -> honcho.post(ctx, "/v3/workspaces/" + ws + "/schedule_dream", null, body));
     }
 
     @GetMapping("/workspace/info")
+    @Operation(
+        summary = "Get the active workspace + queue snapshot",
+        description = "Convenience composite: returns the workspace record and the current queue status in one call. Internally issues two Honcho requests (`GET /v3/workspaces/{id}` and `GET /v3/workspaces/{id}/queue/status`); if either fails the whole call fails."
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Composite object `{workspace, queue}`"),
+        @ApiResponse(responseCode = "400", description = "Missing `X-Honcho-Profile-Id` header",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "404", description = "Profile not found / not owned by current user",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
     public ResponseEntity<?> workspaceInfo(HttpServletRequest req) {
         return call(req, (ctx, wsId) -> {
             var ws = honcho.get(ctx, "/v3/workspaces/" + wsId, null);

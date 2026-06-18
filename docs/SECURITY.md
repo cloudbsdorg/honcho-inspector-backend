@@ -520,7 +520,30 @@ For a fresh production install:
 
 ---
 
-## 6. Developer hardening checklist
+## 6. Logging
+
+The backend emits **structured JSONL** (one JSON event per line) to both
+`$HONCHO_CONFIG_DIR/logs/honcho-inspector.jsonl` (rolling, gzipped) and
+stdout (for container capture / `kubectl logs` / `docker logs`).
+The JSONL format is chosen so that operators can ingest the stream into
+Loki, Elasticsearch, Datadog, or `jq` without a custom parser. API keys
+(`apiKey=<value>`), plaintext Bearer tokens (`Bearer <token>`), and
+passwords (`password=<value>`, `pass=<value>`) are scrubbed at the
+Jackson output stage by a `MaskingJsonGeneratorDecorator` with the
+regexes documented in [`docs/logging.md`](logging.md) §3. PII fields
+(`session_id`, `user_id`) are **present** in every authenticated
+request's events because they are the only stable correlation key for
+debugging and incident response; the retention justification is
+legitimate interest in service operation (GDPR Art. 6(1)(f)) and the
+on-disk window is bounded by `HONCHO_LOG_MAX_HISTORY` (default 30
+days). Operators in regulated environments should lower
+`HONCHO_LOG_MAX_HISTORY` and ship JSONL to a SIEM with its own
+retention controls. Full policy, schema, sizing math, and
+`jq`/`gunzip` operational examples are in [`docs/logging.md`](logging.md).
+
+---
+
+## 7. Developer hardening checklist
 
 For contributors and PR reviewers:
 
@@ -550,7 +573,7 @@ For contributors and PR reviewers:
 
 ---
 
-## 7. Reporting a vulnerability
+## 8. Reporting a vulnerability
 
 Email `security@revyt...` (TBD by the project owner) with a description
 and reproduction. Do not file public GitHub issues for suspected

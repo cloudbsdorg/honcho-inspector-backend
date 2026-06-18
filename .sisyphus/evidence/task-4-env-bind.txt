@@ -1,0 +1,33 @@
+# Task 4 — env binding verification
+# Confirms HONCHO_PROVIDERS_STRICT_MODE env var binds to honcho.providers.strict-mode
+# in the bundled application.yml.
+
+$ grep -nE '^(honcho:|  providers:|    strict-mode:)' \
+    src/main/resources/application.yml
+33:honcho:
+39:  providers:
+43:    strict-mode: ${HONCHO_PROVIDERS_STRICT_MODE:false}
+
+$ grep -nE 'api-version|request-timeout-ms' src/main/resources/application.yml
+35:  api-version: ${HONCHO_API_VERSION:v3}
+36:  request-timeout-ms: ${HONCHO_REQUEST_TIMEOUT_MS:30000}
+
+# HonchoProperties.java — @ConfigurationProperties(prefix="honcho")
+$ grep -nE 'ConfigurationProperties|@ConfigurationProperties' \
+    src/main/java/com/revytechinc/honchoinspector/config/HonchoProperties.java
+14:@ConfigurationProperties(prefix = "honcho")
+
+# HonchoProperties binding is registered via @EnableConfigurationProperties
+# on the existing HttpClientConfig (related concern; one-line addition).
+$ grep -nE 'EnableConfigurationProperties|HonchoProperties' \
+    src/main/java/com/revytechinc/honchoinspector/config/HttpClientConfig.java
+6:import org.springframework.boot.context.properties.EnableConfigurationProperties;
+12:@EnableConfigurationProperties(HonchoProperties.class)
+
+# HonchoProxyService.java — @Value("${honcho.api-version}") REPLACED
+$ grep -nE '@Value|honchoProperties|HonchoProperties' \
+    src/main/java/com/revytechinc/honchoinspector/service/HonchoProxyService.java
+3:import com.revytechinc.honchoinspector.config.HonchoProperties;
+24:        HonchoProperties honchoProperties
+27:        this.apiVersion = honchoProperties.apiVersion();
+# Note: no @Value annotations remain in HonchoProxyService.

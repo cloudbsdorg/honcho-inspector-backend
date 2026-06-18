@@ -1,0 +1,5 @@
+23:23:35.879 [main] WARN com.revytechinc.honchoinspector.config.HonchoConfigDirResolver -- honcho-inspector config dir [fallback]: /tmp/junit-3673687430804083006/home/.local/etc/honcho-inspector
+23:23:35.879 [main] INFO com.revytechinc.honchoinspector.config.StartupInfoLogger -- honcho-inspector backend ready: port=8080, profiles=[default], config-dir=/tmp/junit-3673687430804083006/home/.local/etc/honcho-inspector [fallback], honcho=https://api.honcho.dev (api=v3, timeout=30000ms), cors=http://localhost:4200, session-ttl=0m
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.089 s -- in com.revytechinc.honchoinspector.config.HonchoConfigDirResolverTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0
+[INFO] BUILD SUCCESS

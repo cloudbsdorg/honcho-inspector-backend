@@ -1,0 +1,7 @@
+[INFO] +- org.springdoc:springdoc-openapi-starter-webmvc-ui:jar:2.6.0:compile
+[INFO] |  +- org.springdoc:springdoc-openapi-starter-webmvc-api:jar:2.6.0:compile
+[INFO] |  |  \- org.springdoc:springdoc-openapi-starter-common:jar:2.6.0:compile
+[INFO] |  |     \- io.swagger.core.v3:swagger-core-jakarta:jar:2.2.22:compile
+[INFO] |  |        +- io.swagger.core.v3:swagger-annotations-jakarta:jar:2.2.22:compile
+[INFO] |  |        +- io.swagger.core.v3:swagger-models-jakarta:jar:2.2.22:compile
+[INFO] |  \- org.webjars:swagger-ui:jar:5.17.14:compile

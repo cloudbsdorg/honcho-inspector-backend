@@ -1,0 +1,37 @@
+=== Idempotency evidence ===
+
+DB with api_version ALREADY present (post-migration shape):
+CREATE TABLE honcho_profiles (
+    id                TEXT PRIMARY KEY,
+    user_id           TEXT NOT NULL,
+    label             TEXT NOT NULL,
+    api_key_encrypted TEXT NOT NULL,
+    base_url          TEXT NOT NULL,
+    workspace_id      TEXT NOT NULL,
+    honcho_user_name  TEXT NOT NULL,
+    api_version       TEXT,
+    created_at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+Migrator's PRAGMA check (mirrors SchemaMigrator.hasColumn):
+  id (type=TEXT)
+  user_id (type=TEXT)
+  label (type=TEXT)
+  api_key_encrypted (type=TEXT)
+  base_url (type=TEXT)
+  workspace_id (type=TEXT)
+  honcho_user_name (type=TEXT)
+  api_version (type=TEXT)
+  created_at (type=TEXT)
+  updated_at (type=TEXT)
+
+Run 1: ALTER skipped (column exists)
+  [no-op] api_version present, SchemaMigrator.hasColumn()=true, ALTER NOT issued
+
+Run 2: ALTER skipped (column exists)
+  [no-op] api_version present, SchemaMigrator.hasColumn()=true, ALTER NOT issued
+
+=== JUnit run for SchemaMigratorTest (real SchemaMigrator class) ===
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.162 s -- in com.revytechinc.honchoinspector.config.SchemaMigratorTest
+[INFO] BUILD SUCCESS

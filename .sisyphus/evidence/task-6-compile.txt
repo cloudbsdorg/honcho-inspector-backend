@@ -1,0 +1,48 @@
+=== T6 compile evidence ===
+
+Date: 2026-06-17 23:59 UTC
+Task: T6 (HonchoProvider interface)
+
+$ mvn -B compile
+
+[INFO] Scanning for projects...
+[INFO]
+[INFO] --- compiler:3.14.0:compile (default-compile) @ honcho-inspector-backend ---
+[INFO] Recompiling the module because of changed source code.
+[INFO] Compiling 32 source files with javac [debug parameters release 25] to target/classes
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  1.335 s
+[INFO] Finished at: 2026-06-17T23:59:24-05:00
+
+--- Files added by T6 (in com.revytechinc.honchoinspector.honcho) ---
+  HonchoCallException.java     (moved from service.HonchoProxyService.HonchoCallException)
+  HonchoProvider.java          (new public interface)
+
+--- Files modified by T6 ---
+  service/HonchoProxyService.java
+    - Removed inner HonchoCallException class
+    - Added import com.revytechinc.honchoinspector.honcho.HonchoCallException
+  controller/HonchoController.java
+    - Changed import from service.HonchoProxyService.HonchoCallException
+      to honcho.HonchoCallException
+  auth/ProfileController.java
+    - Changed import from service.HonchoProxyService.HonchoCallException
+      to honcho.HonchoCallException
+    - Changed catch block from HonchoProxyService.HonchoCallException
+      to unqualified HonchoCallException
+  pom.xml
+    - Added springdoc-openapi-starter-webmvc-ui 2.6.0 (T1's dep, missing)
+    - Added logstash-logback-encoder 7.4 (parallel-work dep, missing)
+
+--- HonchoProvider interface signature ---
+public interface HonchoProvider {
+    Set<HonchoOperation> operations();
+    Set<HonchoApiVersion> supportedVersions();
+    Object execute(HonchoOperation op, HonchoContext ctx, HonchoClient client,
+                   Object requestBody, Map<String, String> pathVars,
+                   Map<String, ?> queryParams) throws HonchoCallException;
+    default String pathTemplate(HonchoOperation op);     // throws UnsupportedOperationException
+    default HttpMethod httpMethod(HonchoOperation op);   // throws UnsupportedOperationException
+}

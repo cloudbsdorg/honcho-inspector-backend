@@ -1,0 +1,29 @@
+{
+  "info": {
+    "title": "Honcho Inspector Backend",
+    "description": "Backend for the Honcho Inspector admin surface.\n\nSits between the Angular UI and one or more Honcho instances.\nKeeps the Honcho API key off the browser, externalizes config\nper-OS convention, and serves a multi-user multi-profile admin\nsurface (one SQLite DB, no external service to run).\n\n## Authentication\n\nThis API does **not** use JWT or OAuth2 Bearer tokens. Every\nauthenticated request must carry the `X-Session-Id` header\nwhose value is the opaque session id returned by\n`POST /api/auth/login`. The session id is a 24-byte random\nhex string stored server-side; send it verbatim on every\nsubsequent request. `POST /api/auth/logout` invalidates it.\n\nHoncho proxy endpoints additionally require the\n`X-Honcho-Profile-Id` header to pick which encrypted profile\n(base URL + API key + workspace) the request is routed to.\n",
+    "contact": {
+      "name": "Honcho Inspector maintainers",
+      "url": "https://github.com/cloudbsdorg/honcho-inspector-backend"
+    },
+    "license": {
+      "name": "BSD-3-Clause",
+      "url": "https://opensource.org/licenses/BSD-3-Clause"
+    },
+    "version": "0.1.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8080",
+      "description": "Local dev \u2014 `mvn spring-boot:run`"
+    },
+    {
+      "url": "https://inspector.example.com",
+      "description": "Production \u2014 behind a TLS-terminating reverse proxy"
+    }
+  ],
+  "openapi_version": "3.0.1",
+  "path_count": 28,
+  "schema_count": 8,
+  "tag_count_unique": 4
+}

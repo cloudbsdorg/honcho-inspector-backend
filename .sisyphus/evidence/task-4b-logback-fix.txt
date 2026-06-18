@@ -1,0 +1,94 @@
+[INFO] Scanning for projects...
+[INFO] 
+[INFO] --------------< com.revytechinc:honcho-inspector-backend >--------------
+[INFO] Building honcho-inspector-backend 0.1.0-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ honcho-inspector-backend ---
+[INFO] Copying 1 resource from src/main/resources to target/classes
+[INFO] Copying 2 resources from src/main/resources to target/classes
+[INFO] 
+[INFO] --- compiler:3.14.0:compile (default-compile) @ honcho-inspector-backend ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ honcho-inspector-backend ---
+[INFO] skip non existing resourceDirectory /home/mlapointe/git/honcho-inspector-backend/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.14.0:testCompile (default-testCompile) @ honcho-inspector-backend ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- surefire:3.5.3:test (default-test) @ honcho-inspector-backend ---
+[INFO] Using auto detected provider org.apache.maven.surefire.junitplatform.JUnitPlatformProvider
+[INFO] 
+[INFO] -------------------------------------------------------
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+[INFO] Running com.revytechinc.honchoinspector.auth.AuthControllerTest
+23:41:12.478 [main] INFO org.springframework.test.context.support.AnnotationConfigContextLoaderUtils -- Could not detect default configuration classes for test class [com.revytechinc.honchoinspector.auth.AuthControllerTest]: AuthControllerTest does not declare any static, non-private, non-final, nested classes annotated with @Configuration.
+23:41:12.537 [main] INFO org.springframework.boot.test.context.SpringBootTestContextBootstrapper -- Found @SpringBootConfiguration com.revytechinc.honchoinspector.DashboardApplication for test class com.revytechinc.honchoinspector.auth.AuthControllerTest
+23:41:12.595 [main] INFO org.springframework.boot.devtools.restart.RestartApplicationListener -- Restart disabled due to context in which it is running
+
+  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+
+ :: Spring Boot ::                (v3.5.0)
+
+{"@timestamp":"2026-06-18T04:41:12.849Z","@version":"1","message":"HV000001: Hibernate Validator 8.0.2.Final","logger_name":"org.hibernate.validator.internal.util.Version","thread_name":"background-preinit","level":"INFO","level_value":20000,"service":"honcho-inspector-backend","version":"0.1.0-SNAPSHOT"}
+{"@timestamp":"2026-06-18T04:41:12.862Z","@version":"1","message":"Starting AuthControllerTest using Java 25.0.3 with PID 1576961 (started by mlapointe in /home/mlapointe/git/honcho-inspector-backend)","logger_name":"com.revytechinc.honchoinspector.auth.AuthControllerTest","thread_name":"main","level":"INFO","level_value":20000,"service":"honcho-inspector-backend","version":"0.1.0-SNAPSHOT"}
+{"@timestamp":"2026-06-18T04:41:12.863Z","@version":"1","message":"No active profile set, falling back to 1 default profile: \"default\"","logger_name":"com.revytechinc.honchoinspector.auth.AuthControllerTest","thread_name":"main","level":"INFO","level_value":20000,"service":"honcho-inspector-backend","version":"0.1.0-SNAPSHOT"}
+{"@timestamp":"2026-06-18T04:41:13.295Z","@version":"1","message":"HikariPool-1 - Starting...","logger_name":"com.zaxxer.hikari.HikariDataSource","thread_name":"main","level":"INFO","level_value":20000,"service":"honcho-inspector-backend","version":"0.1.0-SNAPSHOT"}
+{"@timestamp":"2026-06-18T04:41:13.370Z","@version":"1","message":"HikariPool-1 - Added connection org.sqlite.jdbc4.JDBC4Connection@68e5c7ae","logger_name":"com.zaxxer.hikari.pool.HikariPool","thread_name":"main","level":"INFO","level_value":20000,"service":"honcho-inspector-backend","version":"0.1.0-SNAPSHOT"}
+{"@timestamp":"2026-06-18T04:41:13.372Z","@version":"1","message":"HikariPool-1 - Start completed.","logger_name":"com.zaxxer.hikari.HikariDataSource","thread_name":"main","level":"INFO","level_value":20000,"service":"honcho-inspector-backend","version":"0.1.0-SNAPSHOT"}
+{"@timestamp":"2026-06-18T04:41:13.695Z","@version":"1","message":"Initializing Spring TestDispatcherServlet ''","logger_name":"org.springframework.boot.test.mock.web.SpringBootMockServletContext","thread_name":"main","level":"INFO","level_value":20000,"service":"honcho-inspector-backend","version":"0.1.0-SNAPSHOT"}
+{"@timestamp":"2026-06-18T04:41:13.696Z","@version":"1","message":"Initializing Servlet ''","logger_name":"org.springframework.test.web.servlet.TestDispatcherServlet","thread_name":"main","level":"INFO","level_value":20000,"service":"honcho-inspector-backend","version":"0.1.0-SNAPSHOT"}
+{"@timestamp":"2026-06-18T04:41:13.696Z","@version":"1","message":"Completed initialization in 0 ms","logger_name":"org.springframework.test.web.servlet.TestDispatcherServlet","thread_name":"main","level":"INFO","level_value":20000,"service":"honcho-inspector-backend","version":"0.1.0-SNAPSHOT"}
+{"@timestamp":"2026-06-18T04:41:13.712Z","@version":"1","message":"Started AuthControllerTest in 1.12 seconds (process running for 1.576)","logger_name":"com.revytechinc.honchoinspector.auth.AuthControllerTest","thread_name":"main","level":"INFO","level_value":20000,"service":"honcho-inspector-backend","version":"0.1.0-SNAPSHOT"}
+{"@timestamp":"2026-06-18T04:41:13.714Z","@version":"1","message":"honcho-inspector config dir (LINUX): /etc/honcho-inspector","logger_name":"com.revytechinc.honchoinspector.config.HonchoConfigDirResolver","thread_name":"main","level":"INFO","level_value":20000,"service":"honcho-inspector-backend","version":"0.1.0-SNAPSHOT"}
+{"@timestamp":"2026-06-18T04:41:13.715Z","@version":"1","message":"honcho-inspector config dir /etc/honcho-inspector is unwritable (java.nio.file.AccessDeniedException: /etc/honcho-inspector); falling back to user-local /home/mlapointe/.local/etc/honcho-inspector","logger_name":"com.revytechinc.honchoinspector.config.HonchoConfigDirResolver","thread_name":"main","level":"WARN","level_value":30000,"service":"honcho-inspector-backend","version":"0.1.0-SNAPSHOT"}
+{"@timestamp":"2026-06-18T04:41:13.715Z","@version":"1","message":"honcho-inspector config dir [fallback]: /home/mlapointe/.local/etc/honcho-inspector","logger_name":"com.revytechinc.honchoinspector.config.HonchoConfigDirResolver","thread_name":"main","level":"WARN","level_value":30000,"service":"honcho-inspector-backend","version":"0.1.0-SNAPSHOT"}
+{"@timestamp":"2026-06-18T04:41:13.716Z","@version":"1","message":"honcho-inspector backend ready: port=8080, profiles=[default], config-dir=/home/mlapointe/.local/etc/honcho-inspector [fallback], honcho=https://api.honcho.dev (api=v3, timeout=30000ms), cors=http://localhost:4200,http://127.0.0.1:4200, session-ttl=0m","logger_name":"com.revytechinc.honchoinspector.config.StartupInfoLogger","thread_name":"main","level":"INFO","level_value":20000,"service":"honcho-inspector-backend","version":"0.1.0-SNAPSHOT"}
+{"@timestamp":"2026-06-18T04:41:16.292Z","@version":"1","message":"Resolved [org.springframework.web.bind.MethodArgumentNotValidException: Validation failed for argument [0] in public org.springframework.http.ResponseEntity<?> com.revytechinc.honchoinspector.auth.AuthController.register(com.revytechinc.honchoinspector.auth.AuthController$CredentialsDto): [Field error in object 'credentialsDto' on field 'password': rejected value [short]; codes [Size.credentialsDto.password,Size.password,Size.java.lang.String,Size]; arguments [org.springframework.context.support.DefaultMessageSourceResolvable: codes [credentialsDto.password,password]; arguments []; default message [password],2147483647,8]; default message [size must be between 8 and 2147483647]] ]","logger_name":"org.springframework.web.servlet.mvc.support.DefaultHandlerExceptionResolver","thread_name":"main","level":"WARN","level_value":30000,"service":"honcho-inspector-backend","version":"0.1.0-SNAPSHOT"}
+[INFO] Tests run: 14, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 6.716 s -- in com.revytechinc.honchoinspector.auth.AuthControllerTest
+[INFO] Running com.revytechinc.honchoinspector.honcho.HonchoApiVersionTest
+[INFO] Tests run: 20, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.044 s -- in com.revytechinc.honchoinspector.honcho.HonchoApiVersionTest
+[INFO] Running com.revytechinc.honchoinspector.honcho.HonchoOperationTest
+[INFO] Tests run: 31, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.015 s -- in com.revytechinc.honchoinspector.honcho.HonchoOperationTest
+[INFO] Running com.revytechinc.honchoinspector.config.HonchoConfigDirResolverTest
+{"@timestamp":"2026-06-18T04:41:19.207Z","@version":"1","message":"honcho-inspector config dir (explicit): /tmp/junit-14001039362846186579/cfg","logger_name":"com.revytechinc.honchoinspector.config.HonchoConfigDirResolver","thread_name":"main","level":"INFO","level_value":20000,"service":"honcho-inspector-backend","version":"0.1.0-SNAPSHOT"}
+{"@timestamp":"2026-06-18T04:41:19.208Z","@version":"1","message":"honcho-inspector config dir [created]: /tmp/junit-14001039362846186579/cfg","logger_name":"com.revytechinc.honchoinspector.config.HonchoConfigDirResolver","thread_name":"main","level":"INFO","level_value":20000,"service":"honcho-inspector-backend","version":"0.1.0-SNAPSHOT"}
+{"@timestamp":"2026-06-18T04:41:19.212Z","@version":"1","message":"honcho-inspector config dir (explicit): /tmp/junit-14489102579238095905/etc/honcho-inspector","logger_name":"com.revytechinc.honchoinspector.config.HonchoConfigDirResolver","thread_name":"main","level":"INFO","level_value":20000,"service":"honcho-inspector-backend","version":"0.1.0-SNAPSHOT"}
+{"@timestamp":"2026-06-18T04:41:19.213Z","@version":"1","message":"honcho-inspector config dir /tmp/junit-14489102579238095905/etc/honcho-inspector is unwritable (java.nio.file.AccessDeniedException: /tmp/junit-14489102579238095905/etc/honcho-inspector); falling back to user-local /tmp/junit-14489102579238095905/home/.local/etc/honcho-inspector","logger_name":"com.revytechinc.honchoinspector.config.HonchoConfigDirResolver","thread_name":"main","level":"WARN","level_value":30000,"service":"honcho-inspector-backend","version":"0.1.0-SNAPSHOT"}
+{"@timestamp":"2026-06-18T04:41:19.213Z","@version":"1","message":"Cannot create config dir at either /tmp/junit-14489102579238095905/etc/honcho-inspector or /tmp/junit-14489102579238095905/home/.local/etc/honcho-inspector. System error: java.nio.file.AccessDeniedException: /tmp/junit-14489102579238095905/etc/honcho-inspector | Fallback error: java.nio.file.AccessDeniedException: /tmp/junit-14489102579238095905/home/.local/etc","logger_name":"com.revytechinc.honchoinspector.config.HonchoConfigDirResolver","thread_name":"main","level":"ERROR","level_value":40000,"service":"honcho-inspector-backend","version":"0.1.0-SNAPSHOT"}
+{"@timestamp":"2026-06-18T04:41:19.215Z","@version":"1","message":"honcho-inspector config dir (explicit): /tmp/junit-3915551292617619459/cfg","logger_name":"com.revytechinc.honchoinspector.config.HonchoConfigDirResolver","thread_name":"main","level":"INFO","level_value":20000,"service":"honcho-inspector-backend","version":"0.1.0-SNAPSHOT"}
+{"@timestamp":"2026-06-18T04:41:19.215Z","@version":"1","message":"honcho-inspector config dir [created]: /tmp/junit-3915551292617619459/cfg","logger_name":"com.revytechinc.honchoinspector.config.HonchoConfigDirResolver","thread_name":"main","level":"INFO","level_value":20000,"service":"honcho-inspector-backend","version":"0.1.0-SNAPSHOT"}
+{"@timestamp":"2026-06-18T04:41:19.215Z","@version":"1","message":"honcho-inspector backend ready: port=8080, profiles=[default], config-dir=/tmp/junit-3915551292617619459/cfg [created], honcho=https://api.honcho.dev (api=v3, timeout=30000ms), cors=http://localhost:4200, session-ttl=0m","logger_name":"com.revytechinc.honchoinspector.config.StartupInfoLogger","thread_name":"main","level":"INFO","level_value":20000,"service":"honcho-inspector-backend","version":"0.1.0-SNAPSHOT"}
+{"@timestamp":"2026-06-18T04:41:19.217Z","@version":"1","message":"honcho-inspector config dir (explicit): /tmp/junit-13590221478691878277/cfg","logger_name":"com.revytechinc.honchoinspector.config.HonchoConfigDirResolver","thread_name":"main","level":"INFO","level_value":20000,"service":"honcho-inspector-backend","version":"0.1.0-SNAPSHOT"}
+{"@timestamp":"2026-06-18T04:41:19.217Z","@version":"1","message":"honcho-inspector config dir [created]: /tmp/junit-13590221478691878277/cfg","logger_name":"com.revytechinc.honchoinspector.config.HonchoConfigDirResolver","thread_name":"main","level":"INFO","level_value":20000,"service":"honcho-inspector-backend","version":"0.1.0-SNAPSHOT"}
+{"@timestamp":"2026-06-18T04:41:19.218Z","@version":"1","message":"honcho-inspector config dir (explicit): /tmp/junit-4048457408752169905/etc/honcho-inspector","logger_name":"com.revytechinc.honchoinspector.config.HonchoConfigDirResolver","thread_name":"main","level":"INFO","level_value":20000,"service":"honcho-inspector-backend","version":"0.1.0-SNAPSHOT"}
+{"@timestamp":"2026-06-18T04:41:19.219Z","@version":"1","message":"honcho-inspector config dir /tmp/junit-4048457408752169905/etc/honcho-inspector is unwritable (java.nio.file.AccessDeniedException: /tmp/junit-4048457408752169905/etc/honcho-inspector); falling back to user-local /tmp/junit-4048457408752169905/home/.local/etc/honcho-inspector","logger_name":"com.revytechinc.honchoinspector.config.HonchoConfigDirResolver","thread_name":"main","level":"WARN","level_value":30000,"service":"honcho-inspector-backend","version":"0.1.0-SNAPSHOT"}
+{"@timestamp":"2026-06-18T04:41:19.219Z","@version":"1","message":"honcho-inspector config dir [fallback]: /tmp/junit-4048457408752169905/home/.local/etc/honcho-inspector","logger_name":"com.revytechinc.honchoinspector.config.HonchoConfigDirResolver","thread_name":"main","level":"WARN","level_value":30000,"service":"honcho-inspector-backend","version":"0.1.0-SNAPSHOT"}
+{"@timestamp":"2026-06-18T04:41:19.219Z","@version":"1","message":"honcho-inspector backend ready: port=8080, profiles=[default], config-dir=/tmp/junit-4048457408752169905/home/.local/etc/honcho-inspector [fallback], honcho=https://api.honcho.dev (api=v3, timeout=30000ms), cors=http://localhost:4200, session-ttl=0m","logger_name":"com.revytechinc.honchoinspector.config.StartupInfoLogger","thread_name":"main","level":"INFO","level_value":20000,"service":"honcho-inspector-backend","version":"0.1.0-SNAPSHOT"}
+{"@timestamp":"2026-06-18T04:41:19.273Z","@version":"1","message":"honcho-inspector config dir (explicit): /tmp/junit-10285851477802927196/etc/honcho-inspector","logger_name":"com.revytechinc.honchoinspector.config.HonchoConfigDirResolver","thread_name":"main","level":"INFO","level_value":20000,"service":"honcho-inspector-backend","version":"0.1.0-SNAPSHOT"}
+{"@timestamp":"2026-06-18T04:41:19.274Z","@version":"1","message":"Cannot create config dir at /tmp/junit-10285851477802927196/etc/honcho-inspector (running as root, no fallback): java.nio.file.AccessDeniedException: /tmp/junit-10285851477802927196/etc/honcho-inspector","logger_name":"com.revytechinc.honchoinspector.config.HonchoConfigDirResolver","thread_name":"main","level":"ERROR","level_value":40000,"service":"honcho-inspector-backend","version":"0.1.0-SNAPSHOT"}
+{"@timestamp":"2026-06-18T04:41:19.276Z","@version":"1","message":"honcho-inspector config dir (explicit): /tmp/junit-3963875487652347109/etc/honcho-inspector","logger_name":"com.revytechinc.honchoinspector.config.HonchoConfigDirResolver","thread_name":"main","level":"INFO","level_value":20000,"service":"honcho-inspector-backend","version":"0.1.0-SNAPSHOT"}
+{"@timestamp":"2026-06-18T04:41:19.276Z","@version":"1","message":"honcho-inspector config dir /tmp/junit-3963875487652347109/etc/honcho-inspector is unwritable (java.nio.file.AccessDeniedException: /tmp/junit-3963875487652347109/etc/honcho-inspector); falling back to user-local /tmp/junit-3963875487652347109/home/.local/etc/honcho-inspector","logger_name":"com.revytechinc.honchoinspector.config.HonchoConfigDirResolver","thread_name":"main","level":"WARN","level_value":30000,"service":"honcho-inspector-backend","version":"0.1.0-SNAPSHOT"}
+{"@timestamp":"2026-06-18T04:41:19.277Z","@version":"1","message":"honcho-inspector config dir [fallback]: /tmp/junit-3963875487652347109/home/.local/etc/honcho-inspector","logger_name":"com.revytechinc.honchoinspector.config.HonchoConfigDirResolver","thread_name":"main","level":"WARN","level_value":30000,"service":"honcho-inspector-backend","version":"0.1.0-SNAPSHOT"}
+[INFO] Tests run: 17, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.075 s -- in com.revytechinc.honchoinspector.config.HonchoConfigDirResolverTest
+[INFO] Running com.revytechinc.honchoinspector.config.CorsConfigTest
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.002 s -- in com.revytechinc.honchoinspector.config.CorsConfigTest
+[INFO] 
+[INFO] Results:
+[INFO] 
+[INFO] Tests run: 87, Failures: 0, Errors: 0, Skipped: 0
+[INFO] 
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  7.851 s
+[INFO] Finished at: 2026-06-17T23:41:19-05:00
+[INFO] ------------------------------------------------------------------------

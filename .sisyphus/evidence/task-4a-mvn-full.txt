@@ -1,0 +1,43 @@
+[INFO] Running com.revytechinc.honchoinspector.honcho.HonchoApiVersionTest
+[INFO] Tests run: 20, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.083 s -- in com.revytechinc.honchoinspector.honcho.HonchoApiVersionTest
+[INFO] Running com.revytechinc.honchoinspector.honcho.HonchoOperationTest
+[INFO] Tests run: 31, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.025 s -- in com.revytechinc.honchoinspector.honcho.HonchoOperationTest
+[INFO] Running com.revytechinc.honchoinspector.config.HonchoConfigDirResolverTest
+23:25:07.805 [main] INFO com.revytechinc.honchoinspector.config.HonchoConfigDirResolver -- honcho-inspector config dir (explicit): /tmp/junit-684004270175912261/cfg
+23:25:07.807 [main] INFO com.revytechinc.honchoinspector.config.HonchoConfigDirResolver -- honcho-inspector config dir [created]: /tmp/junit-684004270175912261/cfg
+23:25:07.814 [main] INFO com.revytechinc.honchoinspector.config.HonchoConfigDirResolver -- honcho-inspector config dir (explicit): /tmp/junit-2096794836909329512/etc/honcho-inspector
+23:25:07.815 [main] WARN com.revytechinc.honchoinspector.config.HonchoConfigDirResolver -- honcho-inspector config dir /tmp/junit-2096794836909329512/etc/honcho-inspector is unwritable (java.nio.file.AccessDeniedException: /tmp/junit-2096794836909329512/etc/honcho-inspector); falling back to user-local /tmp/junit-2096794836909329512/home/.local/etc/honcho-inspector
+23:25:07.815 [main] ERROR com.revytechinc.honchoinspector.config.HonchoConfigDirResolver -- Cannot create config dir at either /tmp/junit-2096794836909329512/etc/honcho-inspector or /tmp/junit-2096794836909329512/home/.local/etc/honcho-inspector. System error: java.nio.file.AccessDeniedException: /tmp/junit-2096794836909329512/etc/honcho-inspector | Fallback error: java.nio.file.AccessDeniedException: /tmp/junit-2096794836909329512/home/.local/etc
+23:25:07.825 [main] INFO com.revytechinc.honchoinspector.config.HonchoConfigDirResolver -- honcho-inspector config dir (explicit): /tmp/junit-822013804684726864/cfg
+23:25:07.825 [main] INFO com.revytechinc.honchoinspector.config.HonchoConfigDirResolver -- honcho-inspector config dir [created]: /tmp/junit-822013804684726864/cfg
+23:25:07.828 [main] INFO com.revytechinc.honchoinspector.config.HonchoConfigDirResolver -- honcho-inspector config dir (explicit): /tmp/junit-16087258023808325013/cfg
+23:25:07.828 [main] INFO com.revytechinc.honchoinspector.config.HonchoConfigDirResolver -- honcho-inspector config dir [created]: /tmp/junit-16087258023808325013/cfg
+23:25:07.833 [main] INFO com.revytechinc.honchoinspector.config.HonchoConfigDirResolver -- honcho-inspector config dir (explicit): /tmp/junit-15405057186170736857/etc/honcho-inspector
+23:25:07.834 [main] WARN com.revytechinc.honchoinspector.config.HonchoConfigDirResolver -- honcho-inspector config dir /tmp/junit-15405057186170736857/etc/honcho-inspector is unwritable (java.nio.file.AccessDeniedException: /tmp/junit-15405057186170736857/etc/honcho-inspector); falling back to user-local /tmp/junit-15405057186170736857/home/.local/etc/honcho-inspector
+23:25:07.834 [main] WARN com.revytechinc.honchoinspector.config.HonchoConfigDirResolver -- honcho-inspector config dir [fallback]: /tmp/junit-15405057186170736857/home/.local/etc/honcho-inspector
+23:25:08.246 [main] INFO com.revytechinc.honchoinspector.config.HonchoConfigDirResolver -- honcho-inspector config dir (explicit): /tmp/junit-17446774916410440271/etc/honcho-inspector
+23:25:08.247 [main] ERROR com.revytechinc.honchoinspector.config.HonchoConfigDirResolver -- Cannot create config dir at /tmp/junit-17446774916410440271/etc/honcho-inspector (running as root, no fallback): java.nio.file.AccessDeniedException: /tmp/junit-17446774916410440271/etc/honcho-inspector
+23:25:08.249 [main] INFO com.revytechinc.honchoinspector.config.HonchoConfigDirResolver -- honcho-inspector config dir (explicit): /tmp/junit-14794849216708489054/etc/honcho-inspector
+23:25:08.249 [main] WARN com.revytechinc.honchoinspector.config.HonchoConfigDirResolver -- honcho-inspector config dir /tmp/junit-14794849216708489054/etc/honcho-inspector is unwritable (java.nio.file.AccessDeniedException: /tmp/junit-14794849216708489054/etc/honcho-inspector); falling back to user-local /tmp/junit-14794849216708489054/home/.local/etc/honcho-inspector
+23:25:08.249 [main] WARN com.revytechinc.honchoinspector.config.HonchoConfigDirResolver -- honcho-inspector config dir [fallback]: /tmp/junit-14794849216708489054/home/.local/etc/honcho-inspector
+[INFO] Tests run: 17, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.478 s -- in com.revytechinc.honchoinspector.config.HonchoConfigDirResolverTest
+[INFO] Running com.revytechinc.honchoinspector.config.CorsConfigTest
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.005 s -- in com.revytechinc.honchoinspector.config.CorsConfigTest
+[INFO] Tests run: 73, Failures: 0, Errors: 0, Skipped: 0
+[INFO] BUILD SUCCESS
+
+# Note: 16 pre-existing test failures in baseline (not from T4a):
+#   - AuthControllerTest: 14 errors (all "ApplicationContext failure threshold exceeded")
+#   - HonchoConfigDirResolverTest$DefaultResolveTest, $ExplicitOverrideTest: 1 error each
+# Root cause for both: pre-existing T4b logback-spring.xml regex bug at line 122:
+#   <value>(?i)("?password"?\s*[:=]\s*"?)([^"\s,}]+)</value>
+# The unescaped `}` in `[^"\s,}]+` closes the character class prematurely, causing
+# java.util.regex.PatternSyntaxException at Spring context startup. This blocks
+# any test that loads Spring context (which includes both AuthControllerTest and
+# the @SpringBootTest inner classes of HonchoConfigDirResolverTest).
+# T4b is the owner of logback-spring.xml; T4a (this task) does not modify it.
+
+# Per-T4a scope (HonchoConfigDirResolverTest, the only test class T4a owns):
+#   10 prior tests + 5 new resolveOrCreate tests + 2 new StartupInfoLogger tests = 17
+# All 17 pass. See task-4a-create-dir.txt, task-4a-fallback.txt,
+# task-4a-double-fail.txt, task-4a-root-skip.txt, task-4a-startup.txt for per-scenario output.
