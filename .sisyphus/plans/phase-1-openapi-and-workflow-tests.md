@@ -2590,7 +2590,7 @@ Max Concurrent: 8 (Wave 2)
   - Message: `test(auth): add workflow integration tests (register/login/me/logout + negative paths)`
   - Files: new `AuthWorkflowIntegrationTest.java`
 
-- [ ] 25. Workflow integration tests: profile CRUD + reveal + test
+- [x] 25. Workflow integration tests: profile CRUD + reveal + test
 
   **What to do**:
   - Create `src/test/java/com/revytechinc/honchoinspector/auth/ProfileWorkflowIntegrationTest.java`:
@@ -2645,7 +2645,7 @@ Max Concurrent: 8 (Wave 2)
   - Message: `test(profile): add workflow integration tests (CRUD + reveal + test + negative paths)`
   - Files: new `ProfileWorkflowIntegrationTest.java`
 
-- [ ] 26. Workflow integration tests: proxy (peers → sessions → messages) against Mock Honcho + live (gated)
+- [x] 26. Workflow integration tests: proxy (peers → sessions → messages) against Mock Honcho + live (gated)
 
   **What to do**:
   - Create `src/test/java/com/revytechinc/honchoinspector/controller/HonchoProxyWorkflowIntegrationTest.java`:
