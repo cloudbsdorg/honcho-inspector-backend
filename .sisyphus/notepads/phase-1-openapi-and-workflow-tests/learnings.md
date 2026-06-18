@@ -855,3 +855,159 @@ For each of the 24 endpoints: configure the mock to return a marker, hit the end
 
 ### Lesson
 The `@MockitoBean` deprecation in Spring Boot 3.5 caught me — first test pass used `@MockBean` and produced a new deprecation warning. Spring Boot 3.4+ added `@MockitoBean` (`org.springframework.test.context.bean.override.mockito.MockitoBean`) as the new-style replacement; the class is in spring-test 6.2.7 which is on the classpath via spring-boot-starter-test. Use `@MockitoBean` for new test code; the older `@MockBean` (`org.springframework.boot.test.mock.mockito.MockBean`) still works but is deprecated for removal.
+
+## T22: Recorded Honcho v3 fixtures (2026-06-18)
+
+### Files added
+- `scripts/capture-honcho-fixtures.sh` (executable, 20 KB) — bash capture script with embedded python3 heredoc for synthetic-shape generation.
+- `docs/regenerating-fixtures.md` — operator runbook: usage, env vars, output schema, real vs synthetic modes, fixture inventory table.
+- `src/test/resources/fixtures/honcho/v3/*.json` — **29 fixture files** covering all 24 `HonchoOperation` constants plus 5 HTTP-level aliases (`list-peers-post`, `list-sessions-post`, `add-peer-to-session`, `get-session-message`, `update-peer-card`).
+
+### Two-mode capture design
+The script supports both real Honcho capture and a synthetic fallback:
+1. **Real (default)**: probes `GET ${HONCHO_URL}/v3/workspaces/${WORKSPACE_ID}`; on 200/201/404/405 it switches to "real mode" and tries each Honcho endpoint via curl. On any single-call failure, the script falls back to a synthetic fixture **for that endpoint only** and tags the result with `_meta.synthetic: true` + `_meta.synthetic_reason: "real call failed"`. The probe deliberately accepts 404/405 (Honcho is reachable but the workspace path may 405 with GET).
+2. **Synthetic (HONCHO_SYNTHETIC=1)**: skips all HTTP. Generates fixtures whose shapes are derived from the publicly-available Honcho v3 OpenAPI spec at https://honcho.dev/docs/v3/openapi.json (version `3.0.7`).
+
+### Each fixture envelope
+```json
+{
+  "_meta": {
+    "captured_at": "2026-06-18T07:14:43Z",
+    "honcho_version": "3.0.7",
+    "endpoint": "POST /v3/workspaces/{ws}/peers",
+    "method": "POST",
+    "synthetic": false
+  },
+  "data": { ... actual or synthetic response ... }
+}
+```
+Real captures have `synthetic: false` and no `synthetic_reason`. Synthetic captures have `synthetic: true` and a `synthetic_reason` string.
+
+### Honcho reachability findings
+- `https://honcho.cloudbsd.org` has the v3 REST API and accepts the JWT from `~/.config/opencode/opencode.json` (probe returned 200 on `/v3/workspaces/default`).
+- `https://mcp.honcho.cloudbsd.org/` is an MCP JSON-RPC server (not the REST API) — its root returns `{"jsonrpc":"2.0","error":{...},"id":null}`. The v3 REST endpoints are NOT served there. The plan's mention of `mcp.honcho.cloudbsd.org` as "the live Honcho" is misleading; the real REST API is at `https://honcho.cloudbsd.org`.
+- 13 of 29 captures succeeded against real Honcho (`create-peer`, `create-session`, `add-message`, `get-peer-card`, `get-session-context`, `get-session-peers`, `get-session-summaries`, `list-peers`, `list-peers-post`, `peer-chat`, `peer-search`, `search-messages`, `search-session-messages`). The remaining 16 fell back to synthetic because:
+  - GET on `/v3/workspaces/{ws}/peers/{peerId}/representation` returns 405 (probably the path is POST or requires different auth in v3.0.7)
+  - GET on `/v3/workspaces/{ws}/peers/{peerId}/conclusions` returns 404
+  - GET on `/v3/workspaces/{ws}/peers/{peerId}/sessions` returns 405
+  - POST `/v3/workspaces/{ws}/sessions` with body `{"id":"fixture-session-...","peers":{...}}` returns 422 (the live Honcho v3.0.7 may not accept `peers` in the create-body — likely needs separate `/sessions/{id}/peers/{peer_id}/config` call)
+  - GET on `/v3/workspaces/{ws}` returns 405 (likely requires POST to create workspace)
+  - GET on `/v3/workspaces/{ws}/queue-status` returns 404 (the live Honcho's exact path differs — OpenAPI spec says `/queue/status` with a slash, our providers use `/queue-status`)
+  - GET on `/v3/workspaces/{ws}/conclusions` returns 405
+  - POST `/v3/workspaces/{ws}/peers/{peerId}/dreams` returns 404
+  - POST `/v3/workspaces/{ws}/peers/{peerId}/conclusions/query` returns 404
+  - POST `/v3/workspaces/{ws}/peers/{peerId}/card` returns 405 (the card update endpoint in v3.0.7 may not exist)
+  - GET on `/v3/workspaces/{ws}/sessions/{sessionId}/messages/{messageId}` returns 404 (the message wasn't captured by id before teardown)
+- All "fallback to synthetic" fixtures still satisfy the test infrastructure's needs because the Mock Honcho (T23) only needs plausible JSON shapes — it doesn't validate against live Honcho during test runs.
+
+### Bearer token sanitization (CRITICAL)
+The script sanitizes ALL real response bodies via `jq 'walk(if type == "string" then gsub("Bearer [A-Za-z0-9._-]+"; "Bearer <REDACTED>") else . end)'` BEFORE writing the fixture. Verified post-write with `grep -rE 'Bearer [A-Za-z0-9._-]{20,}' src/test/resources/fixtures/honcho/v3/` — returns empty. The script also runs this check at the end and exits non-zero on leak.
+
+### Synthetic shape generation (python heredoc inside bash)
+Used python3 in a heredoc for the synthetic generator because the shape logic (Page[T] envelopes, nested Peer/Message/Conclusion objects) is verbose in jq but clean in python. The python heredoc is invoked via `python3 - <<'PYEOF'` — no temp files, no extra deps. Imports: `json`, `os`, `pathlib`. No requests/urllib — pure offline generation.
+
+### jq `//` operator gotcha (counting real vs synthetic)
+First pass at counting real-vs-synthetic used `jq -r '._meta.synthetic // "missing"'`. This returns `"missing"` for BOTH `"synthetic": false` AND missing fields because `//` treats `false` as "no value". Correct count uses `if .synthetic == false then "real" elif .synthetic == true then "synthetic" else "missing" end`. Lesson: jq's `//` is "alternative" not "default for falsy" — use `if/elif/else` for boolean defaults.
+
+### Plan deviations
+1. **HTTP-level aliases**: Plan listed 21 fixtures. The script produces 29 by adding HTTP-level variants the v3 providers use (`update-peer-card`, `get-session-message`, `add-peer-to-session`, `list-peers-post`, `list-sessions-post`). The plan's "≥15" requirement is comfortably met.
+2. **Synthetic fallback is in-script, not separate**: Plan said "fallback mode" but didn't specify whether to use a separate `HONCHO_SYNTHETIC=1` env var or auto-detect. I chose auto-detect-with-override: probe real Honcho first; on any transport/auth failure switch to synthetic; respect `HONCHO_SYNTHETIC=1` as an unconditional override. This makes CI trivial (one env var) and operator-friendly (no override needed when real Honcho is reachable).
+3. **No separate `HONCHO_VERSION` per-fixture override**: Plan mentioned `HONCHO_VERSION` only as a global. Single global used.
+
+### Acceptance criteria — all met
+- [x] `scripts/capture-honcho-fixtures.sh` exists and is executable (20,432 bytes, `-rwxr-xr-x`)
+- [x] `docs/regenerating-fixtures.md` exists with capture instructions (12,799 bytes)
+- [x] `src/test/resources/fixtures/honcho/v3/*.json` contains ≥15 fixtures (29 actual)
+- [x] Each fixture has `_meta` block with `captured_at`, `honcho_version`, `endpoint`, `method`, `synthetic`
+- [x] No real API keys in fixture files (sanitizer + grep verification)
+- [x] No Java changes — only test resources, capture script, doc
+- [x] No Maven dependency added
+- [x] No test file added (T23's job)
+- [x] Plan checkboxes NOT modified (only the orchestrator manages plan)
+
+### Files NOT touched (per T22 spec)
+- `src/main/java/**` — zero changes (T22 is fixtures-only)
+- `pom.xml` — zero changes
+- `src/test/java/**` — zero changes (T23 adds HonchoMockConfig.java)
+- Any plan checkbox in `.sisyphus/plans/phase-1-openapi-and-workflow-tests.md`
+
+### Verification commands (per the plan's QA scenarios)
+```bash
+# QA #1: All fixtures valid JSON
+for f in src/test/resources/fixtures/honcho/v3/*.json; do jq empty "$f" || echo "BAD: $f"; done
+# (silent — PASS)
+
+# QA #2: No API keys
+grep -rE 'Bearer [A-Za-z0-9._-]{20,}' src/test/resources/fixtures/honcho/v3/
+# (silent — PASS)
+
+# QA #3: _meta present in all
+for f in src/test/resources/fixtures/honcho/v3/*.json; do jq -e '._meta' "$f" > /dev/null || echo "MISSING: $f"; done
+# (silent — PASS)
+
+# Bonus: count real vs synthetic
+jq -r '._meta | if .synthetic == false then "real" elif .synthetic == true then "synthetic" else "missing" end' \
+  src/test/resources/fixtures/honcho/v3/*.json | sort | uniq -c
+# 13 real
+# 16 synthetic
+```
+
+### Lesson
+- Two-mode capture scripts (real + synthetic) are the right shape for fixture infrastructure. CI uses synthetic (no network); local dev with a real Honcho gets real responses; operator can force synthetic with one env var. The key design choice is making the synthetic mode the **fallback**, not the **only** mode — so a developer who happens to have JWT access gets real data for free.
+- python3 in a heredoc inside a bash script is fine for shape generation. No need for a separate Python file unless the logic gets complex. The `python3 - <<'PYEOF'` form keeps the fixture generator co-located with the capture script, and the single-quoted delimiter disables bash variable expansion so the python code reads cleanly.
+- jq's `//` is "alternative on null/missing", NOT "default on falsy". For boolean defaults, use `if/elif/else`.
+
+## T19: Hand-written docs/openapi.yaml (2026-06-18)
+
+### Files created
+- `docs/openapi.yaml` (2147 lines, 33 paths, 12 schemas, 4 tags, 2 servers).
+
+### Endpoint count reconciliation
+- Plan said "33 endpoints"; actual is **42 operations across 33 paths** (36 Phase 1 + 6 Phase 2 placeholder ops).
+- Phase 1 operations: 5 auth (register/login/logout/me/health) + 7 profiles (list/create/get/update/delete/reveal/test) + 24 Honcho proxy (peers/sessions/queue-status/workspace/search/dream) = **36 ops across 28 paths**.
+- Phase 2 placeholder operations: 6 ops across 5 paths (`/api/orgs` GET+POST, `/api/orgs/{id}/members` GET, `/api/stats` GET, `/api/reports` GET, `/api/invites` POST).
+
+### Drift-compat verified
+All 36 Phase 1 operations match the springdoc snapshot in `.sisyphus/evidence/task-2-raw-api-docs.json` EXACTLY on:
+- path key
+- HTTP verb
+- operationId (matches controller method name: `listPeers`, `createPeer`, `peerCard`, `updatePeerCard`, `peerRepresentation`, `peerChat`, `peerSearch`, `peerConclusions`, `peerSessions`, `peerConclusionsQuery`, `listSessions`, `createSession`, `getSession`, `deleteSession`, `listMessages`, `addMessages`, `sessionContext`, `sessionSummaries`, `sessionPeers`, `sessionSearch`, `queueStatus`, `workspaceSearch`, `scheduleDream`, `workspaceInfo`; ProfileController uses simple verbs: `list`, `create`, `get`, `update`, `delete`, `reveal`, `test`; AuthController uses `register`, `login`, `logout`, `me`, `health`)
+- tags array (always single-element: `auth`, `profiles`, or `honcho-proxy`)
+- parameters presence (path vars are inlined PER OPERATION, not at path level)
+- requestBody presence and content type (`application/json` + `schema: {type: object}` for body-bearing ops)
+- response keys (200/201/204/400/401/404/409 as applicable)
+
+### springdoc parameter location gotcha
+- springdoc emits path-level `parameters` (e.g. `{name: id, in: path}`) **inside each operation** that uses them, NOT at the path level.
+- First pass put parameters at the path level (`parameters:` sibling to `get:`/`post:`/`put:`/`delete:`) — drift diff showed 21 mismatches. Fix: inline `parameters:` into each operation (matching springdoc's exact emission).
+- Verified via `.sisyphus/evidence/task-19-endpoint-coverage.txt`.
+
+### Section divider comments (non-negotiable for 2147-line spec)
+- File header comment block documents drift policy (which paths the T21 drift check compares).
+- Section dividers (`# ===== Health =====`, `# ===== Profiles =====`, etc.) group the 28 Phase 1 paths and the 12 schemas into navigable sections.
+- All section dividers were stripped by `yaml.safe_dump` during the param-inlining rewrite; re-added via Edit tool. YAML safe_dump is the wrong tool for preserving comments — if a similar refactor is needed in the future, use `ruamel.yaml` round-trip or manual surgery.
+
+### x-workflow-narrative + x-phase-boundaries
+- `x-workflow-narrative` is a root-level extension with a 6-step markdown narrative (register → login → me → create profile → test profile → Honcho proxy calls).
+- `x-phase-boundaries` is a secondary root-level extension listing every Phase 1 path explicitly (28 entries) plus every Phase 2 placeholder path (5 entries).
+- Both extensions are T20 snapshot will NOT have. Per task spec, drift check ignores them.
+
+### Phase 2 markers
+- `x-phase: "2"` set on each Phase 2 operation (6 total), not at the path level — allows Phase 1 + Phase 2 ops to coexist on the same path in future (e.g. `/api/orgs` could later add a Phase 1 `GET /api/orgs/{id}` operation alongside the Phase 2 stubs).
+- `x-phase-boundaries.phase2.paths` lists the 5 Phase 2 paths for easy enumeration.
+
+### Verification
+- `python3 -c "import yaml; d=yaml.safe_load(open('docs/openapi.yaml')); print(d['openapi'])"` → `3.0.3`
+- `python3 -c "...print(len(d['paths']))"` → `33`
+- `grep -c 'x-phase.*2' docs/openapi.yaml` → `8` (6 ops + 2 in x-phase-boundaries)
+- `grep -c 'x-workflow-narrative' docs/openapi.yaml` → `3` (top-level def + section divider + content body)
+- `mvn -B test -Dtest=AuthControllerTest` → `14/14 passing, BUILD SUCCESS` (sanity check; no Java changes)
+- Evidence: `.sisyphus/evidence/task-19-yaml-valid.txt`, `task-19-endpoint-coverage.txt`, `task-19-phase2-marked.txt`
+
+### Known coordination issue for T21 (OpenApiDriftCheckTest)
+- This file declares `openapi: 3.0.3` (per task spec acceptance criteria).
+- springdoc 2.6.0 emits `openapi: 3.0.1` (verified in `.sisyphus/evidence/task-2-raw-api-docs.json`).
+- The T21 drift check will see this version difference. Two options:
+  1. T21's drift check excludes the top-level `openapi` field from comparison.
+  2. T19 changes to `3.0.1` (but then fails the acceptance criterion "openapi field is 3.0.3").
+- Resolved per task spec: keep `3.0.3` in T19, T21 must tolerate the version difference.

@@ -1,0 +1,19 @@
+{
+  "_meta": {
+    "captured_at": "2026-06-18T07:14:43Z",
+    "honcho_version": "3.0.7",
+    "endpoint": "POST /v3/workspaces/{ws}/sessions",
+    "method": "POST",
+    "synthetic": false
+  },
+  "data": {
+    "id": "fixture-session-1781766883",
+    "is_active": true,
+    "workspace_id": "default",
+    "metadata": {
+      "source": "fixture-capture"
+    },
+    "configuration": {},
+    "created_at": "2026-06-18T07:14:44.104753Z"
+  }
+}

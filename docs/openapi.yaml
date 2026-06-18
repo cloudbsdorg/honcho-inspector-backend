@@ -1,0 +1,2147 @@
+# ============================================================================
+# Honcho Inspector Backend - Hand-written OpenAPI contract.
+#
+# This file is the canonical OpenAPI document for the backend. The live
+# Swagger UI (served at /swagger-ui.html on a running instance) and the
+# /v3/api-docs JSON endpoint both render the same shape via springdoc.
+#
+# Drift policy: the springdoc-generated snapshot in
+# docs/openapi.generated.json is compared against this file by the
+# OpenApiDriftCheckTest. The hand-written file is allowed to have richer
+# `description` fields and the `x-workflow-narrative` top-level extension
+# (which the snapshot will not have). Every path, method, operationId,
+# tag, parameter, requestBody shape, and response key MUST match.
+# ============================================================================
+
+openapi: 3.0.3
+info:
+  title: Honcho Inspector Backend
+  version: 0.1.0
+  description: 'Backend for the Honcho Inspector admin surface.
+
+
+    Sits between the Angular UI and one or more Honcho instances. Keeps
+
+    the Honcho API key off the browser, externalizes config per-OS
+
+    convention, and serves a multi-user multi-profile admin surface
+
+    (one SQLite DB, no external service to run).
+
+
+    ## Authentication
+
+
+    This API does NOT use JWT or OAuth2 Bearer tokens. Every authenticated
+
+    request must carry the `X-Session-Id` header whose value is the opaque
+
+    session id returned by `POST /api/auth/login`. The session id is a
+
+    24-byte random hex string stored server-side; send it verbatim on every
+
+    subsequent request. `POST /api/auth/logout` invalidates it.
+
+
+    Honcho proxy endpoints additionally require the `X-Honcho-Profile-Id`
+
+    header to pick which encrypted profile (base URL + API key + workspace)
+
+    the request is routed to.
+
+
+    See `x-workflow-narrative` at the root of this document for the
+
+    recommended end-to-end flow.
+
+
+    Live Swagger UI: <http://localhost:8080/swagger-ui.html>
+
+    '
+  contact:
+    name: Honcho Inspector maintainers
+    url: https://github.com/cloudbsdorg/honcho-inspector-backend
+  license:
+    name: BSD-3-Clause
+    url: https://opensource.org/licenses/BSD-3-Clause
+servers:
+- url: http://localhost:8080
+  description: Local dev via `mvn spring-boot:run`
+- url: https://inspector.example.com
+  description: Production, behind a TLS-terminating reverse proxy
+  x-notes: 'Replace with the operator-provided public URL. The backend listens
+
+    on plain HTTP and MUST sit behind a TLS-terminating reverse proxy
+
+    in any internet-reachable environment. See `docs/reverse-proxy.md`
+
+    for ready-to-use nginx, Apache, and Caddy configurations.
+
+    '
+tags:
+- name: auth
+  description: 'User registration, login, logout, and session lookup. Public
+
+    endpoints (no `X-Session-Id` required) plus `/api/auth/me` and
+
+    `/api/auth/logout` which require it.
+
+    '
+- name: profiles
+  description: 'CRUD for Honcho profiles owned by the current user. Each profile
+
+    stores an encrypted API key, base URL, workspace id, and Honcho
+
+    user name.
+
+    '
+- name: honcho-proxy
+  description: 'Pass-through proxy to the Honcho v3 REST API. Every endpoint
+
+    requires `X-Session-Id` AND `X-Honcho-Profile-Id`. Requests are
+
+    forwarded with the profile''s decrypted API key attached as
+
+    `Authorization: Bearer <apiKey>`.
+
+    '
+- name: admin
+  description: 'Reserved for future admin-only endpoints (user management, audit
+
+    log, etc.). Currently empty, kept here so the OpenAPI tag catalogue
+
+    is stable across releases.
+
+    '
+paths:
+  # -----------------------------------------------------------------------
+  # Health (public)
+  # -----------------------------------------------------------------------
+  /api/health:
+    get:
+      tags:
+      - auth
+      summary: Liveness / readiness probe
+      description: 'Public unauthenticated health endpoint. Returns counts of users,
+
+        sessions, and profiles, plus a `needsRegister` boolean the UI uses
+
+        to decide whether to show the registration form on first run.
+
+        '
+      operationId: health
+      responses:
+        '200':
+          description: Service is up
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  /api/auth/register:
+    post:
+      tags:
+      - auth
+      summary: Register a new user
+      description: 'Creates a new user account. The first user to register on a
+
+        fresh database is automatically promoted to admin. Subsequent
+
+        registrations are non-admin.
+
+
+        Workflow step 1 of the recommended end-to-end flow. After this
+
+        call, immediately call `POST /api/auth/login` to obtain a
+
+        session id.
+
+        '
+      operationId: register
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CredentialsInput'
+      responses:
+        '201':
+          description: User created
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '400':
+          description: Validation error (e.g. password too short)
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Username already exists
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/auth/login:
+    post:
+      tags:
+      - auth
+      summary: Log in and obtain a session id
+      description: 'Validates username and password and, on success, returns a fresh
+
+        session id. Send it back on every subsequent request as the
+
+        `X-Session-Id` header.
+
+
+        Workflow step 2 of the recommended end-to-end flow. Returns 401
+
+        on invalid credentials without revealing whether the username
+
+        exists.
+
+        '
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CredentialsInput'
+      responses:
+        '200':
+          description: Authenticated, session id returned
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          description: Invalid username or password
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/auth/logout:
+    post:
+      tags:
+      - auth
+      summary: Invalidate the current session
+      description: 'Reads the `X-Session-Id` header, deletes the session server-side,
+
+        and returns 200 with `{ok: true}`. Idempotent: calling with a
+
+        missing or unknown session id is a no-op success.
+
+        '
+      operationId: logout
+      responses:
+        '200':
+          description: Session invalidated (or already absent)
+          content:
+            '*/*':
+              schema:
+                type: object
+                example:
+                  ok: true
+  /api/auth/me:
+    get:
+      tags:
+      - auth
+      summary: Get the currently authenticated user
+      description: 'Returns the user record for the session identified by the
+
+        `X-Session-Id` header. Useful on app reload to re-hydrate the UI.
+
+
+        Workflow step 3 of the recommended end-to-end flow.
+
+        '
+      operationId: me
+      responses:
+        '200':
+          description: Current user
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '401':
+          description: No valid session
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  # -----------------------------------------------------------------------
+  # Profiles (CRUD on Honcho profiles owned by the current user)
+  # -----------------------------------------------------------------------
+  /api/profiles:
+    get:
+      tags:
+      - profiles
+      summary: List the current user's profiles
+      description: 'Returns all profiles owned by the user identified by the
+
+        `X-Session-Id` header. The encrypted API key blob is included
+
+        for each; use `/reveal` to obtain the plaintext.
+
+        '
+      operationId: list
+      responses:
+        '200':
+          description: Profiles (may be empty)
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Profile'
+    post:
+      tags:
+      - profiles
+      summary: Create a new profile
+      description: 'Creates a profile owned by the current user. The plaintext API
+
+        key in the body is encrypted immediately and never returned in
+
+        this response. Call `/reveal` if you need it back.
+
+
+        Workflow step 4 of the recommended end-to-end flow.
+
+        '
+      operationId: create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfileCreateInput'
+      responses:
+        '201':
+          description: Profile created
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/Profile'
+        '400':
+          description: Validation error
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/profiles/{id}:
+    get:
+      tags:
+      - profiles
+      summary: Fetch a single profile by id
+      description: 'Returns the profile record (encrypted API key blob included).
+
+        Returns 404 if the id does not exist OR belongs to a different
+
+        user. The response is identical in both cases to avoid leaking
+
+        ownership.
+
+        '
+      operationId: get
+      parameters: &id001
+      - name: id
+        in: path
+        description: Hex profile id
+        required: true
+        schema:
+          type: string
+        example: p1q2r3s4t5u6v7w8
+      responses:
+        '200':
+          description: Profile found
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/Profile'
+        '404':
+          description: Profile not found or not owned by current user
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    put:
+      tags:
+      - profiles
+      summary: Update a profile (partial)
+      description: 'Updates only the fields present in the body. Passing a new
+
+        `apiKey` re-encrypts and overwrites the stored blob; omitting
+
+        it leaves the existing key intact.
+
+        '
+      operationId: update
+      parameters: *id001
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfileUpdateInput'
+      responses:
+        '200':
+          description: Profile updated
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/Profile'
+        '404':
+          description: Profile not found or not owned by current user
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags:
+      - profiles
+      summary: Delete a profile
+      description: 'Removes the profile. Returns 204 on success and 404 if the id
+
+        does not exist or is not owned by the current user.
+
+        '
+      operationId: delete
+      parameters: *id001
+      responses:
+        '204':
+          description: Profile deleted
+        '404':
+          description: Profile not found or not owned by current user
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/profiles/{id}/reveal:
+    get:
+      tags:
+      - profiles
+      summary: Decrypt and return the profile's API key
+      description: 'Decrypts the stored API key blob and returns it alongside the
+
+        profile record. Use sparingly; the plaintext key should only
+
+        be exposed when the UI needs to display or copy it.
+
+        '
+      operationId: reveal
+      parameters:
+      - name: id
+        in: path
+        description: Hex profile id
+        required: true
+        schema:
+          type: string
+        example: p1q2r3s4t5u6v7w8
+      responses:
+        '200':
+          description: Plaintext key returned
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ProfileWithKey'
+        '404':
+          description: Profile not found or not owned by current user
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/profiles/{id}/test:
+    post:
+      tags:
+      - profiles
+      summary: Test that the profile can reach Honcho
+      description: 'Decrypts the API key, builds an `Authorization: Bearer <apiKey>`
+
+        header, and issues a `GET /v3/workspaces/{workspaceId}` against
+
+        the profile''s `baseUrl`. Returns `{ok: true, message: "reachable"}`
+
+        on success or `{ok: false, error: <msg>}` on any HTTP or transport
+
+        failure.
+
+
+        Workflow step 5 of the recommended end-to-end flow.
+
+        '
+      operationId: test
+      parameters:
+      - name: id
+        in: path
+        description: Hex profile id
+        required: true
+        schema:
+          type: string
+        example: p1q2r3s4t5u6v7w8
+      responses:
+        '200':
+          description: Result of the connectivity check
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ProfileTestResult'
+        '404':
+          description: Profile not found or not owned by current user
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  # -----------------------------------------------------------------------
+  # Honcho proxy - peers
+  # -----------------------------------------------------------------------
+  /api/peers:
+    get:
+      tags:
+      - honcho-proxy
+      summary: List peers in the active workspace
+      description: 'Proxies `GET /v3/workspaces/{workspaceId}/peers`. Any query
+
+        parameters on the inbound request are forwarded to Honcho as-is.
+
+        '
+      operationId: listPeers
+      responses:
+        '200':
+          description: Page of peers from Honcho (Honcho v3 `Page[T]` envelope)
+          content:
+            '*/*':
+              schema:
+                type: object
+        '400':
+          description: Missing `X-Honcho-Profile-Id` header
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Profile not found / not owned by current user
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      tags:
+      - honcho-proxy
+      summary: Create a peer in the active workspace
+      description: 'Proxies `POST /v3/workspaces/{workspaceId}/peers`. The request
+
+        body is forwarded to Honcho unchanged.
+
+        '
+      operationId: createPeer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Honcho response body (created peer)
+          content:
+            '*/*':
+              schema:
+                type: object
+        '400':
+          description: Missing `X-Honcho-Profile-Id` header
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Profile not found / not owned by current user
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/peers/{peerId}/card:
+    get:
+      tags:
+      - honcho-proxy
+      summary: Get a peer's card
+      description: 'Proxies `GET /v3/workspaces/{workspaceId}/peers/{peerId}/card`.
+
+        Returns the peer''s peer card as an array of fact strings.
+
+        '
+      operationId: peerCard
+      parameters: &id002
+      - name: peerId
+        in: path
+        description: Honcho peer id
+        required: true
+        schema:
+          type: string
+        example: alice
+      responses:
+        '200':
+          description: Honcho peer card (string facts)
+          content:
+            '*/*':
+              schema:
+                type: object
+        '400':
+          description: Missing `X-Honcho-Profile-Id` header
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Profile not found / not owned by current user
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      tags:
+      - honcho-proxy
+      summary: Replace a peer's card
+      description: 'Proxies `POST /v3/workspaces/{workspaceId}/peers/{peerId}/card`.
+
+        The body (an array of fact strings) is forwarded to Honcho.
+
+        '
+      operationId: updatePeerCard
+      parameters: *id002
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Honcho response
+          content:
+            '*/*':
+              schema:
+                type: object
+        '400':
+          description: Missing `X-Honcho-Profile-Id` header
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Profile not found / not owned by current user
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/peers/{peerId}/representation:
+    get:
+      tags:
+      - honcho-proxy
+      summary: Get a peer's representation
+      description: 'Proxies `GET /v3/workspaces/{workspaceId}/peers/{peerId}/representation`.
+
+        Returns a Honcho-formatted text representation of what the peer
+
+        knows or believes.
+
+        '
+      operationId: peerRepresentation
+      parameters:
+      - name: peerId
+        in: path
+        description: Honcho peer id
+        required: true
+        schema:
+          type: string
+        example: alice
+      responses:
+        '200':
+          description: Honcho representation string
+          content:
+            '*/*':
+              schema:
+                type: object
+        '400':
+          description: Missing `X-Honcho-Profile-Id` header
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Profile not found / not owned by current user
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/peers/{peerId}/chat:
+    post:
+      tags:
+      - honcho-proxy
+      summary: Chat with a peer
+      description: 'Proxies `POST /v3/workspaces/{workspaceId}/peers/{peerId}/chat`.
+
+        Body forwarded to Honcho unchanged.
+
+        '
+      operationId: peerChat
+      parameters:
+      - name: peerId
+        in: path
+        description: Honcho peer id
+        required: true
+        schema:
+          type: string
+        example: alice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Honcho chat response
+          content:
+            '*/*':
+              schema:
+                type: object
+        '400':
+          description: Missing `X-Honcho-Profile-Id` header
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Profile not found / not owned by current user
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/peers/{peerId}/search:
+    post:
+      tags:
+      - honcho-proxy
+      summary: Semantic search across a peer's messages
+      description: 'Proxies `POST /v3/workspaces/{workspaceId}/peers/{peerId}/search`.
+
+        Body forwarded to Honcho unchanged.
+
+        '
+      operationId: peerSearch
+      parameters:
+      - name: peerId
+        in: path
+        description: Honcho peer id
+        required: true
+        schema:
+          type: string
+        example: alice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Honcho search results
+          content:
+            '*/*':
+              schema:
+                type: object
+        '400':
+          description: Missing `X-Honcho-Profile-Id` header
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Profile not found / not owned by current user
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/peers/{peerId}/conclusions:
+    get:
+      tags:
+      - honcho-proxy
+      summary: List a peer's conclusions
+      description: 'Proxies `GET /v3/workspaces/{workspaceId}/peers/{peerId}/conclusions`.
+
+        Query params (e.g. `limit`, `page`) forwarded to Honcho.
+
+        '
+      operationId: peerConclusions
+      parameters:
+      - name: peerId
+        in: path
+        description: Honcho peer id
+        required: true
+        schema:
+          type: string
+        example: alice
+      responses:
+        '200':
+          description: Page of conclusions from Honcho
+          content:
+            '*/*':
+              schema:
+                type: object
+        '400':
+          description: Missing `X-Honcho-Profile-Id` header
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Profile not found / not owned by current user
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/peers/{peerId}/sessions:
+    get:
+      tags:
+      - honcho-proxy
+      summary: List sessions a peer participates in
+      description: 'Proxies `GET /v3/workspaces/{workspaceId}/peers/{peerId}/sessions`.
+
+        Query params forwarded to Honcho.
+
+        '
+      operationId: peerSessions
+      parameters:
+      - name: peerId
+        in: path
+        description: Honcho peer id
+        required: true
+        schema:
+          type: string
+        example: alice
+      responses:
+        '200':
+          description: Page of sessions from Honcho
+          content:
+            '*/*':
+              schema:
+                type: object
+        '400':
+          description: Missing `X-Honcho-Profile-Id` header
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Profile not found / not owned by current user
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/peers/{peerId}/conclusions/query:
+    post:
+      tags:
+      - honcho-proxy
+      summary: Semantic query over a peer's conclusions
+      description: 'Proxies `POST /v3/workspaces/{workspaceId}/peers/{peerId}/conclusions/query`.
+
+        Body forwarded to Honcho unchanged.
+
+        '
+      operationId: peerConclusionsQuery
+      parameters:
+      - name: peerId
+        in: path
+        description: Honcho peer id
+        required: true
+        schema:
+          type: string
+        example: alice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Honcho query response
+          content:
+            '*/*':
+              schema:
+                type: object
+        '400':
+          description: Missing `X-Honcho-Profile-Id` header
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Profile not found / not owned by current user
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  # -----------------------------------------------------------------------
+  # Honcho proxy - sessions
+  # -----------------------------------------------------------------------
+  /api/sessions:
+    get:
+      tags:
+      - honcho-proxy
+      summary: List sessions in the active workspace
+      description: 'Proxies `GET /v3/workspaces/{workspaceId}/sessions`. Query params
+
+        forwarded to Honcho.
+
+        '
+      operationId: listSessions
+      responses:
+        '200':
+          description: Page of sessions from Honcho
+          content:
+            '*/*':
+              schema:
+                type: object
+        '400':
+          description: Missing `X-Honcho-Profile-Id` header
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Profile not found / not owned by current user
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      tags:
+      - honcho-proxy
+      summary: Create a session
+      description: 'Proxies `POST /v3/workspaces/{workspaceId}/sessions`. Body
+
+        forwarded to Honcho unchanged.
+
+        '
+      operationId: createSession
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Honcho response (created session)
+          content:
+            '*/*':
+              schema:
+                type: object
+        '400':
+          description: Missing `X-Honcho-Profile-Id` header
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Profile not found / not owned by current user
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/sessions/{sessionId}:
+    get:
+      tags:
+      - honcho-proxy
+      summary: Get a session by id
+      description: 'Proxies `GET /v3/workspaces/{workspaceId}/sessions/{sessionId}`.
+
+        '
+      operationId: getSession
+      parameters: &id003
+      - name: sessionId
+        in: path
+        description: Honcho session id
+        required: true
+        schema:
+          type: string
+        example: sess_abc123
+      responses:
+        '200':
+          description: Honcho session record
+          content:
+            '*/*':
+              schema:
+                type: object
+        '400':
+          description: Missing `X-Honcho-Profile-Id` header
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Profile not found / not owned by current user
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags:
+      - honcho-proxy
+      summary: Delete a session
+      description: 'Proxies `DELETE /v3/workspaces/{workspaceId}/sessions/{sessionId}`.
+
+        '
+      operationId: deleteSession
+      parameters: *id003
+      responses:
+        '200':
+          description: Honcho response (typically empty on success)
+          content:
+            '*/*':
+              schema:
+                type: object
+        '400':
+          description: Missing `X-Honcho-Profile-Id` header
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Profile not found / not owned by current user
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/sessions/{sessionId}/messages:
+    get:
+      tags:
+      - honcho-proxy
+      summary: List messages in a session
+      description: 'Proxies `GET /v3/workspaces/{workspaceId}/sessions/{sessionId}/messages`.
+
+        Query params (e.g. `limit`, `page`) forwarded to Honcho.
+
+        '
+      operationId: listMessages
+      parameters: &id004
+      - name: sessionId
+        in: path
+        description: Honcho session id
+        required: true
+        schema:
+          type: string
+        example: sess_abc123
+      responses:
+        '200':
+          description: Page of messages from Honcho
+          content:
+            '*/*':
+              schema:
+                type: object
+        '400':
+          description: Missing `X-Honcho-Profile-Id` header
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Profile not found / not owned by current user
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      tags:
+      - honcho-proxy
+      summary: Append messages to a session
+      description: 'Proxies `POST /v3/workspaces/{workspaceId}/sessions/{sessionId}/messages`.
+
+        Body forwarded to Honcho unchanged.
+
+        '
+      operationId: addMessages
+      parameters: *id004
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Honcho response
+          content:
+            '*/*':
+              schema:
+                type: object
+        '400':
+          description: Missing `X-Honcho-Profile-Id` header
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Profile not found / not owned by current user
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/sessions/{sessionId}/context:
+    get:
+      tags:
+      - honcho-proxy
+      summary: Get optimized LLM context for a session
+      description: 'Proxies `GET /v3/workspaces/{workspaceId}/sessions/{sessionId}/context`.
+
+        Query params (e.g. `tokens`, `summary`) forwarded to Honcho.
+
+        '
+      operationId: sessionContext
+      parameters:
+      - name: sessionId
+        in: path
+        description: Honcho session id
+        required: true
+        schema:
+          type: string
+        example: sess_abc123
+      responses:
+        '200':
+          description: Honcho context payload (messages plus optional summary)
+          content:
+            '*/*':
+              schema:
+                type: object
+        '400':
+          description: Missing `X-Honcho-Profile-Id` header
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Profile not found / not owned by current user
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/sessions/{sessionId}/summaries:
+    get:
+      tags:
+      - honcho-proxy
+      summary: List summaries for a session
+      description: 'Proxies `GET /v3/workspaces/{workspaceId}/sessions/{sessionId}/summaries`.
+
+        '
+      operationId: sessionSummaries
+      parameters:
+      - name: sessionId
+        in: path
+        description: Honcho session id
+        required: true
+        schema:
+          type: string
+        example: sess_abc123
+      responses:
+        '200':
+          description: Honcho summaries list
+          content:
+            '*/*':
+              schema:
+                type: object
+        '400':
+          description: Missing `X-Honcho-Profile-Id` header
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Profile not found / not owned by current user
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/sessions/{sessionId}/peers:
+    get:
+      tags:
+      - honcho-proxy
+      summary: List peers participating in a session
+      description: 'Proxies `GET /v3/workspaces/{workspaceId}/sessions/{sessionId}/peers`.
+
+        '
+      operationId: sessionPeers
+      parameters:
+      - name: sessionId
+        in: path
+        description: Honcho session id
+        required: true
+        schema:
+          type: string
+        example: sess_abc123
+      responses:
+        '200':
+          description: Honcho peer list
+          content:
+            '*/*':
+              schema:
+                type: object
+        '400':
+          description: Missing `X-Honcho-Profile-Id` header
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Profile not found / not owned by current user
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/sessions/{sessionId}/search:
+    post:
+      tags:
+      - honcho-proxy
+      summary: Semantic search across a session's messages
+      description: 'Proxies `POST /v3/workspaces/{workspaceId}/sessions/{sessionId}/search`.
+
+        Body forwarded to Honcho unchanged.
+
+        '
+      operationId: sessionSearch
+      parameters:
+      - name: sessionId
+        in: path
+        description: Honcho session id
+        required: true
+        schema:
+          type: string
+        example: sess_abc123
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Honcho search results
+          content:
+            '*/*':
+              schema:
+                type: object
+        '400':
+          description: Missing `X-Honcho-Profile-Id` header
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Profile not found / not owned by current user
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  # -----------------------------------------------------------------------
+  # Honcho proxy - workspace, queue, search, dream
+  # -----------------------------------------------------------------------
+  /api/queue-status:
+    get:
+      tags:
+      - honcho-proxy
+      summary: Get background-derivation queue status
+      description: 'Proxies `GET /v3/workspaces/{workspaceId}/queue/status`. Useful
+
+        for showing dream or derivation backlog in the admin UI.
+
+        '
+      operationId: queueStatus
+      responses:
+        '200':
+          description: Honcho queue status (work-unit counts)
+          content:
+            '*/*':
+              schema:
+                type: object
+        '400':
+          description: Missing `X-Honcho-Profile-Id` header
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Profile not found / not owned by current user
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/search:
+    post:
+      tags:
+      - honcho-proxy
+      summary: Workspace-wide semantic search
+      description: 'Proxies `POST /v3/workspaces/{workspaceId}/search`. Body
+
+        forwarded to Honcho unchanged.
+
+        '
+      operationId: workspaceSearch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Honcho search results
+          content:
+            '*/*':
+              schema:
+                type: object
+        '400':
+          description: Missing `X-Honcho-Profile-Id` header
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Profile not found / not owned by current user
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/dream:
+    post:
+      tags:
+      - honcho-proxy
+      summary: Schedule a memory-consolidation dream
+      description: 'Proxies `POST /v3/workspaces/{workspaceId}/schedule_dream`.
+
+        Body forwarded to Honcho unchanged. The upstream v3 path is
+
+        `…/peers/{peerId}/dreams`, so the proxy reads `peerId` from
+
+        the request body and forwards the rest of the body to Honcho
+
+        verbatim.
+
+
+        The body MUST include a non-blank `peerId` field; otherwise
+
+        the proxy returns 400.
+
+        '
+      operationId: scheduleDream
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DreamRequest'
+      responses:
+        '200':
+          description: Honcho response (dream scheduled)
+          content:
+            '*/*':
+              schema:
+                type: object
+        '400':
+          description: 'Missing `X-Honcho-Profile-Id` header or body is missing the
+
+            required `peerId` field
+
+            '
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Profile not found / not owned by current user
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/workspace/info:
+    get:
+      tags:
+      - honcho-proxy
+      summary: Get the active workspace plus queue snapshot
+      description: 'Convenience composite. Returns the workspace record and the
+
+        current queue status in one call. Internally issues two Honcho
+
+        requests (`GET /v3/workspaces/{id}` and
+
+        `GET /v3/workspaces/{id}/queue/status`); if either fails the
+
+        whole call fails.
+
+        '
+      operationId: workspaceInfo
+      responses:
+        '200':
+          description: Composite object `{workspace, queue}`
+          content:
+            '*/*':
+              schema:
+                type: object
+        '400':
+          description: Missing `X-Honcho-Profile-Id` header
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Profile not found / not owned by current user
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  # -----------------------------------------------------------------------
+  # Phase 2 placeholder paths - sketched, not implemented. Each operation
+  # is marked `x-phase: "2"` at the operation level so a future mix of
+  # Phase 1 and Phase 2 ops on the same path can co-exist.
+  # -----------------------------------------------------------------------
+  /api/orgs:
+    get:
+      tags:
+      - admin
+      summary: List organizations (Phase 2 placeholder)
+      description: '**Phase 2.** Reserved for future multi-tenant organization
+
+        management. The shape and behavior are intentionally
+
+        under-specified and will be finalized when Phase 2 begins.
+
+        '
+      operationId: listOrgs
+      x-phase: '2'
+      responses:
+        '200':
+          description: Stub. Phase 2 not yet implemented.
+          content:
+            '*/*':
+              schema:
+                type: object
+        '401':
+          description: Not authenticated
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      tags:
+      - admin
+      summary: Create an organization (Phase 2 placeholder)
+      description: '**Phase 2.** Reserved for future multi-tenant organization
+
+        management.
+
+        '
+      operationId: createOrg
+      x-phase: '2'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: Stub. Phase 2 not yet implemented.
+          content:
+            '*/*':
+              schema:
+                type: object
+        '401':
+          description: Not authenticated
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/orgs/{id}/members:
+    get:
+      tags:
+      - admin
+      summary: List members of an organization (Phase 2 placeholder)
+      description: '**Phase 2.** Reserved for future org membership management.
+
+        '
+      operationId: listOrgMembers
+      x-phase: '2'
+      parameters:
+      - name: id
+        in: path
+        description: Organization id
+        required: true
+        schema:
+          type: string
+        example: org_abc123
+      responses:
+        '200':
+          description: Stub. Phase 2 not yet implemented.
+          content:
+            '*/*':
+              schema:
+                type: object
+        '401':
+          description: Not authenticated
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Organization not found
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/stats:
+    get:
+      tags:
+      - admin
+      summary: Get usage statistics (Phase 2 placeholder)
+      description: '**Phase 2.** Reserved for future usage statistics aggregation
+
+        across profiles and workspaces.
+
+        '
+      operationId: workspaceStats
+      x-phase: '2'
+      responses:
+        '200':
+          description: Stub. Phase 2 not yet implemented.
+          content:
+            '*/*':
+              schema:
+                type: object
+        '401':
+          description: Not authenticated
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/reports:
+    get:
+      tags:
+      - admin
+      summary: List generated reports (Phase 2 placeholder)
+      description: '**Phase 2.** Reserved for future scheduled and on-demand
+
+        report generation.
+
+        '
+      operationId: listReports
+      x-phase: '2'
+      responses:
+        '200':
+          description: Stub. Phase 2 not yet implemented.
+          content:
+            '*/*':
+              schema:
+                type: object
+        '401':
+          description: Not authenticated
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/invites:
+    post:
+      tags:
+      - admin
+      summary: Create an invitation (Phase 2 placeholder)
+      description: '**Phase 2.** Reserved for future user-invitation flow. The
+
+        first user to register on a fresh DB is currently auto-promoted
+
+        to admin (see `POST /api/auth/register`); this endpoint will
+
+        provide a controlled way to grant access in Phase 2.
+
+        '
+      operationId: createInvite
+      x-phase: '2'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: Stub. Phase 2 not yet implemented.
+          content:
+            '*/*':
+              schema:
+                type: object
+        '401':
+          description: Not authenticated
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+components:
+  schemas:
+    # ------------------------------------------------------------------
+    # Public auth DTOs
+    # ------------------------------------------------------------------
+    CredentialsInput:
+      type: object
+      description: 'Username and password payload shared by `/api/auth/register`
+
+        and `/api/auth/login`.
+
+        '
+      required:
+      - username
+      - password
+      properties:
+        username:
+          type: string
+          description: Unique username (case-sensitive on the wire). Required.
+          example: alice
+        password:
+          type: string
+          minLength: 8
+          description: 'Plaintext password. Minimum 8 characters. Hashed with bcrypt
+
+            cost 12 server-side; never logged.
+
+            '
+          example: correct horse battery staple
+      example:
+        username: alice
+        password: correct horse battery staple
+    UserResponse:
+      type: object
+      description: 'Public view of a registered user. The password hash is never
+
+        returned. `isAdmin` is true for the first registered user.
+
+        '
+      properties:
+        id:
+          type: string
+          description: Opaque hex user id
+          example: a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4
+        username:
+          type: string
+          description: Unique username (case-sensitive on the wire)
+          example: alice
+        isAdmin:
+          type: boolean
+          description: 'True for the first user registered after a fresh DB; there
+
+            is no admin promotion endpoint in this version.
+
+            '
+          example: true
+        createdAt:
+          type: string
+          format: date-time
+          description: ISO-8601 instant the user was created
+          example: 2026-06-17 22:00:00+00:00
+      example:
+        id: a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4
+        username: alice
+        isAdmin: true
+        createdAt: 2026-06-17 22:00:00+00:00
+    LoginResponse:
+      type: object
+      description: 'Returned by `POST /api/auth/login` and `POST /api/auth/register`
+
+        (register omits the sessionId). The `sessionId` is the value to
+
+        send in the `X-Session-Id` header on every subsequent request.
+
+        '
+      properties:
+        sessionId:
+          type: string
+          description: 'Opaque 24-byte hex session id. Send verbatim in the
+
+            `X-Session-Id` request header.
+
+            '
+          example: 5f4dcc3b5aa765d61d8327deb882cf99
+        user:
+          $ref: '#/components/schemas/UserResponse'
+      example:
+        sessionId: 5f4dcc3b5aa765d61d8327deb882cf99
+        user:
+          id: a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4
+          username: alice
+          isAdmin: true
+          createdAt: 2026-06-17 22:00:00+00:00
+    # ------------------------------------------------------------------
+    # Profile DTOs
+    # ------------------------------------------------------------------
+    Profile:
+      type: object
+      description: 'A Honcho profile owned by a user. The API key is stored
+
+        encrypted at rest; the public API returns only the opaque
+
+        `apiKeyEncrypted` blob. The plaintext key is exposed
+
+        exclusively through `GET /api/profiles/{id}/reveal`.
+
+        '
+      properties:
+        id:
+          type: string
+          description: Opaque hex profile id
+          example: p1q2r3s4t5u6v7w8
+        userId:
+          type: string
+          description: Opaque hex id of the owning user
+          example: a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4
+        label:
+          type: string
+          description: Human-readable label shown in the UI
+          example: Production
+        apiKeyEncrypted:
+          type: string
+          description: 'Encrypted (AES-256-GCM) Honcho API key blob. Use
+
+            `GET /api/profiles/{id}/reveal` to obtain the plaintext.
+
+            '
+          example: enc:v1:YWFhYWFhYWFhYWFhYWFhYQ==:MTIzNDU2Nzg5
+        baseUrl:
+          type: string
+          description: 'Honcho base URL, with no trailing `/mcp` (the proxy strips
+
+            it if present).
+
+            '
+          example: https://api.honcho.dev
+        workspaceId:
+          type: string
+          description: Honcho workspace id this profile is scoped to
+          example: ws_abc123
+        honchoUserName:
+          type: string
+          description: 'Honcho-side user name sent in the `X-Honcho-User-Name`
+
+            header on every proxied request.
+
+            '
+          example: alice
+        createdAt:
+          type: string
+          format: date-time
+          description: ISO-8601 instant the profile was created
+          example: 2026-06-17 22:00:00+00:00
+        updatedAt:
+          type: string
+          format: date-time
+          description: ISO-8601 instant the profile was last updated
+          example: 2026-06-17 22:00:00+00:00
+        apiVersion:
+          type: string
+          nullable: true
+          description: 'Honcho API surface version this profile targets (e.g.
+
+            `v2`, `v3`). Nullable: profiles created before T16 lack
+
+            this value and the controller falls back to the server
+
+            default. Honcho v3 is the product default.
+
+            '
+          example: v3
+      example:
+        id: p1q2r3s4t5u6v7w8
+        userId: a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4
+        label: Production
+        apiKeyEncrypted: enc:v1:YWFhYWFhYWFhYWFhYWFhYQ==:MTIzNDU2Nzg5
+        baseUrl: https://api.honcho.dev
+        workspaceId: ws_abc123
+        honchoUserName: alice
+        createdAt: 2026-06-17 22:00:00+00:00
+        updatedAt: 2026-06-17 22:00:00+00:00
+    ProfileCreateInput:
+      type: object
+      description: 'Body for `POST /api/profiles`. The API key is encrypted with
+
+        AES-256-GCM server-side immediately upon receipt; only the
+
+        encrypted blob is ever persisted.
+
+        '
+      required:
+      - label
+      - apiKey
+      - baseUrl
+      - workspaceId
+      - honchoUserName
+      properties:
+        label:
+          type: string
+          description: Human-readable label shown in the UI
+          example: Production
+        apiKey:
+          type: string
+          description: 'Plaintext Honcho API key. Encrypted at rest with
+
+            AES-256-GCM; never returned in subsequent list/get
+
+            responses.
+
+            '
+          example: hmc_5f4dcc3b5aa765d61d8327deb882cf99
+        baseUrl:
+          type: string
+          description: 'Honcho base URL, with no trailing slash. A trailing `/mcp`
+
+            is stripped automatically by the proxy.
+
+            '
+          example: https://api.honcho.dev
+        workspaceId:
+          type: string
+          description: Honcho workspace id this profile is scoped to
+          example: ws_abc123
+        honchoUserName:
+          type: string
+          description: 'Honcho-side user name sent in the `X-Honcho-User-Name`
+
+            header on every proxied request.
+
+            '
+          example: alice
+        apiVersion:
+          type: string
+          nullable: true
+          description: 'Honcho API version this profile targets (e.g. `v2`, `v3`).
+
+            Optional; null/blank falls back to the server default
+
+            (`honcho.api-version`, `v3`).
+
+            '
+          example: v3
+      example:
+        label: Production
+        apiKey: hmc_5f4dcc3b5aa765d61d8327deb882cf99
+        baseUrl: https://api.honcho.dev
+        workspaceId: ws_abc123
+        honchoUserName: alice
+    ProfileUpdateInput:
+      type: object
+      description: 'Body for `PUT /api/profiles/{id}`. Every field is optional;
+
+        only the fields present in the JSON are written. Re-encrypting
+
+        the API key is allowed (pass a new plaintext value).
+
+        '
+      properties:
+        label:
+          type: string
+          description: New label, or null to leave unchanged
+          example: Production (US-East)
+        apiKey:
+          type: string
+          description: 'New plaintext API key, or null to leave unchanged.
+
+            Re-encrypted on write.
+
+            '
+          example: hmc_NEWKEY
+        baseUrl:
+          type: string
+          description: New base URL, or null to leave unchanged
+          example: https://api.honcho.dev
+        workspaceId:
+          type: string
+          description: New workspace id, or null to leave unchanged
+          example: ws_abc123
+        honchoUserName:
+          type: string
+          description: New Honcho user name, or null to leave unchanged
+          example: alice
+        apiVersion:
+          type: string
+          nullable: true
+          description: New Honcho API version, or null to leave unchanged.
+          example: v3
+      example:
+        label: Production (US-East)
+        apiKey: hmc_NEWKEY
+    ProfileWithKey:
+      type: object
+      description: 'Returned only by `GET /api/profiles/{id}/reveal`. Carries the
+
+        plaintext API key; use sparingly and only when the UI needs
+
+        to display it.
+
+        '
+      properties:
+        profile:
+          $ref: '#/components/schemas/Profile'
+        apiKey:
+          type: string
+          description: Plaintext Honcho API key (decrypted server-side)
+          example: hmc_5f4dcc3b5aa765d61d8327deb882cf99
+      example:
+        profile:
+          id: p1q2r3s4t5u6v7w8
+          userId: a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4
+          label: Production
+          apiKeyEncrypted: enc:v1:YWFhYWFhYWFhYWFhYWFhYQ==:MTIzNDU2Nzg5
+          baseUrl: https://api.honcho.dev
+          workspaceId: ws_abc123
+          honchoUserName: alice
+          createdAt: 2026-06-17 22:00:00+00:00
+          updatedAt: 2026-06-17 22:00:00+00:00
+        apiKey: hmc_5f4dcc3b5aa765d61d8327deb882cf99
+    ProfileTestResult:
+      type: object
+      description: 'Result of `POST /api/profiles/{id}/test`. The proxy attempts a
+
+        `GET /v3/workspaces/{workspaceId}` against the profile''s
+
+        `baseUrl` with the decrypted API key.
+
+        '
+      properties:
+        ok:
+          type: boolean
+          description: True when the upstream Honcho call succeeded
+          example: true
+        message:
+          type: string
+          description: Short human-readable status (e.g. `reachable`)
+          example: reachable
+        error:
+          type: string
+          description: 'Present only when `ok` is false; carries the upstream
+
+            error message verbatim.
+
+            '
+          example: connection refused
+      example:
+        ok: true
+        message: reachable
+    # ------------------------------------------------------------------
+    # Honcho proxy shapes
+    # ------------------------------------------------------------------
+    DreamRequest:
+      type: object
+      description: 'Body for `POST /api/dream`. The proxy reads `peerId` from the
+
+        body to construct the upstream v3 path
+
+        `…/peers/{peerId}/dreams` and forwards the rest of the body
+
+        to Honcho unchanged.
+
+        '
+      required:
+      - peerId
+      properties:
+        peerId:
+          type: string
+          description: Honcho peer id whose dreams to schedule
+          example: alice
+      example:
+        peerId: alice
+    HonchoPage:
+      type: object
+      description: 'Generic Honcho v3 `Page[T]` envelope. The proxy returns Honcho
+
+        payloads as-is for list endpoints (peers, sessions, messages,
+
+        conclusions, etc.), so this shape describes the upstream
+
+        contract without making client generators produce a per-resource
+
+        page schema.
+
+        '
+      properties:
+        items:
+          type: array
+          description: Page of results
+          items:
+            type: object
+        total:
+          type: integer
+          description: Total number of items across all pages
+          example: 137
+        page:
+          type: integer
+          description: Current page index (1-based)
+          example: 1
+        size:
+          type: integer
+          description: Page size used for this request
+          example: 50
+      example:
+        items: []
+        total: 137
+        page: 1
+        size: 50
+    # ------------------------------------------------------------------
+    # Misc
+    # ------------------------------------------------------------------
+    ErrorResponse:
+      type: object
+      description: 'Generic error envelope returned for non-2xx responses. The
+
+        `error` field carries a short human-readable message suitable
+
+        for surfacing in the UI; it is not localized and not intended
+
+        for programmatic branching.
+
+        '
+      properties:
+        error:
+          type: string
+      example:
+        error: invalid username or password
+    HealthResponse:
+      type: object
+      description: 'Body returned by `GET /api/health`. Includes counts of users,
+
+        sessions, and profiles plus a `needsRegister` boolean the UI
+
+        uses to decide whether to show the registration form on first
+
+        run.
+
+        '
+      properties:
+        ok:
+          type: boolean
+          description: Always true when the service is up
+          example: true
+        users:
+          type: integer
+          description: Total user count
+          example: 1
+        sessions:
+          type: integer
+          description: Active session count
+          example: 2
+        profiles:
+          type: integer
+          description: Honcho profile count across all users
+          example: 3
+        needs_register:
+          type: boolean
+          description: 'True on a fresh database (no users yet). UI uses this to
+
+            show the registration form before the login form.
+
+            '
+          example: false
+      example:
+        ok: true
+        users: 1
+        sessions: 2
+        profiles: 3
+        needs_register: false
+# ----------------------------------------------------------------------------
+# Top-level workflow narrative - the recommended end-to-end flow.
+# ----------------------------------------------------------------------------
+x-workflow-narrative: "## Recommended end-to-end workflow\n\nPhase 1 ships a single-user-per-profile multi-profile backend.\
+  \ The\nhappy path below is the canonical sequence; the UI follows the same\norder. Every step requires the headers from\
+  \ the previous steps to be\nin place.\n\n### Step 1 — Register the first user\n`POST /api/auth/register` with `{ username,\
+  \ password }`.\n\nThe first user to register on a fresh database is automatically\npromoted to admin. Returns 201 with `{\
+  \ id, username, isAdmin,\ncreatedAt }`.\n\n```bash\ncurl -X POST http://localhost:8080/api/auth/register \\\n  -H 'content-type:\
+  \ application/json' \\\n  -d '{\"username\":\"alice\",\"password\":\"correct horse battery staple\"}'\n```\n\n### Step 2\
+  \ — Log in to obtain a session id\n`POST /api/auth/login` with the same credentials.\n\nReturns 200 with `{ sessionId, user\
+  \ }`. Store `sessionId` and send it\nback on every subsequent request as the `X-Session-Id` header. There\nis no Bearer\
+  \ JWT; the API uses a custom opaque session token.\n\n```bash\ncurl -X POST http://localhost:8080/api/auth/login \\\n  -H\
+  \ 'content-type: application/json' \\\n  -d '{\"username\":\"alice\",\"password\":\"correct horse battery staple\"}'\n#\
+  \ {\"sessionId\":\"5f4dcc3b...\",\"user\":{...}}\n```\n\n### Step 3 — Confirm the session works\n`GET /api/auth/me` with\
+  \ `X-Session-Id: <sessionId>`.\n\nReturns the current user record. Useful on app reload to re-hydrate\nthe UI without asking\
+  \ the user to log in again.\n\n```bash\ncurl http://localhost:8080/api/auth/me \\\n  -H 'x-session-id: 5f4dcc3b...'\n```\n\
+  \n### Step 4 — Create a Honcho profile\n`POST /api/profiles` with `{ label, apiKey, baseUrl, workspaceId,\nhonchoUserName\
+  \ }` and the `X-Session-Id` header.\n\nThe plaintext `apiKey` is encrypted with AES-256-GCM server-side\nimmediately. The\
+  \ response includes only the opaque\n`apiKeyEncrypted` blob. A user can own many profiles, one per\nHoncho workspace.\n\n\
+  ```bash\ncurl -X POST http://localhost:8080/api/profiles \\\n  -H 'content-type: application/json' \\\n  -H 'x-session-id:\
+  \ 5f4dcc3b...' \\\n  -d '{\n    \"label\": \"Production\",\n    \"apiKey\": \"hmc_5f4dcc3b5aa765d61d8327deb882cf99\",\n\
+  \    \"baseUrl\": \"https://api.honcho.dev\",\n    \"workspaceId\": \"ws_abc123\",\n    \"honchoUserName\": \"alice\"\n\
+  \  }'\n```\n\n### Step 5 — Verify the profile can reach Honcho\n`POST /api/profiles/{id}/test` with `X-Session-Id`.\n\n\
+  Decrypts the API key, builds `Authorization: Bearer <apiKey>` and\n`X-Honcho-User-Name: <honchoUserName>`, and issues a\n\
+  `GET /v3/workspaces/{workspaceId}` against the profile's `baseUrl`.\nReturns `{ ok: true, message: \"reachable\" }` on success\
+  \ or\n`{ ok: false, error: <msg> }` on any HTTP or transport failure.\n\n```bash\ncurl -X POST http://localhost:8080/api/profiles/p1q2r3s4t5u6v7w8/test\
+  \ \\\n  -H 'x-session-id: 5f4dcc3b...'\n```\n\n### Step 6 — Honcho proxy calls\nWith a working profile, every other endpoint\
+  \ under `/api/peers`,\n`/api/sessions`, `/api/queue-status`, `/api/workspace/info`,\n`/api/search`, and `/api/dream` is\
+  \ a pass-through to the profile's\nHoncho instance. Each requires both `X-Session-Id` (which user) and\n`X-Honcho-Profile-Id`\
+  \ (which encrypted profile / which Honcho\nworkspace).\n\nThe typical sequence:\n\n1. `POST /api/peers` to create a peer\
+  \ in the workspace.\n2. `POST /api/sessions` to create a session between peers.\n3. `POST /api/sessions/{id}/messages` to\
+  \ append conversation turns.\n4. `GET /api/sessions/{id}/messages` to read the conversation back.\n5. `GET /api/sessions/{id}/context`\
+  \ to fetch an LLM-ready context\n   window (with optional `tokens` and `summary` query params).\n6. `POST /api/sessions/{id}/search`\
+  \ for semantic search across the\n   session's messages.\n7. `POST /api/dream` (body must include `peerId`) to schedule\n\
+  \   background memory consolidation.\n8. `GET /api/queue-status` to monitor the dream/derivation backlog.\n\nAll of these\
+  \ forward the request body verbatim and return the\nHoncho response body verbatim. The proxy never normalizes, validates,\n\
+  or re-shapes Honcho payloads. On Honcho HTTP 4xx the proxy returns\nHoncho's status code; on 5xx and transport errors the\
+  \ proxy returns\n502.\n"
+x-phase-boundaries:
+  phase1:
+    description: 'Phase 1 (this release): auth, profiles, health, and the Honcho
+
+      v3 pass-through proxy. All 28 paths under `/api/auth`,
+
+      `/api/profiles`, `/api/health`, and `/api/{peers,sessions,
+
+      queue-status,workspace,search,dream}` are live.
+
+      '
+    paths:
+    - /api/auth/register
+    - /api/auth/login
+    - /api/auth/logout
+    - /api/auth/me
+    - /api/health
+    - /api/profiles
+    - /api/profiles/{id}
+    - /api/profiles/{id}/reveal
+    - /api/profiles/{id}/test
+    - /api/peers
+    - /api/peers/{peerId}/card
+    - /api/peers/{peerId}/representation
+    - /api/peers/{peerId}/chat
+    - /api/peers/{peerId}/search
+    - /api/peers/{peerId}/conclusions
+    - /api/peers/{peerId}/sessions
+    - /api/peers/{peerId}/conclusions/query
+    - /api/sessions
+    - /api/sessions/{sessionId}
+    - /api/sessions/{sessionId}/messages
+    - /api/sessions/{sessionId}/context
+    - /api/sessions/{sessionId}/summaries
+    - /api/sessions/{sessionId}/peers
+    - /api/sessions/{sessionId}/search
+    - /api/queue-status
+    - /api/search
+    - /api/dream
+    - /api/workspace/info
+  phase2:
+    description: 'Phase 2 (sketched, not implemented): multi-tenant organization
+
+      management, usage statistics, scheduled reports, and a
+
+      user-invitation flow. Each operation below is marked
+
+      `x-phase: "2"` and returns a stub 200 / 401 response. No
+
+      controllers exist yet.
+
+      '
+    paths:
+    - /api/orgs
+    - /api/orgs/{id}/members
+    - /api/stats
+    - /api/reports
+    - /api/invites

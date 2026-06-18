@@ -1,0 +1,14 @@
+{
+  "_meta": {
+    "captured_at": "2026-06-18T07:14:43Z",
+    "honcho_version": "3.0.7",
+    "endpoint": "GET /v3/workspaces/{ws}/sessions/{sessionId}/summaries",
+    "method": "GET",
+    "synthetic": false
+  },
+  "data": {
+    "id": "fixture-session-1781766883",
+    "short_summary": null,
+    "long_summary": null
+  }
+}

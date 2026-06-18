@@ -1,0 +1,49 @@
+paths in docs/openapi.yaml: 33
+schemas in docs/openapi.yaml: 12
+tags: 4
+servers: 2
+
+Phase 1 paths (28, matching springdoc snapshot exactly):
+  /api/auth/login
+  /api/auth/logout
+  /api/auth/me
+  /api/auth/register
+  /api/dream
+  /api/health
+  /api/peers
+  /api/peers/{peerId}/card
+  /api/peers/{peerId}/chat
+  /api/peers/{peerId}/conclusions
+  /api/peers/{peerId}/conclusions/query
+  /api/peers/{peerId}/representation
+  /api/peers/{peerId}/search
+  /api/peers/{peerId}/sessions
+  /api/profiles
+  /api/profiles/{id}
+  /api/profiles/{id}/reveal
+  /api/profiles/{id}/test
+  /api/queue-status
+  /api/search
+  /api/sessions
+  /api/sessions/{sessionId}
+  /api/sessions/{sessionId}/context
+  /api/sessions/{sessionId}/messages
+  /api/sessions/{sessionId}/peers
+  /api/sessions/{sessionId}/search
+  /api/sessions/{sessionId}/summaries
+  /api/workspace/info
+
+Phase 2 placeholder paths (5):
+  /api/orgs
+  /api/orgs/{id}/members
+  /api/stats
+  /api/reports
+  /api/invites
+
+DRIFT CHECK: all 36 Phase 1 operations match springdoc snapshot exactly.
+
+Evidence:
+  - All 36 operationIds match controller method names (listPeers, createPeer, etc.)
+  - All 4 tags match OpenApiConfig (auth, profiles, honcho-proxy, admin)
+  - All response keys match (200/201/204/400/401/404/409 as applicable)
+  - requestBody shapes preserved per operation (application/json + type:object)
