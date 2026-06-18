@@ -693,3 +693,55 @@ T10 (Peers, PeerQuery), T11 (Sessions), T12 (Messages), and T13 (this) all write
 - Sibling T11/T12/T13 agents had already created `MessagesProviderV3`, `SessionsProviderV3`, etc. AND their tests, but NOT `PeersProviderV3`/`PeerQueryProviderV3` (those were T10's scope). No conflict; the test directory already had 6 sibling V3 test files when I started.
 - No file was clobbered during my T10 execution — `git status` confirmed only my 4 new files at the end.
 - One transient `mvn -B test` run had 1 failure (logging test, not mine); re-run was clean. The logging tests are timing-sensitive (Logback JVM-wide singleton, see T4b-completion entry).
+
+## T14: HonchoV3Client delegator (2026-06-18)
+
+### Files added (com.revytechinc.honchoinspector.honcho.v3)
+- `HonchoV3Client.java` (~290 lines) — `@Component` implementing `HonchoClient`. Constructor: `HonchoV3Client(List<HonchoProvider> allProviders)` builds a `HonchoProviderRegistry(V3, allProviders)`. Each of the 24 methods is a one-liner: builds pathVars (or null), passes filters/queryParams (or null), body (or null), looks up the provider via `registry.get(op)`, calls `provider.execute(op, ctx, this, body, pathVars, queryParams)`, returns the result. `supportedVersions()` returns `EnumSet.of(V3)`.
+- `HonchoV3ClientTest.java` (~620 lines) — 33 tests.
+
+### Design choices
+- **24 methods → uniform dispatch body.** Every method follows `return dispatch(OP, ctx, body, pathVars, queryParams)`. The two private helpers `pathVars(String, String)` and `contextQueryParams(Integer, Boolean)` keep each method a one-liner.
+- **getSessionContext query-params builder.** Tokens/summary are passed as a `LinkedHashMap` with `null` values filtered out, so the provider's URL builder omits absent keys. The interface takes `Integer`/`Boolean` (boxed) on purpose to allow `null` for "use Honcho default".
+- **`this` is passed as the HonchoClient arg** to `provider.execute(...)`. None of the 8 V3 providers use it, but the interface contract requires it (the provider can reach back into the client surface for retries/logging if it ever needs to).
+- **Body is passed as-is** to provider.execute. No serialization/deserialization here — the provider owns the JSON wire format.
+
+### Test design (33 tests)
+- **One test per HonchoClient method (24 tests)** for the op + pathVars + body + queryParams contract.
+- **9 cross-cutting tests**:
+  - `supportedVersionsIsV3` — factory index key
+  - `honchoClientFactoryIndexesThisClientForV3` — factory dispatch
+  - `providerHonchoCallExceptionPropagates` — `HonchoCallException` propagates
+  - `missingProviderThrowsIllegalState` — registry's "no provider covers this op" error
+  - `passedClientReferenceIsTheHonchoV3ClientItself` — `this` is forwarded
+  - `registryFiltersOutProvidersForOtherVersions` — V2-only provider is ignored
+  - `usesHonchoProviderRegistry` — registry's first-wins semantics apply
+  - `getSessionContext_omitsNullQueryParams` — null tokens+summary → empty map
+  - `getSessionContext_withNullTokensAndSummaryBuildsEmptyQuery` — partial nulls
+- **Test fixture:** inner class `CapturingProvider implements HonchoProvider` (real class, not Mockito mock) that records every arg of `execute()`. One provider claims all 24 ops via `EnumSet.allOf(HonchoOperation.class)`, so each test can focus on which op the client dispatched. Mockito is used only for the cross-cutting tests that need `thenThrow`, `verify(never)`, or `ArgumentCaptor`.
+
+### Java generics gotcha (CRITICAL — applies to ANY test that handles `Map<String, ?>`)
+The `HonchoProvider.execute(...)` parameter is `Map<String, ?>`. AssertJ's `MapAssert.containsEntry(K, V)` requires `V` to be the map's value type — `?` is a wildcard capture that the compiler can't widen to `Object` or autobox primitives (`int`, `boolean`) into.
+
+Three attempted fixes, all broken:
+1. `containsEntry("tokens", 4096)` → `int cannot be converted to capture#1 of ?`
+2. `containsEntry("tokens", (Object) 4096)` → `Object cannot be converted to capture#1 of ?`
+3. `containsEntry("tokens", (Object) Boolean.FALSE)` → same error
+
+**Working fix:** Type the capturing field as `Map<String, Object>` and cast on assignment:
+```java
+Map<String, Object> lastQueryParams;  // not Map<String, ?>
+@SuppressWarnings("unchecked")
+this.lastQueryParams = (Map<String, Object>) queryParams;  // safe — values are always Objects at runtime
+```
+Then `containsEntry("tokens", 4096)` works because AssertJ infers V=Object and `4096` autoboxes to `Integer` (an Object).
+
+### Test count
+- `HonchoV3ClientTest`: 33/33 passing.
+- Full `mvn -B test`: 170/170 passing (137 baseline + 33 new). BUILD SUCCESS, ~9s.
+- The plan's "137 + 33" prediction is met exactly. The "+33" is 24 op-mappings + 9 cross-cutting tests.
+- `mvn -B package`: BUILD SUCCESS, fat jar at `target/honcho-inspector-backend-0.1.0-SNAPSHOT.jar` (~10s).
+- `git status`: only the two new T14 files untracked; no unrelated files modified.
+
+### HonchoProviderRegistry collision warning is expected
+The `usesHonchoProviderRegistry` test passes two Mockito mocks of `HonchoProvider` that both claim `LIST_PEERS`. The registry logs a WARN ("first-registered wins, keeping X") because the two mock classes share the same auto-generated class name suffix — both show up as `HonchoProvider$MockitoMock$<suffix>`. This is a benign test artifact: the test asserts that EXACTLY ONE of the two mocks received the call. The WARN is expected and doesn't indicate a bug.
