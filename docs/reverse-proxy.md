@@ -604,7 +604,134 @@ curl -I https://inspector.example.com/api/health
 
 ---
 
-## 6. Operational checklist (all three proxies)
+## 6. Swagger UI and OpenAPI spec
+
+By default, the Spring Boot 3.5 backend exposes Swagger UI at
+`/swagger-ui.html` (and the assets under `/swagger-ui/**`) and the
+machine-readable OpenAPI 3 contract at `/v3/api-docs`. Both are
+intentionally unauthenticated — there is no `X-Session-Id` requirement
+on these paths. That choice is documented in [`docs/SECURITY.md`](SECURITY.md)
+§6 *Swagger UI and OpenAPI spec exposure* and
+[`docs/honcho-providers.md`](honcho-providers.md) §8 *Strict mode*. On
+a private network this is fine; on a public-facing install you almost
+certainly want to gate it.
+
+The snippets below are **commented out by default** — i.e. the default
+behaviour of every example in this doc is *no gating*. To restrict
+Swagger UI to internal users only, uncomment the matching block for
+your reverse proxy and reload.
+
+The two pragmatic approaches are:
+
+1. **IP allowlist** — easiest if your operators all hit the site from
+   known office / VPN ranges. Replace `10.0.0.0/8` with your operator
+   CIDR.
+2. **Basic auth** — covers the case where operators come from arbitrary
+   IPs. Add a basic-auth stanza *for the Swagger paths only*; do not
+   force basic-auth on `/api/**` (the SPA does its own session auth).
+
+The recommended production approach is basic auth on the Swagger paths,
+combined with TLS termination and the rest of the hardening checklist
+in this doc. See [`docs/SECURITY.md`](SECURITY.md) §6 for the
+risk rationale behind why `/v3/api-docs` should never go to the public
+internet without one of these layers.
+
+### 6.1 nginx
+
+The default `location /` block already proxies everything to the
+backend. Add an early match to short-circuit Swagger requests before
+the proxy pass.
+
+```nginx
+# --- Optional: gate Swagger UI and /v3/api-docs ---------------------------
+# Default: PUBLIC (intentional — see docs/SECURITY.md §6).
+# Uncomment the block you want to apply. The first uses an IP allowlist;
+# the second uses basic auth. Pick ONE; do not stack them.
+#
+# Option A — IP allowlist (replace 10.0.0.0/8 with your operator CIDR):
+#
+# location ~ ^/(v3/api-docs|swagger-ui\.html|swagger-ui) {
+#     allow 10.0.0.0/8;
+#     deny  all;
+#     proxy_pass http://honcho_inspector_backend;
+# }
+#
+# Option B — basic auth (set htpasswd file with `htpasswd -c /etc/nginx/.htpasswd inspector`):
+#
+# location ~ ^/(v3/api-docs|swagger-ui\.html|swagger-ui) {
+#     auth_basic           "Honcho Inspector — Swagger UI";
+#     auth_basic_user_file /etc/nginx/.htpasswd;
+#     proxy_pass http://honcho_inspector_backend;
+# }
+```
+
+### 6.2 Apache
+
+Apache uses `<LocationMatch>` with `Require` directives. The example
+follows the same Option A / Option B split as nginx above.
+
+```apache
+# --- Optional: gate Swagger UI and /v3/api-docs ---------------------------
+# Default: PUBLIC (intentional — see docs/SECURITY.md §6).
+# Uncomment the block you want to apply.
+#
+# Option A — IP allowlist (replace 10.0.0.0/8 with your operator CIDR):
+#
+# <LocationMatch "^/(v3/api-docs|swagger-ui)">
+#     Require ip 10.0.0.0/8
+#     ProxyPass        http://127.0.0.1:8080
+#     ProxyPassReverse http://127.0.0.1:8080
+# </LocationMatch>
+#
+# Option B — basic auth (set htpasswd file with `htpasswd -c /etc/apache2/.htpasswd inspector`):
+#
+# <LocationMatch "^/(v3/api-docs|swagger-ui)">
+#     AuthType Basic
+#     AuthName "Honcho Inspector — Swagger UI"
+#     AuthUserFile /etc/apache2/.htpasswd
+#     Require valid-user
+#     ProxyPass        http://127.0.0.1:8080
+#     ProxyPassReverse http://127.0.0.1:8080
+# </LocationMatch>
+```
+
+### 6.3 Caddy
+
+Caddy uses named matchers + a `respond` directive to short-circuit the
+forwarding. Basic auth is first-class in Caddy (no htpasswd file
+needed — the `basicauth` directive hashes the credential inline).
+
+```caddyfile
+# --- Optional: gate Swagger UI and /v3/api-docs ---------------------------
+# Default: PUBLIC (intentional — see docs/SECURITY.md §6).
+# Uncomment the block you want to apply.
+#
+# Option A — IP allowlist (Caddy lacks a built-in allow directive; use
+# the `remote_ip` matcher in combination with `respond`):
+#
+# @swagger_internal remote_ip 10.0.0.0/8
+# @swagger_public  path /v3/api-docs /swagger-ui*
+# @swagger_blocked path /v3/api-docs /swagger-ui*
+# respond @swagger_blocked 403
+#
+# Option B — basic auth (hash generated with `caddy hash-password`):
+#
+# @swagger path /v3/api-docs /swagger-ui*
+# basicauth @swagger {
+#     inspector    JDJhJDE0JDhYWXhkek5uUWZyQ0ZxY2hCZk5OWXMxT2JaN0EuYU9YdkhuOWt1OURXb0pQNkh5SjJZb2NxCg==
+# }
+```
+
+Reload Caddy after editing the file:
+
+```bash
+caddy validate --config /etc/caddy/Caddyfile
+systemctl reload caddy
+```
+
+---
+
+## 7. Operational checklist (all three proxies)
 
 Before going live, verify the following. The commands assume the
 deployment is on `https://inspector.example.com/`.
@@ -636,7 +763,7 @@ deployment is on `https://inspector.example.com/`.
 
 ---
 
-## 7. Reference: which headers go where
+## 8. Reference: which headers go where
 
 | Header | Where set | Notes |
 | --- | --- | --- |

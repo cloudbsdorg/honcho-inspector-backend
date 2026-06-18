@@ -1,5 +1,7 @@
 # honcho-inspector-backend
 
+[![CI](https://github.com/cloudbsdorg/honcho-inspector-backend/actions/workflows/ci.yml/badge.svg)](https://github.com/cloudbsdorg/honcho-inspector-backend/actions/workflows/ci.yml)
+
 Java 25 / Spring Boot 3.5.0 backend for [honcho-inspector](../honcho-inspector-ui).
 
 Sits between the Angular UI and one or more Honcho instances. Keeps the Honcho API key off the browser, externalizes config per-OS convention, and serves a multi-user multi-profile admin surface (one SQLite DB, no external service to run).
@@ -123,6 +125,9 @@ session:
 
 All `/api/*` paths under `/api/health` (public), `/api/auth/*` (public), `/api/profiles/*` (session), `/api/{peers,sessions,queue-status,workspace,search,dream}/*` (session + profile header).
 
+OpenAPI spec: see [docs/openapi.yaml](docs/openapi.yaml) and Swagger UI at [http://localhost:8080/swagger-ui.html](http://localhost:8080/swagger-ui.html).
+The hand-written narrative spec is at `docs/openapi.yaml`; the live springdoc snapshot is at `docs/openapi.generated.json`. The [drift check](docs/regenerating-openapi.md) enforces they stay aligned.
+
 ### Auth flow
 
 1. `POST /api/auth/register` with `{ username, password }` — first user becomes admin. Returns `201 { id, username, isAdmin, createdAt }`.
@@ -146,6 +151,12 @@ A user can have many Honcho profiles (different workspaces, different API keys, 
 Anything under `/api/peers/*`, `/api/sessions/*`, `/api/queue-status`, `/api/workspace/info`, `/api/search`, `/api/dream` is forwarded to Honcho. The `HonchoProxyService` adds `Authorization: Bearer <apiKey>` and `X-Honcho-User-Name: <userName>` per-request from the selected profile, and strips a trailing `/mcp` from the base URL if present.
 
 `X-Session-Id` is the row's session, `X-Honcho-Profile-Id` is which Honcho instance to talk to. These are intentionally separate so a single user can be logged into multiple Honcho workspaces and switch between them.
+
+### Honcho provider layer
+
+The proxy above is version-agnostic on purpose: a per-version `HonchoClient` (e.g. `HonchoV3Client`) is selected by a `HonchoClientFactory` that indexes each registered client by the `HonchoApiVersion` it advertises. A `HonchoProviderRegistry` then dispatches each `HonchoOperation` to the right `HonchoProvider` `@Component` for that version — one provider per resource cluster, not one per endpoint. Per-profile version overrides live in the `honcho_profiles.api_version` column: NULL inherits the `honcho.api-version` default; non-NULL pins that profile to a specific Honcho version so one operator can run a workspace on v3 today and start migrating another to v4 without redeploying.
+
+For the full anatomy + custom-provider tutorial + V4 walkthrough, see [docs/honcho-providers.md](docs/honcho-providers.md).
 
 ## Deployment
 
@@ -226,8 +237,14 @@ etc/honcho-inspector/
 docs/
   SECURITY.md                      — threat model, audit findings, hardening checklists
   reverse-proxy.md                 — nginx (primary), Apache, Caddy configs + requirements
+  honcho-providers.md              — provider layer architecture, custom-provider tutorial, V4 walkthrough
+  regenerating-openapi.md          — when/how to refresh docs/openapi.yaml + drift-check policy
+  openapi.yaml                     — hand-written OpenAPI 3 narrative contract
+  openapi.generated.json           — springdoc snapshot (CI drift-checks against openapi.yaml)
   lessons/
     os-config-conventions.md       — why we use OS-aware config dirs, not ~/.X
+.github/workflows/
+  ci.yml                           — mvn test + OpenAPI drift check on push/PR
 ```
 
 ## License
