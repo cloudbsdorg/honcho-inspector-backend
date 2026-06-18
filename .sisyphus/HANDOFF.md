@@ -8,6 +8,8 @@ The user has committed a **Phase 1 work plan** for the `honcho-inspector-backend
 
 **Read this first if you're verifying direction:** §"Visual Architecture & Workflows" in the plan contains 6 Mermaid diagrams that show the whole shape of what we're building (deployment topology, honcho layer, wave execution, request lifecycle, version upgrade path, Phase 1 vs Phase 2 boundary). If you're not sure what a task is trying to achieve, look at the diagram.
 
+**Diagrams are clickable on GitHub:** every node in d1 and d2 links to its source file via Mermaid `click` directives (full GitHub URLs). If you're in IntelliJ or another viewer that doesn't render Mermaid, open `docs/diagrams-preview.html` in a browser — it embeds the static SVG renderings with the links baked in.
+
 **Do NOT:**
 - Re-plan Phase 1 — the plan is approved (Momus verdict: OKAY).
 - Build Phase 2 features (orgs, sharing, signup, stats, reports) — those are deferred to a separate future plan.
