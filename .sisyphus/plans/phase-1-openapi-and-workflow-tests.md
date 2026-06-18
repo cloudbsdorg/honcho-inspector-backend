@@ -89,6 +89,13 @@ flowchart LR
   SpringBoot -->|"SELECT/INSERT users, sessions, profiles"| DB
   SpringBoot -->|"HTTPS + Authorization: Bearer + X-Honcho-User-Name"| Honcho
 
+  %% --- click directives: link to docs + repos ---
+  click Browser "https://github.com/cloudbsdorg/honcho-inspector-ui" "honcho-inspector-ui (Angular)"
+  click Nginx "https://github.com/cloudbsdorg/honcho-inspector-backend/blob/main/docs/reverse-proxy.md" "docs/reverse-proxy.md (nginx primary, certbot-managed TLS)"
+  click SpringBoot "https://github.com/cloudbsdorg/honcho-inspector-backend/tree/main/src/main/java/com/revytechinc/honchoinspector/" "Spring Boot sources (root)"
+  click DB "https://github.com/cloudbsdorg/honcho-inspector-backend/blob/main/src/main/resources/schema.sql" "SQLite schema"
+  click Honcho "https://honcho.dev/docs/v3/api-reference/" "Honcho v3 API reference"
+
   classDef external fill:#e8f4ff,stroke:#06c,stroke-width:2px
   classDef internal fill:#fff4e6,stroke:#c60,stroke-width:2px
   class Nginx,Honcho external
@@ -96,6 +103,8 @@ flowchart LR
 ```
 
 **Security boundary:** Nginx is the only public listener. Spring Boot binds to `127.0.0.1` (prod). The Honcho API key never leaves the server.
+
+> **Clickable on GitHub:** every node links to its source. For IntelliJ or other Mermaid-non-rendering viewers, open `docs/diagrams/d1.svg` directly.
 
 ### 2. Honcho Layer Architecture (Provider x Factory)
 
@@ -148,7 +157,24 @@ flowchart TD
   HPS -->|"getClient(profile.apiVersion)"| HCF
   HC --> HPS
 
-  classDef new fill:#dfd,stroke:#0a0,stroke-width:2px
+  %% --- click directives: nodes link to source files (GitHub auto-resolves) ---
+  click HC "https://github.com/cloudbsdorg/honcho-inspector-backend/blob/main/src/main/java/com/revytechinc/honchoinspector/controller/HonchoController.java" "HonchoController (T16 refactor)"
+  click AS "https://github.com/cloudbsdorg/honcho-inspector-backend/blob/main/src/main/java/com/revytechinc/honchoinspector/auth/AuthController.java" "AuthController"
+  click PS "https://github.com/cloudbsdorg/honcho-inspector-backend/blob/main/src/main/java/com/revytechinc/honchoinspector/auth/ProfileController.java" "ProfileController"
+  click HPS "https://github.com/cloudbsdorg/honcho-inspector-backend/blob/main/src/main/java/com/revytechinc/honchoinspector/service/HonchoProxyService.java" "HonchoProxyService (T15 refactor)"
+  click HCF "https://github.com/cloudbsdorg/honcho-inspector-backend/blob/main/src/main/java/com/revytechinc/honchoinspector/honcho/HonchoClientFactory.java" "HonchoClientFactory (T8)"
+  click HC3 "https://github.com/cloudbsdorg/honcho-inspector-backend/blob/main/src/main/java/com/revytechinc/honchoinspector/honcho/v3/HonchoV3Client.java" "HonchoV3Client (T14)"
+  click HPR "https://github.com/cloudbsdorg/honcho-inspector-backend/blob/main/src/main/java/com/revytechinc/honchoinspector/honcho/HonchoProviderRegistry.java" "HonchoProviderRegistry (T9)"
+  click HAPI "https://github.com/cloudbsdorg/honcho-inspector-backend/blob/main/src/main/java/com/revytechinc/honchoinspector/honcho/HonchoApiVersion.java" "HonchoApiVersion enum (T5)"
+  click HOP "https://github.com/cloudbsdorg/honcho-inspector-backend/blob/main/src/main/java/com/revytechinc/honchoinspector/honcho/HonchoOperation.java" "HonchoOperation enum (T5)"
+  click PP3 "https://github.com/cloudbsdorg/honcho-inspector-backend/blob/main/src/main/java/com/revytechinc/honchoinspector/honcho/v3/PeersProviderV3.java" "PeersProviderV3 (T10)"
+  click PQP3 "https://github.com/cloudbsdorg/honcho-inspector-backend/blob/main/src/main/java/com/revytechinc/honchoinspector/honcho/v3/PeerQueryProviderV3.java" "PeerQueryProviderV3 (T10)"
+  click SP3 "https://github.com/cloudbsdorg/honcho-inspector-backend/blob/main/src/main/java/com/revytechinc/honchoinspector/honcho/v3/SessionsProviderV3.java" "SessionsProviderV3 (T11)"
+  click MP3 "https://github.com/cloudbsdorg/honcho-inspector-backend/blob/main/src/main/java/com/revytechinc/honchoinspector/honcho/v3/MessagesProviderV3.java" "MessagesProviderV3 (T11)"
+  click WP3 "https://github.com/cloudbsdorg/honcho-inspector-backend/blob/main/src/main/java/com/revytechinc/honchoinspector/honcho/v3/WorkspaceProviderV3.java" "WorkspaceProviderV3 (T12)"
+  click QSP3 "https://github.com/cloudbsdorg/honcho-inspector-backend/blob/main/src/main/java/com/revytechinc/honchoinspector/honcho/v3/QueueStatusProviderV3.java" "QueueStatusProviderV3 (T12)"
+  click SHP3 "https://github.com/cloudbsdorg/honcho-inspector-backend/blob/main/src/main/java/com/revytechinc/honchoinspector/honcho/v3/SearchProviderV3.java" "SearchProviderV3 (T13)"
+  click DRP3 "https://github.com/cloudbsdorg/honcho-inspector-backend/blob/main/src/main/java/com/revytechinc/honchoinspector/honcho/v3/DreamsProviderV3.java" "DreamsProviderV3 (T13)"
 
   classDef new fill:#dfd,stroke:#0a0,stroke-width:2px
   classDef modified fill:#ffd,stroke:#a80,stroke-width:2px
@@ -157,6 +183,8 @@ flowchart TD
 ```
 
 **The golden rule:** users add new endpoints or new Honcho versions by writing a new `@Component implements HonchoProvider` and registering it. No `HonchoController` changes. No `HonchoProxyService` changes.
+
+> **Clickable on GitHub:** every node links to its source file. In IntelliJ or other Mermaid-non-rendering viewers, open `docs/diagrams/d2.svg` directly to see a static rendered version.
 
 ### 3. Wave Execution Timeline & Critical Path
 
@@ -245,9 +273,16 @@ sequenceDiagram
     Honcho-->>Spring: 200 {peers: [...]}
     Spring-->>Browser: 200 {peers: [...]}
   end
+
+  %% Note: Mermaid sequenceDiagram 'click' directive only accepts JS callbacks,
+  %% not URLs. For clickable participant links, open the static SVG file
+  %% (docs/diagrams/d4.svg) in a browser - the nodes themselves are pure
+  %% diagrams; the file paths live in the diagram 2 architecture view.
 ```
 
 **Note:** GETs against `/api/*` are forwarded to Honcho v3 as POSTs (Honcho v3's list endpoints are POST-only). T16 fixes the upstream method mismatch.
+
+> **Clickable on GitHub:** flowchart-style diagrams (d1, d2) link each node to its source via Mermaid `click` directives. Sequence diagrams (d4) can't use URL clicks in Mermaid 11 — see diagram 2 for the code/file navigation. For static rendering in IntelliJ or other viewers, open `docs/diagrams/d4.svg` directly.
 
 ### 5. Version Upgrade Path: How V4 Drops In
 
