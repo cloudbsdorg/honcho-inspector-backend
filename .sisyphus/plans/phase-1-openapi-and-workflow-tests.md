@@ -1579,7 +1579,7 @@ Max Concurrent: 8 (Wave 2)
   - Message: `feat(honcho): add HonchoProviderRegistry with multi-op support + version filter + collision handling + strict-mode integration`
   - Files: new `honcho/HonchoProviderRegistry.java`, modified `honcho/HonchoClientFactory.java`, new tests
 
-- [ ] 10. `PeersProviderV3` + `PeerQueryProviderV3` (2 files, 10 peer operations)
+- [x] 10. `PeersProviderV3` + `PeerQueryProviderV3` (2 files, 10 peer operations)
 
   **What to do**:
   - Per user directive ("one builder per logical operation, ~7-9 files"), group peer operations into 2 files:
@@ -1658,7 +1658,7 @@ Max Concurrent: 8 (Wave 2)
   - Message: `feat(honcho): add PeersProviderV3 + PeerQueryProviderV3 (10 peer ops across 2 multi-op files)`
   - Files: 2 new `honcho/v3/*ProviderV3.java` + 2 new tests
 
-- [ ] 11. `SessionsProviderV3` (1 file, 7 session operations)
+- [x] 11. `SessionsProviderV3` (1 file, 7 session operations)
 
   **What to do**:
   - Create `src/main/java/com/revytechinc/honchoinspector/honcho/v3/SessionsProviderV3.java`:
@@ -1717,7 +1717,7 @@ Max Concurrent: 8 (Wave 2)
   - Message: `feat(honcho): add SessionsProviderV3 (7 session ops in 1 multi-op file)`
   - Files: new `honcho/v3/SessionsProviderV3.java` + test
 
-- [ ] 12. `MessagesProviderV3` (1 file, 3 message operations)
+- [x] 12. `MessagesProviderV3` (1 file, 3 message operations)
 
   **What to do**:
   - Create `src/main/java/com/revytechinc/honchoinspector/honcho/v3/MessagesProviderV3.java`:
@@ -1768,7 +1768,7 @@ Max Concurrent: 8 (Wave 2)
   - Message: `feat(honcho): add MessagesProviderV3 (3 message ops in 1 multi-op file)`
   - Files: new `honcho/v3/MessagesProviderV3.java` + test
 
-- [ ] 13. Four single-op V3 providers (Workspace, QueueStatus, Search, Dreams)
+- [x] 13. Four single-op V3 providers (Workspace, QueueStatus, Search, Dreams)
 
   **What to do**:
   - Create 4 single-op V3 providers (one operation each, too small to group):

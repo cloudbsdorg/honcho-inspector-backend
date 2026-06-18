@@ -1,0 +1,25 @@
+T10: HTTP methods per Honcho v3 contract (peer operations)
+============================================================
+
+All 10 peer operations match Honcho v3 spec:
+
+  Operation                | Method | v3 Path
+  ------------------------ | ------ | -------------------------------------------------
+  LIST_PEERS               | POST   | v3/workspaces/{ws}/peers/list         (v2 was GET)
+  CREATE_PEER              | POST   | v3/workspaces/{ws}/peers
+  GET_PEER_CARD            | GET    | v3/workspaces/{ws}/peers/{peerId}/card
+  UPDATE_PEER_CARD         | POST   | v3/workspaces/{ws}/peers/{peerId}/card
+  GET_REPRESENTATION       | GET    | v3/workspaces/{ws}/peers/{peerId}/representation
+  PEER_CHAT                | POST   | v3/workspaces/{ws}/peers/{peerId}/chat
+  SEARCH_PEERS             | POST   | v3/workspaces/{ws}/peers/{peerId}/search
+  LIST_PEER_CONCLUSIONS    | GET    | v3/workspaces/{ws}/peers/{peerId}/conclusions
+  LIST_PEER_SESSIONS       | GET    | v3/workspaces/{ws}/peers/{peerId}/sessions
+  QUERY_PEER_CONCLUSIONS   | POST   | v3/workspaces/{ws}/peers/{peerId}/conclusions/query
+
+POST count : 6 (LIST_PEERS, CREATE_PEER, UPDATE_PEER_CARD, PEER_CHAT, SEARCH_PEERS, QUERY_PEER_CONCLUSIONS)
+GET count  : 4 (GET_PEER_CARD, GET_REPRESENTATION, LIST_PEER_CONCLUSIONS, LIST_PEER_SESSIONS)
+
+Verified via PeersProviderV3Test and PeerQueryProviderV3Test:
+  - provider.httpMethod(op) returns the right verb for every op
+  - PeersProviderV3Test: 5/5 pass
+  - PeerQueryProviderV3Test: 5/5 pass

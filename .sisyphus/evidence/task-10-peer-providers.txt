@@ -1,0 +1,31 @@
+T10: PeersProviderV3 + PeerQueryProviderV3 — provider files & tests
+==================================================================
+
+Source files (2):
+  src/main/java/com/revytechinc/honchoinspector/honcho/v3/PeersProviderV3.java
+  src/main/java/com/revytechinc/honchoinspector/honcho/v3/PeerQueryProviderV3.java
+
+Test files (2):
+  src/test/java/com/revytechinc/honchoinspector/honcho/v3/PeersProviderV3Test.java
+  src/test/java/com/revytechinc/honchoinspector/honcho/v3/PeerQueryProviderV3Test.java
+
+Counts:
+  $ ls src/main/java/com/revytechinc/honchoinspector/honcho/v3/Peer*ProviderV3.java | wc -l
+  2
+
+Test execution:
+  $ mvn -B test -Dtest='Peer*ProviderV3Test'
+  ...
+  Tests run: 10, Failures: 0, Errors: 0, Skipped: 0
+  BUILD SUCCESS
+
+Full mvn test (post-T10, with parallel T11/T12/T13 work):
+  $ mvn -B test
+  ...
+  Tests run: 137, Failures: 0, Errors: 0, Skipped: 0
+  BUILD SUCCESS
+
+Provider coverage:
+  PeersProviderV3    : LIST_PEERS, CREATE_PEER, GET_PEER_CARD, UPDATE_PEER_CARD, GET_REPRESENTATION  (5 ops)
+  PeerQueryProviderV3: PEER_CHAT, SEARCH_PEERS, LIST_PEER_CONCLUSIONS, LIST_PEER_SESSIONS, QUERY_PEER_CONCLUSIONS  (5 ops)
+  Combined           : 10/10 peer-related HonchoOperation constants

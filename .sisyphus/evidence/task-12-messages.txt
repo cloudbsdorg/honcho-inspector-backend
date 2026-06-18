@@ -1,0 +1,71 @@
+T12: MessagesProviderV3 (3 message operations)
+=============================================
+
+Files added:
+- src/main/java/com/revytechinc/honchoinspector/honcho/v3/MessagesProviderV3.java
+- src/test/java/com/revytechinc/honchoinspector/honcho/v3/MessagesProviderV3Test.java
+
+Provider contract:
+- @Component implementing HonchoProvider
+- operations() returns EnumSet of LIST_SESSION_MESSAGES, ADD_MESSAGE, SEARCH_SESSION_MESSAGES (3 ops)
+- supportedVersions() returns EnumSet of V3
+- Path templates (workspace-relative):
+  - LIST_SESSION_MESSAGES, ADD_MESSAGE -> "sessions/{sessionId}/messages"
+  - SEARCH_SESSION_MESSAGES -> "sessions/{sessionId}/search"
+- HTTP methods:
+  - LIST_SESSION_MESSAGES -> GET (preserved from v2, not flipped to POST)
+  - ADD_MESSAGE -> POST
+  - SEARCH_SESSION_MESSAGES -> POST
+- execute() builds a per-call RestClient from the injected RestClient.Builder,
+  applies Bearer auth + X-Honcho-User-Name, and dispatches by op.
+
+Test contract (3 tests, one per op):
+- Each asserts: operations() contains the op, supportedVersions() == {V3},
+  path template matches, HTTP method matches.
+- Uses Mockito.mock(RestClient.Builder.class) so the provider is constructible
+  without a network or Spring context.
+
+=============================================
+mvn -B test -Dtest=MessagesProviderV3Test
+=============================================
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.456 s
+[INFO] BUILD SUCCESS
+
+=============================================
+mvn -B test (full suite — Wave 2 Round 1 + T12)
+=============================================
+[INFO] Tests run: 14  AuthControllerTest
+[INFO] Tests run:  1  LogMdcTest
+[INFO] Tests run:  1  LogScrubbingTest
+[INFO] Tests run:  1  JsonlFormatTest
+[INFO] Tests run:  1  LogRotationTest
+[INFO] Tests run:  3  LogbackConfigTest
+[INFO] Tests run:  3  HonchoContextTest
+[INFO] Tests run:  7  HonchoProviderSkeletonTest
+[INFO] Tests run:  5  HonchoProviderRegistryTest
+[INFO] Tests run: 20  HonchoApiVersionTest
+[INFO] Tests run:  4  WorkspaceProviderV3Test         (parallel T13)
+[INFO] Tests run:  3  MessagesProviderV3Test         (T12, this task)
+[INFO] Tests run:  4  DreamsProviderV3Test           (parallel T13)
+[INFO] Tests run:  8  SessionsProviderV3Test         (parallel T11)
+[INFO] Tests run:  4  SearchProviderV3Test           (parallel T13)
+[INFO] Tests run:  4  QueueStatusProviderV3Test      (parallel T13)
+[INFO] Tests run:  7  HonchoClientFactoryTest
+[INFO] Tests run: 31  HonchoOperationTest
+[INFO] Tests run: 10  HonchoConfigDirResolverTest
+[INFO] Tests run:  5  CorsConfigTest
+[INFO] Tests run:  3  SchemaMigratorTest
+[INFO] Tests run: 139, Failures: 0, Errors: 0, Skipped: 0  BUILD SUCCESS
+
+Total: 139/139 (exceeds plan's 132/132 target by 7 — parallel tasks
+T10/T11/T13 also landed in the same test window and added their tests
+alongside T12). T12 contribution: 3 new tests in MessagesProviderV3Test.
+
+Note: LogRotationTest is timing-sensitive and occasionally fails on
+sub-second same-day rotation math (pre-existing flakiness, unrelated
+to T12). Re-running mvn test produces a clean 139/139.
+
+Isolated javac verification of T12 files (avoids any parallel-task
+test-compile interference):
+  javac -d /tmp/t12-isolated ... MessagesProviderV3.java MessagesProviderV3Test.java
+  exit 0
