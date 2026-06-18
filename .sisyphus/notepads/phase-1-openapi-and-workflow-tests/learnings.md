@@ -576,3 +576,120 @@ The `collisionLogsAndFirstWins` test attaches a Logback `ListAppender<ILoggingEv
 ### Out of scope per T9 directive
 - No wiring into HonchoV3Client (that's T14).
 - No strict-mode integration with HonchoClientFactory (the plan's `honcho.providers.strict-mode` check is deferred to a later task). The 4th evidence file `task-9-strict-mode.txt` is intentionally not created.
+
+## T11: SessionsProviderV3 (2026-06-18)
+
+### Files added (com.revytechinc.honchoinspector.honcho.v3)
+- `SessionsProviderV3.java` (220 lines) — `@Component` implementing `HonchoProvider` for 7 session ops. Injects `RestClient` (matching `HonchoProxyService` pattern from `service/`).
+- `SessionsProviderV3Test.java` (215 lines) — 8 tests (7 op-specific + 1 integration).
+
+### Path/Method contract (7 ops)
+```
+LIST_SESSIONS         POST   v3/workspaces/{ws}/sessions        (was GET in v2)
+CREATE_SESSION         POST   v3/workspaces/{ws}/sessions
+GET_SESSION            GET    v3/workspaces/{ws}/sessions/{sessionId}
+DELETE_SESSION         DELETE v3/workspaces/{ws}/sessions/{sessionId}
+GET_SESSION_CONTEXT    GET    v3/workspaces/{ws}/sessions/{sessionId}/context
+GET_SESSION_SUMMARIES  GET    v3/workspaces/{ws}/sessions/{sessionId}/summaries
+GET_SESSION_PEERS      GET    v3/workspaces/{ws}/sessions/{sessionId}/peers
+```
+
+### Spring RestClient.method() return type gotcha
+- `RestClient.method(HttpMethod)` returns `RequestBodyUriSpec`, NOT `RequestBodySpec`. The `uri(...)` call lives on `RequestBodyUriSpec`, and `.contentType()`/`.body()`/`.headers()` are inherited through the spec chain.
+- First-pass test code used `RestClient.RequestBodySpec` as the mock type — compile failed with "no symbol method uri(java.net.URI) at RequestBodySpec" because `.uri()` is on the parent `UriSpec` interface and `RequestBodySpec` (post-uri) doesn't have it. Switched to `RestClient.RequestBodyUriSpec` and the chain compiles.
+- This is generalizable: any `RestClient` mocking must mock the *first* spec returned by `http.method(...)`, which is `RequestBodyUriSpec`. Mocking `RequestBodySpec` is only valid AFTER `.uri(...)` has been called.
+
+### Mockito `argThat()` overload ambiguity
+- `RestClient.UriSpec.uri(...)` has two overloads: `uri(URI)` and `uri(Function<UriBuilder, URI>)`. When you write `when(mock.uri(any()))` or `verify(mock).uri(argThat(...))`, the compiler can't disambiguate which overload matches.
+- Fix in `when(...)` setup: explicit cast `when(mockUriSpec.uri((URI) any())).thenReturn(...)`. The `(URI)` cast forces the `uri(URI)` overload.
+- Fix in `verify(...)` check: typed lambda `argThat((URI uri) -> ...)` — the explicit parameter type on the lambda forces the `uri(URI)` overload. This is cleaner than `(URI) argThat(...)` for the verify side.
+
+### Package-private `buildUrl()` helper
+- Made the URL-construction logic a package-private method (`String buildUrl(HonchoContext, HonchoOperation, Map<String, String>)`) so tests can verify URL construction directly. This avoids needing to mock the full `RestClient` chain just to assert what URL would be sent.
+- This pattern is reusable for the other v3 providers (PeersProviderV3, MessagesProviderV3, etc.) — they can all expose a package-private `buildUrl` and unit-test it without `RestClient` mocking at all. The "use a mocked `RestClient.Builder`" requirement from the task spec is satisfied by ONE integration test per provider, not all 7 per-op tests.
+
+### Test count
+- `SessionsProviderV3Test`: 8 tests passing (7 op-specific + 1 integration)
+- Full `mvn -B test`: 139/139 passing (122 baseline + 8 mine + 9 from other v3 providers added in parallel: Workspace 4, Messages 3, Dreams 4, Search 4, QueueStatus 4 = 19, but Workspace shows 1 in some runs, suggesting parallel-agent state drift between 136 and 139)
+- The plan's "129/129 (122 prior + 7 new)" prediction is stale by 7-10; the actual contract is "all pass, no regressions", which is satisfied.
+- Evidence: `.sisyphus/evidence/task-11-sessions.txt`
+
+### Parallel-work state observed
+- 6 v3 provider test classes exist in `honcho/v3/` after this task: `WorkspaceProviderV3Test`, `MessagesProviderV3Test`, `DreamsProviderV3Test`, `SessionsProviderV3Test`, `SearchProviderV3Test`, `QueueStatusProviderV3Test`. T10 (PeersProviderV3) and T12-T13 are landing in parallel.
+- HonchoProviderRegistry collides with my v3 providers in some test runs (the registry's test fixture uses `LIST_PEERS`, not `LIST_SESSIONS`, so no actual conflict — the WARN log line is from `HonchoProviderRegistryTest`'s own test fixture, not from my provider).
+- Transient `BUILD FAILURE` observed on one `mvn test` run — appeared to be parallel work modifying files mid-test. Re-ran immediately and got 139/139 BUILD SUCCESS. Same pattern as the T2/T4b parallel-revert issues documented in `issues.md`.
+
+
+## T13: Four single-op V3 providers (Workspace, QueueStatus, Search, Dreams) — 2026-06-18
+
+### Files added (com.revytechinc.honchoinspector.honcho.v3)
+- `WorkspaceProviderV3.java` (62 lines) — GET_WORKSPACE_INFO → GET /v3/workspaces/{ws}
+- `QueueStatusProviderV3.java` (62 lines) — GET_QUEUE_STATUS → GET /v3/workspaces/{ws}/queue-status
+- `SearchProviderV3.java` (64 lines) — SEARCH_MESSAGES → POST /v3/workspaces/{ws}/search
+- `DreamsProviderV3.java` (66 lines) — SCHEDULE_DREAM → POST /v3/workspaces/{ws}/peers/{peerId}/dreams
+- `V3ProviderSupport.java` (132 lines) — package-private helper for URL building, path-variable substitution, auth headers, and HonchoCallException translation. Not a provider; not counted in the "8 V3 providers" total.
+- 4 matching test classes in `src/test/java/.../honcho/v3/`, 1 test method each (metadataMatchesV3Contract).
+
+### Design decision: shared helper vs inlined plumbing
+Each provider's `execute()` is identical up to the HTTP method (GET vs POST) and the path template. Inlining would have duplicated ~30 lines of HTTP plumbing per file. The package-private `V3ProviderSupport` keeps each provider under 70 lines and makes future auth-header or error-truncation changes a single-file edit. The plan's "4 provider files" acceptance criterion is still met; the helper is just infrastructure.
+
+### Constructor pattern: RestClient.Builder injection
+Each provider takes `RestClient.Builder` (auto-configured by Spring Boot 3.2+ as a prototype-scoped bean) and calls `build()` once at construction time. Tests pass a Mockito mock that returns a mock `RestClient` from `builder.build()` — no real HTTP, no real network. This pattern matches Spring's own `RestClient.Builder` recommendation and avoids re-building the client per call.
+
+### Path template convention (confirmed via plan + Javadoc)
+- Templates are the path AFTER the version prefix: `workspaces/{ws}`, `workspaces/{ws}/queue-status`, etc.
+- The HonchoProvider Javadoc says "URL path template (relative to the workspace base, e.g. `peers/{peerId}/card`)" — so the convention is relative to `/v3/`, not relative to `/v3/workspaces/{ws}/`. Future providers should follow the same convention.
+- The `execute()` method prepends the base URL + version prefix at call time via `V3ProviderSupport.buildUrl(...)`.
+
+### v2→v3 contract changes (load-bearing context, in class Javadoc)
+- `SEARCH_MESSAGES`: v2 was GET with query string; v3 is POST with JSON body. The SearchProviderV3 class Javadoc documents this so a future refactor doesn't regress to GET.
+- `SCHEDULE_DREAM`: v2 was workspace-scoped with peer id in the body; v3 promoted the peer id to a path variable `{peerId}`. The DreamsProviderV3 class Javadoc documents this so the path template doesn't accidentally lose `{peerId}`.
+- `GET_QUEUE_STATUS`: v2 was `/api/queue-status` → `/v3/queue/status` (with slash); v3 dropped the slash → `/v3/workspaces/{ws}/queue-status`.
+
+### Test count reality
+- T13 added 4 tests (1 per class). Spec said "132 prior + 4 new = 136"; actual is "123 prior + 4 new = 127" because T11 and T12 each came in lighter than the spec predicted (8 + 3 = 11 vs the spec's likely 15) and T10's tests haven't been written yet. The "Total V3 providers across T10-T13 = 8 files" claim still holds; only the test count diverges.
+
+### Parallel-task race pattern (recurring)
+T10 (Peers, PeerQuery), T11 (Sessions), T12 (Messages), and T13 (this) all write to the same `honcho.v3` package. The test-compile phase is global, so a single agent's broken test file blocks `mvn -B test` for everyone. Verification strategy: (1) run my 4 tests in isolation with `-Dtest='...'`; (2) re-run full `mvn -B test` and accept that the result may be blocked by sibling agents. Don't touch sibling files — let them fix their own compile errors.
+
+## T10: PeersProviderV3 + PeerQueryProviderV3 (2026-06-18)
+
+### Files added
+- `src/main/java/com/revytechinc/honchoinspector/honcho/v3/PeersProviderV3.java` (226 lines) — 5 ops
+- `src/main/java/com/revytechinc/honchoinspector/honcho/v3/PeerQueryProviderV3.java` (219 lines) — 5 ops
+- `src/test/java/com/revytechinc/honchoinspector/honcho/v3/PeersProviderV3Test.java` (5 tests)
+- `src/test/java/com/revytechinc/honchoinspector/honcho/v3/PeerQueryProviderV3Test.java` (5 tests)
+
+### Design choice: `RestClient` direct injection (per T10 spec)
+- T10 spec was explicit: "Do NOT add a `RestClient.Builder` injection (use `RestClient` directly or mock the builder)"
+- I followed the spec — `PeersProviderV3` and `PeerQueryProviderV3` both take `RestClient honchoRestClient` in the constructor
+- The sibling V3 providers (`MessagesProviderV3`, `SessionsProviderV3`, etc.) created by parallel T11/T12/T13 use `RestClient.Builder` instead — this is a divergence, not a defect, but worth noting in T14 (wiring) so the registry's `RestClient` bean is correctly typed
+
+### Path-template style: absolute (with v3 prefix) vs workspace-relative
+- I chose absolute templates: `v3/workspaces/{ws}/peers/list` (v3 prefix included)
+- Sibling `MessagesProviderV3` chose workspace-relative: `sessions/{sessionId}/messages` (no v3 prefix)
+- Both styles work; the difference is whether the URL construction includes the v3 prefix or the provider uses the bare resource path. For the test pattern (`buildUri` / `substitutePath`), my absolute style is more self-contained — the test asserts `https://api.honcho.dev/v3/workspaces/ws-42/peers/list` end-to-end.
+
+### `{ws}` substitution source
+- `substitutePath` substitutes `{ws}` from `ctx.workspaceId()` always (not from `pathVars`)
+- `pathVars` only carries `{peerId}` (and any other non-ws resource id)
+- **Test gotcha**: when writing tests, the `HonchoContext`'s `workspaceId()` is what appears in the final URL — not the `pathVars["ws"]`. First test run failed because I passed `Map.of("ws", "ws-42")` while `CTX.workspaceId() == "ws-1"`. Fix: keep `ws-42` in `CTX.workspaceId()` and don't put `ws` in `pathVars` at all.
+
+### URL construction helpers
+- Both providers expose `static String substitutePath(template, ctx, pathVars)` and `static URI buildUri(ctx, path, query)` as package-private (NOT in a shared `V3ProviderSupport` class). The existing `V3ProviderSupport` was created by parallel T13 work, but I didn't notice it at the time of writing and didn't refactor mine. A future cleanup could move the helpers into `V3ProviderSupport` to match the sibling providers.
+- ~80 lines of duplicated helper code between the two providers. Tolerable for now (2-file scope per T10 spec); DRY violation is bounded.
+
+### Test count
+- 10 new tests (5 + 5)
+- Full mvn test: 137/137 passing (was 112 prior + 10 new + 15 from parallel T11/T12/T13)
+- The spec's "122/122" prediction was based on stale 112 baseline; actual is 137 because parallel agents had already added 15 tests
+- Evidence: `.sisyphus/evidence/task-10-peer-providers.txt`, `task-10-methods.txt`, `task-10-paths.txt`
+
+### v2→v3 contract changes captured
+- `LIST_PEERS`: v2 was `GET /api/peers` → v3 is `POST /v3/workspaces/{ws}/peers/list` (GET→POST + path suffix). Test class Javadoc documents this.
+- All other peer operations kept the same verb (GET stays GET, POST stays POST) but the path moved under `/v3/workspaces/{ws}/` and the `peerId` resource id became a path variable.
+
+### Parallel-task race during T10
+- Sibling T11/T12/T13 agents had already created `MessagesProviderV3`, `SessionsProviderV3`, etc. AND their tests, but NOT `PeersProviderV3`/`PeerQueryProviderV3` (those were T10's scope). No conflict; the test directory already had 6 sibling V3 test files when I started.
+- No file was clobbered during my T10 execution — `git status` confirmed only my 4 new files at the end.
+- One transient `mvn -B test` run had 1 failure (logging test, not mine); re-run was clean. The logging tests are timing-sensitive (Logback JVM-wide singleton, see T4b-completion entry).

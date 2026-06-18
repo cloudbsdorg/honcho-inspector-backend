@@ -1,0 +1,36 @@
+T13 — Operation coverage (T13 providers only)
+==============================================
+Date: 2026-06-18
+
+Coverage of the 24 Honcho operations by the V3 providers in T13:
+
+T13 (4 providers × 1 op each = 4 ops):
+  WorkspaceProviderV3  → GET_WORKSPACE_INFO   (GET  /v3/workspaces/{ws})
+  QueueStatusProviderV3 → GET_QUEUE_STATUS    (GET  /v3/workspaces/{ws}/queue-status)
+  SearchProviderV3     → SEARCH_MESSAGES      (POST /v3/workspaces/{ws}/search)
+  DreamsProviderV3     → SCHEDULE_DREAM       (POST /v3/workspaces/{ws}/peers/{peerId}/dreams)
+
+Full mvn test result (proves no compile error from T13 code):
+$ mvn -B test 2>&1 | tail -5
+[INFO] Tests run: 127, Failures: 0, Errors: 0, Skipped: 0
+[INFO] BUILD SUCCESS
+
+Per-class test counts from the same mvn run:
+- WorkspaceProviderV3Test: 1 test
+- QueueStatusProviderV3Test: 1 test
+- SearchProviderV3Test: 1 test
+- DreamsProviderV3Test: 1 test
+- MessagesProviderV3Test: 3 tests (T12)
+- SessionsProviderV3Test: 8 tests (T11)
+- Other test classes (T1-T9 baseline, logging, etc.): 112 tests
+
+Total: 127 = 112 (T1-T9 baseline) + 3 (T12) + 8 (T11) + 4 (T13)
+Note: T10 (Peers) source files exist but their tests are not yet on disk;
+the count above does not include any T10 test methods.
+
+HonchoOperationCoverageTest#all24OperationsCoveredByV3 is a T14 deliverable
+(HonchoV3Client wires up all 8 V3 providers via the registry and asserts
+that the union of provider operations == all 24 HonchoOperation enum constants).
+That test is NOT in scope for T13; the T14 evidence file will cover it.
+
+Expected Result (T13 scope): 4 providers × 1 op = 4 ops covered, no duplicates ✓

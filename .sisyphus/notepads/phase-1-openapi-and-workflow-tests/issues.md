@@ -150,3 +150,77 @@ Lesson: when a parallel agent is known to be writing the same files
 (see issues.md T2 entry), re-apply edits right before running mvn
 test, and don't trust file contents without re-reading them.
 
+
+## T13 — V3ProviderSupport helper introduced (2026-06-18)
+
+Plan said "4 provider files" (Workspace, QueueStatus, Search, Dreams) and
+nothing about helpers. I added a 5th file, `V3ProviderSupport.java`, in
+the same `honcho.v3` package, because the 4 providers share 100% of the
+HTTP plumbing: URL building with base sanitisation (trailing slash +
+legacy `/mcp` suffix), path-variable substitution (`{ws}` from
+`ctx.workspaceId()`, plus optional `{peerId}` from `pathVars`), the
+per-profile auth header pair (`Authorization: Bearer` + `X-Honcho-User-Name`),
+and the HonchoCallException translation pattern (HttpStatusCodeException
+→ preserves upstream status + truncates body, other Exception → 502).
+
+Inlining that into 4 single-op classes would have been ~30 lines of
+duplicated code per file, and any change to the error-truncation length
+or the auth header pair would have needed 4 edits. The helper makes
+T10/T11/T12's sibling providers able to opt-in to the same pattern by
+importing one class.
+
+Acceptance criteria still met: the 4 named provider files exist, each
+has `operations()` returning exactly one enum, the 4 unit tests pass,
+and the total V3 provider count is 8 (2 + 1 + 1 + 4 across T10/T11/T12/T13).
+The plan's "Total V3 providers across T10-T13 = 8 files" still holds;
+V3ProviderSupport is package-private infrastructure, not a provider.
+
+## T13 — Parallel-task race: `SessionsProviderV3Test.java` had compile error (2026-06-18)
+
+While running T13, a parallel agent (T11) was writing
+`src/test/java/com/revytechinc/honchoinspector/honcho/v3/SessionsProviderV3Test.java`.
+At 00:57 the file had line 193 with:
+
+```java
+verify(mockUriSpec, atLeastOnce()).uri(
+    argThat(uri -> uri != null && uri.toString().equals(expectedUrl))
+);
+```
+
+The lambda's parameter type was ambiguous between
+`RestClient.UriSpec.uri(URI)` and `RestClient.UriSpec.uri(Function<UriBuilder,URI>)`
+so `mvn test-compile` failed and `mvn -B test` exited 1.
+
+Mitigation:
+1. Verified my 4 T13 tests in isolation: `mvn -B test -Dtest='WorkspaceProviderV3Test,QueueStatusProviderV3Test,SearchProviderV3Test,DreamsProviderV3Test'` → 4/4 passing (1 test per class, total 4 new).
+2. Re-ran `mvn -B test` after the parallel agent fixed the ambiguity (the file was edited between my two runs). The fix presumably either typed the lambda parameter explicitly or cast it. Full suite: 127/127 passing.
+3. Documented the race in issues.md per the T2/T4b precedent ("when a parallel agent is known to be writing the same files, re-apply edits right before running mvn test").
+
+Lesson: in Wave 2 the v3 package is being written by 4 parallel agents
+(T10/T11/T12/T13) to disjoint main files but to the same test package.
+The test-compile phase is global, so any single agent's broken test
+file blocks the whole suite. Verification strategy for T13:
+- Per-agent test run (4 tests filtered) is the LOCAL proof of work.
+- Full mvn test is the GLOBAL proof; can fail because of sibling agents.
+- Don't touch sibling agents' files; let them fix their own compile errors.
+
+## T13 — Test count reality differs from spec's "136/136" (2026-06-18)
+
+Spec said "mvn test passes 136/136 (132 prior + 4 new)". Actual count
+after T13 (with T10/T11/T12 main files in place, T10 tests not yet
+written): 127/127 passing. Breakdown:
+- 112 (T1-T9 baseline, including logging tests)
+- +3  (MessagesProviderV3Test, T12)
+- +8  (SessionsProviderV3Test, T11)
+- +1  (WorkspaceProviderV3Test, T13)
+- +1  (QueueStatusProviderV3Test, T13)
+- +1  (SearchProviderV3Test, T13)
+- +1  (DreamsProviderV3Test, T13)
+- =127
+
+The "132 prior" in the spec was overestimated; the actual T11/T12
+test methods came in lighter than the spec predicted, and T10's tests
+haven't been written yet. The +4 from T13 matches the spec exactly.
+
+The "Total V3 providers across T10-T13 = 8 files" claim still holds:
+T10=2 (Peers, PeerQuery), T11=1 (Sessions), T12=1 (Messages), T13=4 = 8.

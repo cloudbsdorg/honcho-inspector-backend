@@ -1,0 +1,72 @@
+T11: SessionsProviderV3 — Evidence
+=================================
+
+Date: 2026-06-18
+Task: Implement SessionsProviderV3 (7 session operations in 1 multi-op file)
+Status: COMPLETE
+
+Files added
+----------
+src/main/java/com/revytechinc/honchoinspector/honcho/v3/SessionsProviderV3.java
+  - @Component implementing HonchoProvider
+  - operations() returns 7 session ops: LIST_SESSIONS, CREATE_SESSION,
+    GET_SESSION, DELETE_SESSION, GET_SESSION_CONTEXT, GET_SESSION_SUMMARIES,
+    GET_SESSION_PEERS
+  - supportedVersions() returns {V3}
+  - pathTemplate(op) and httpMethod(op) overridden per-op
+  - execute() does real HTTP via injected RestClient
+  - Package-private buildUrl() helper for testability
+
+src/test/java/com/revytechinc/honchoinspector/honcho/v3/SessionsProviderV3Test.java
+  - 8 tests, 7 op-specific + 1 integration with mocked RestClient
+  - Each per-op test asserts: operations() contains op, supportedVersions()={V3},
+    path template, HTTP method, and URL construction
+
+Path/Method map (per plan line 1669-1676)
+-----------------------------------------
+LIST_SESSIONS         POST   v3/workspaces/{ws}/sessions
+                                  ^ v2 was GET — v2→v3 contract change
+CREATE_SESSION         POST   v3/workspaces/{ws}/sessions
+GET_SESSION            GET    v3/workspaces/{ws}/sessions/{sessionId}
+DELETE_SESSION         DELETE v3/workspaces/{ws}/sessions/{sessionId}
+GET_SESSION_CONTEXT    GET    v3/workspaces/{ws}/sessions/{sessionId}/context
+GET_SESSION_SUMMARIES  GET    v3/workspaces/{ws}/sessions/{sessionId}/summaries
+GET_SESSION_PEERS      GET    v3/workspaces/{ws}/sessions/{sessionId}/peers
+
+QA scenario from plan line 1704-1713
+------------------------------------
+1. mvn test -Dtest=SessionsProviderV3Test
+2. Assert "Tests run: 8" (7 op-specific + 1 integration with mocked RestClient)
+3. Methods verified by per-op test name:
+   - listSessions_usesPostAndListEndpoint      → LIST_SESSIONS=POST
+   - createSession_usesPostAndCreateEndpoint    → CREATE_SESSION=POST
+   - getSession_usesGetAndIncludesSessionId    → GET_SESSION=GET
+   - deleteSession_usesDeleteAndIncludesSessionId → DELETE_SESSION=DELETE
+   - getSessionContext_usesGetAndContextSubpath → GET_SESSION_CONTEXT=GET
+   - getSessionSummaries_usesGetAndSummariesSubpath → GET_SESSION_SUMMARIES=GET
+   - getSessionPeers_usesGetAndPeersSubpath    → GET_SESSION_PEERS=GET
+4. All 7 ops correctly routed. PASS.
+
+Test run (SessionsProviderV3Test in isolation)
+-----------------------------------------------
+$ mvn -B test -Dtest=SessionsProviderV3Test
+[INFO] Tests run: 8, Failures: 0, Errors: 0, Skipped: 0
+[INFO] BUILD SUCCESS
+
+Test run (full suite)
+---------------------
+$ mvn -B test
+[INFO] Tests run: 139, Failures: 0, Errors: 0, Skipped: 0
+[INFO] BUILD SUCCESS
+
+Note: 139 = parallel v3 providers (Workspace 4, Messages 3, Dreams 4,
+Search 4, QueueStatus 4 = 19) + my 8 + earlier 112. The plan's "129/129"
+was stale; actual is 139/139 with zero failures and zero errors.
+
+Acceptance criteria (per plan line 1697-1702)
+--------------------------------------------
+[x] SessionsProviderV3.java exists in honcho/v3/
+[x] operations() returns exactly 7 session operations
+[x] Each op has correct path + method (v2→v3 change for LIST_SESSIONS captured)
+[x] 7 unit tests pass (8 with the integration test)
+[x] mvn test green (139/139)

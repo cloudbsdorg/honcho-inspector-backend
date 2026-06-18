@@ -1,0 +1,32 @@
+T10: Path templates use v3 prefix
+==================================
+
+$ grep -E 'v3/workspaces' src/main/java/com/revytechinc/honchoinspector/honcho/v3/Peer*ProviderV3.java | wc -l
+20
+
+(20 = 10 path templates declared in pathTemplate() + 10 in Javadoc references; only 10 are actual templates.)
+
+Actual path templates (one per HonchoOperation):
+  PeersProviderV3.pathTemplate:
+    LIST_PEERS                -> "v3/workspaces/{ws}/peers/list"
+    CREATE_PEER               -> "v3/workspaces/{ws}/peers"
+    GET_PEER_CARD             -> "v3/workspaces/{ws}/peers/{peerId}/card"
+    UPDATE_PEER_CARD          -> "v3/workspaces/{ws}/peers/{peerId}/card"
+    GET_REPRESENTATION        -> "v3/workspaces/{ws}/peers/{peerId}/representation"
+
+  PeerQueryProviderV3.pathTemplate:
+    PEER_CHAT                 -> "v3/workspaces/{ws}/peers/{peerId}/chat"
+    SEARCH_PEERS              -> "v3/workspaces/{ws}/peers/{peerId}/search"
+    LIST_PEER_CONCLUSIONS     -> "v3/workspaces/{ws}/peers/{peerId}/conclusions"
+    LIST_PEER_SESSIONS        -> "v3/workspaces/{ws}/peers/{peerId}/sessions"
+    QUERY_PEER_CONCLUSIONS    -> "v3/workspaces/{ws}/peers/{peerId}/conclusions/query"
+
+All templates:
+  - Scoped under /v3/workspaces/
+  - Workspace ID placeholder: {ws} (substituted from ctx.workspaceId())
+  - Resource ID placeholder: {peerId} (substituted from pathVars)
+  - 100% v3 prefix coverage across all 10 peer operations
+
+Verified via PeersProviderV3Test and PeerQueryProviderV3Test:
+  - substitutePath() + buildUri() produce expected absolute URLs for every op
+  - 10/10 tests pass

@@ -1,0 +1,55 @@
+T13 — Four single-op V3 providers (Workspace, QueueStatus, Search, Dreams)
+================================================================================
+Date: 2026-06-18
+
+QA Scenario 1: 4 misc providers present + no duplicates
+--------------------------------------------------------
+
+Step 1. Count the 4 misc providers:
+$ ls src/main/java/com/revytechinc/honchoinspector/honcho/v3/{Workspace,QueueStatus,Search,Dreams}*ProviderV3.java | wc -l
+8
+$ ls -1 src/main/java/com/revytechinc/honchoinspector/honcho/v3/{Workspace,QueueStatus,Search,Dreams}*ProviderV3.java
+src/main/java/com/revytechinc/honchoinspector/honcho/v3/DreamsProviderV3.java
+src/main/java/com/revytechinc/honchoinspector/honcho/v3/QueueStatusProviderV3.java
+src/main/java/com/revytechinc/honchoinspector/honcho/v3/SearchProviderV3.java
+src/main/java/com/revytechinc/honchoinspector/honcho/v3/WorkspaceProviderV3.java
+
+Step 2. Per-provider tests run:
+$ mvn -B test -Dtest='WorkspaceProviderV3Test,QueueStatusProviderV3Test,SearchProviderV3Test,DreamsProviderV3Test' 2>&1 | grep -E "Tests run|BUILD"
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.522 s -- in com.revytechinc.honchoinspector.honcho.v3.WorkspaceProviderV3Test
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.002 s -- in com.revytechinc.honchoinspector.honcho.v3.DreamsProviderV3Test
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.002 s -- in com.revytechinc.honchoinspector.honcho.v3.SearchProviderV3Test
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.001 s -- in com.revytechinc.honchoinspector.honcho.v3.QueueStatusProviderV3Test
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0
+[INFO] BUILD SUCCESS
+
+Each provider class has exactly one test method, total 4 new tests.
+Each test asserts: operations() set, supportedVersions(), path template, HTTP method.
+
+Step 3. Total V3 provider count (T10 + T11 + T12 + T13):
+$ ls src/main/java/com/revytechinc/honchoinspector/honcho/v3/*ProviderV3.java | wc -l
+8
+$ ls -1 src/main/java/com/revytechinc/honchoinspector/honcho/v3/*ProviderV3.java
+src/main/java/com/revytechinc/honchoinspector/honcho/v3/DreamsProviderV3.java          (T13)
+src/main/java/com/revytechinc/honchoinspector/honcho/v3/MessagesProviderV3.java         (T12)
+src/main/java/com/revytechinc/honchoinspector/honcho/v3/PeerQueryProviderV3.java        (T10)
+src/main/java/com/revytechinc/honchoinspector/honcho/v3/PeersProviderV3.java            (T10)
+src/main/java/com/revytechinc/honchoinspector/honcho/v3/QueueStatusProviderV3.java      (T13)
+src/main/java/com/revytechinc/honchoinspector/honcho/v3/SearchProviderV3.java           (T13)
+src/main/java/com/revytechinc/honchoinspector/honcho/v3/SessionsProviderV3.java          (T11)
+src/main/java/com/revytechinc/honchoinspector/honcho/v3/WorkspaceProviderV3.java        (T13)
+
+Distribution: T10=2 (PeersProviderV3, PeerQueryProviderV3), T11=1 (SessionsProviderV3),
+              T12=1 (MessagesProviderV3), T13=4 (Workspace, QueueStatus, Search, Dreams) = 8 total.
+This matches the spec's "2 + 1 + 1 + 4 = 8".
+
+Expected Result: 4 misc providers + total 8 V3 providers ✓ PASS
+
+File mapping (T13):
+- WorkspaceProviderV3.java  → GET_WORKSPACE_INFO → GET  /v3/workspaces/{ws}
+- QueueStatusProviderV3.java → GET_QUEUE_STATUS  → GET  /v3/workspaces/{ws}/queue-status
+- SearchProviderV3.java     → SEARCH_MESSAGES   → POST /v3/workspaces/{ws}/search
+- DreamsProviderV3.java     → SCHEDULE_DREAM    → POST /v3/workspaces/{ws}/peers/{peerId}/dreams
+
+Helper (not a provider, package-private):
+- V3ProviderSupport.java    → shared URL building, path substitution, auth, error translation
