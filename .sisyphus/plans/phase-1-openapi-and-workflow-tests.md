@@ -1495,7 +1495,7 @@ Max Concurrent: 8 (Wave 2)
   - Message: `feat(honcho): add HonchoClientFactory with version routing + UnsupportedHonchoVersionException`
   - Files: new `honcho/HonchoClientFactory.java`, new `honcho/UnsupportedHonchoVersionException.java`, new tests
 
-- [ ] 9. `HonchoProviderRegistry` + Spring auto-discovery (multi-operation)
+- [x] 9. `HonchoProviderRegistry` + Spring auto-discovery (multi-operation)
 
   **What to do**:
   - Create `src/main/java/com/revytechinc/honchoinspector/honcho/HonchoProviderRegistry.java`:
@@ -2035,7 +2035,7 @@ Max Concurrent: 8 (Wave 2)
   - Message: `refactor(honcho): rewrite HonchoController to delegate via HonchoOperation + honcho.call`
   - Files: `controller/HonchoController.java`
 
-- [ ] 17. Update `HonchoContext` to carry `apiVersion` (resolved version)
+- [x] 17. Update `HonchoContext` to carry `apiVersion` (resolved version)
 
   **What to do**:
   - Edit `src/main/java/com/revytechinc/honchoinspector/model/HonchoContext.java`:
@@ -2080,7 +2080,7 @@ Max Concurrent: 8 (Wave 2)
   - Message: `feat(honcho): HonchoContext carries resolved apiVersion`
   - Files: `model/HonchoContext.java`
 
-- [ ] 18. Update `application.yml.example` with provider guidance
+- [x] 18. Update `application.yml.example` with provider guidance
 
   **What to do**:
   - Edit `etc/honcho-inspector/application.yml.example`:

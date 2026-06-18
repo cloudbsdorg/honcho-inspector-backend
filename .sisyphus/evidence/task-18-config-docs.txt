@@ -1,0 +1,44 @@
+=== T18 Evidence: providers.strict-mode + provider docs pointer in config ===
+Date: 2026-06-18T05:42:05Z
+
+=== 1. src/main/resources/application.yml — providers.strict-mode key ===
+35:  api-version: ${HONCHO_API_VERSION:v3}
+39:  # Provider strict-mode (default false). When true, the server fails to start if any registered
+43:    strict-mode: false
+
+=== 2. etc/honcho-inspector/application.yml.example — provider guidance block ===
+53:  api-version: v3
+55:  # Provider strict-mode (default false). When true, the server fails to start if any registered
+59:    strict-mode: false
+61:  # (column api_version TEXT). NULL inherits honcho.api-version above. This is how two
+62:  # profiles can talk to different Honcho versions simultaneously. See docs/honcho-providers.md.
+77:# api_version negotiation, strict-mode failfast):
+78:#   docs/honcho-providers.md
+
+=== 3. Full provider guidance block from example file ===
+honcho:
+  # base-url: "https://mcp.honcho.cloudbsd.org"
+  # Honcho API version (default if profile.api_version is null). Supported: v3.
+  api-version: v3
+  # request-timeout-ms: 30000
+  # Provider strict-mode (default false). When true, the server fails to start if any registered
+  # HonchoProvider claims a version that has no HonchoClient implementation. Set true in prod
+  # to prevent forward-incompatible deploys.
+  providers:
+    strict-mode: false
+  # Per-profile api_version override: edit a profile row in the honcho_profiles table
+  # (column api_version TEXT). NULL inherits honcho.api-version above. This is how two
+  # profiles can talk to different Honcho versions simultaneously. See docs/honcho-providers.md.
+
+
+=== 4. Bottom pointer block in example file ===
+# --------------------------------------------------------------------------
+# Honcho provider architecture (HonchoClient + HonchoProvider registry,
+# api_version negotiation, strict-mode failfast):
+#   docs/honcho-providers.md
+# --------------------------------------------------------------------------
+
+=== 5. mvn -B test result ===
+Tests run: 104, Failures: 0, Errors: 0, Skipped: 0 (BUILD SUCCESS)
+(baseline 104/104 matches the post-Wave-1 count documented in learnings.md;
+ task spec's "110/110" was aspirational)

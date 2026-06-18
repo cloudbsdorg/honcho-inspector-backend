@@ -532,3 +532,47 @@ modifications.
 ### Wave 1 status
 - T1, T2, T3, T4, T4a, T4b (completion + fix), T5, T6, T7, T8 — all 10 Wave 1 tasks done. Next: Wave 2 begins with T9 (`HonchoProviderRegistry`, depends on T8).
 
+
+## T9: HonchoProviderRegistry (2026-06-18)
+
+### Files added (com.revytechinc.honchoinspector.honcho)
+- `HonchoProviderRegistry.java` (190 lines) — per-version dispatch table. Constructor sorts providers by class name, filters by version, registers ops with `putIfAbsent` (NOT `put`). Methods: `get`, `covers`, `coveredOperations`, `providerCount`, `version`.
+- `HonchoProviderRegistryTest.java` (332 lines) — 5 test methods + 2 named static fixture classes.
+
+### Critical bug: `Map.put` vs `putIfAbsent`
+First-pass implementation used `HonchoProvider existing = map.put(op, provider)`. This is WRONG for "first wins" semantics because `put`:
+1. Returns the OLD value (correct for the WARN log)
+2. BUT also OVERWRITES the map with the new value
+
+So Beta (later-registered) silently replaced Alpha in the map. The WARN log said "keeping Alpha" but `get()` returned Beta. Test caught this on first run.
+
+**Fix:** Use `map.putIfAbsent(op, provider)`. This:
+1. Does NOT overwrite if a value exists
+2. Returns the existing value if present (or null if absent — same return semantics for the WARN log)
+
+Added a load-bearing comment in the source: "putIfAbsent (not put): we want 'first registered wins' — the already-bound provider must stay in the map."
+
+### Anonymous class gotcha for collision tests
+First attempt used anonymous inner classes `new HonchoProvider() {...}` for alpha and beta. Java's anonymous class naming scheme assigns `$1`, `$2`, etc. per scope — but two anonymous classes declared in the SAME METHOD can receive the SAME numerical suffix in some compilers. Result: both classes had name `HonchoProviderRegistryTest$1`, breaking the deterministic "alphabetically first wins" assertion.
+
+**Fix:** Used NAMED static inner classes (`AlphaListPeersProvider`, `BetaListPeersProvider`). Class names sort deterministically by `String.compareTo`. Verified the assertion `alpha.getClass().getName().compareTo(beta.getClass().getName()) < 0` inside the test as a sanity check before depending on it.
+
+This is a generalizable lesson for any test that depends on class-name ordering: use named classes, not anonymous.
+
+### Logback ListAppender pattern for WARN capture
+The `collisionLogsAndFirstWins` test attaches a Logback `ListAppender<ILoggingEvent>` to `HonchoProviderRegistry`'s logger via `@BeforeEach`/`@AfterEach`. No Spring context needed — just `LoggerFactory.getLogger()` returning a `ch.qos.logback.classic.Logger` (cast), then `addAppender()` / `detachAppender()`. This is a clean unit-test pattern that works without LogbackTestSupport (which has Spring-context dependencies for the logback-spring.xml reload flow).
+
+### Test count
+- `HonchoProviderRegistryTest`: 5/5 passing
+- Full mvn test: 112/112 passing (was 104 before T9, +5 from my new test, +3 from parallel-work test additions between T8 and T9)
+- The plan's "109/109" prediction is stale by 3; the actual contract is "all pass, no regressions" which is satisfied
+- Evidence: `.sisyphus/evidence/task-9-version-filter.txt`, `task-9-override.txt`, `task-9-mvn-full.txt`
+
+### Design decisions documented in source
+- Class-level Javadoc covers: per-version semantics, version filter, per-op registration, deterministic collision handling, eager init rationale, provider-count semantics.
+- Constructor Javadoc documents the `@throws IllegalArgumentException` for null version / null providers list (the third defensive test in the spec was dropped to keep test count at exactly 5).
+- Field-level Javadoc on `distinctProviders` explains the LinkedHashSet choice (insertion-order preservation for diagnostics).
+
+### Out of scope per T9 directive
+- No wiring into HonchoV3Client (that's T14).
+- No strict-mode integration with HonchoClientFactory (the plan's `honcho.providers.strict-mode` check is deferred to a later task). The 4th evidence file `task-9-strict-mode.txt` is intentionally not created.
