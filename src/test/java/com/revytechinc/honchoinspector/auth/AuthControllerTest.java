@@ -155,7 +155,7 @@ class AuthControllerTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(json.writeValueAsBytes(new ProfileController.ProfileCreateDto(
                     "production", "hnc_test_key", "https://mcp.honcho.cloudbsd.org",
-                    "default", "revytech"))))
+                    "default", "revytech", null))))
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.label").value("production"))
             .andExpect(jsonPath("$.apiKeyEncrypted").isNotEmpty());

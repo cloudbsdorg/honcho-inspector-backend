@@ -26,6 +26,12 @@ public class ProfileService {
 
     public Profile create(String userId, String label, String apiKey,
                           String baseUrl, String workspaceId, String honchoUserName) {
+        return create(userId, label, apiKey, baseUrl, workspaceId, honchoUserName, null);
+    }
+
+    public Profile create(String userId, String label, String apiKey,
+                          String baseUrl, String workspaceId, String honchoUserName,
+                          String apiVersion) {
         var now = Instant.now();
         var profile = new Profile(
             newId(),
@@ -36,7 +42,8 @@ public class ProfileService {
             workspaceId.trim(),
             honchoUserName.trim(),
             now,
-            now
+            now,
+            normalizeApiVersion(apiVersion)
         );
         profiles.insert(profile);
         return profile;
@@ -57,6 +64,13 @@ public class ProfileService {
     public Optional<Profile> update(String userId, String profileId,
                                     String label, String apiKey,
                                     String baseUrl, String workspaceId, String honchoUserName) {
+        return update(userId, profileId, label, apiKey, baseUrl, workspaceId, honchoUserName, null);
+    }
+
+    public Optional<Profile> update(String userId, String profileId,
+                                    String label, String apiKey,
+                                    String baseUrl, String workspaceId, String honchoUserName,
+                                    String apiVersion) {
         var existing = profiles.findById(profileId);
         if (existing == null || !existing.userId().equals(userId)) return Optional.empty();
         var updated = new Profile(
@@ -68,10 +82,17 @@ public class ProfileService {
             workspaceId != null ? workspaceId.trim() : existing.workspaceId(),
             honchoUserName != null ? honchoUserName.trim() : existing.honchoUserName(),
             existing.createdAt(),
-            Instant.now()
+            Instant.now(),
+            apiVersion != null ? normalizeApiVersion(apiVersion) : existing.apiVersion()
         );
         profiles.update(updated);
         return Optional.of(updated);
+    }
+
+    private static String normalizeApiVersion(String v) {
+        if (v == null) return null;
+        var trimmed = v.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     public boolean delete(String userId, String profileId) {

@@ -790,3 +790,68 @@ Both exceptions are propagated by `HonchoProxyService.call()` unchanged. `Honcho
 
 ### Lesson
 The T4 decisions.md note claimed `@EnableConfigurationProperties(HonchoProperties.class)` was added to `HttpClientConfig` during T4, but it was never committed. Pre-T15 code never noticed because the old `HonchoProxyService` used `@Value` directly. T15 surfaced the gap immediately because the refactored service constructor-injects the properties record. **Always verify that `decisions.md` notes match the on-disk state** when picking up a new task — the notepad is a guideline, not the source of truth.
+
+## T16: HonchoController refactor to thin delegating layer (2026-06-18)
+
+### Files changed
+- `src/main/java/com/revytechinc/honchoinspector/auth/Profile.java` — added `String apiVersion` field (nullable, no compact-ctor validation; intentional — see Comment below)
+- `src/main/java/com/revytechinc/honchoinspector/auth/ProfileDao.java` — `ROW` mapper reads `api_version` column; `insert` and `update` write it
+- `src/main/java/com/revytechinc/honchoinspector/auth/ProfileService.java` — added 6-arg `create(userId, label, apiKey, baseUrl, workspaceId, honchoUserName, apiVersion)` and `update(...apiVersion)` overloads; 5-arg forms delegate with `apiVersion=null` for back-compat
+- `src/main/java/com/revytechinc/honchoinspector/auth/ProfileController.java` — `ProfileCreateDto` and `ProfileUpdateDto` got optional `apiVersion` field; controller forwards it
+- `src/main/java/com/revytechinc/honchoinspector/controller/HonchoController.java` — **full rewrite**. All 24 path-based `honcho.get/post/put/delete` calls replaced with the matching typed method. `call()` helper now reads `profile.apiVersion()` and constructs the 5-arg `HonchoContext` via `HonchoClientFactory.resolveVersion(override, HonchoApiVersion.fromString(properties.apiVersion()))`. Composite `/workspace/info` now calls `getWorkspaceInfo` + `getQueueStatus`. `scheduleDream` extracts `peerId` from the body and 400s on missing/blank. `sessionContext` parses `tokens` (Integer) and `summary` (Boolean) from the query map with best-effort null-on-malformed.
+- `src/test/java/com/revytechinc/honchoinspector/auth/AuthControllerTest.java` — added `, null` to the `ProfileCreateDto` constructor call (the 6th arg for the new `apiVersion` field)
+- `src/test/java/com/revytechinc/honchoinspector/controller/HonchoControllerTest.java` (new, 627 lines) — 36 tests with `@MockitoBean HonchoProxyService` (Spring Boot 3.5+ replacement for the deprecated `@MockBean`)
+
+### HonchoController is now a thin delegating layer
+Each of the 24 endpoints extracts request args (`peerId`/`sessionId`/`body`/`allParams`), builds a `HonchoContext`, and calls exactly one of the 24 typed convenience methods on `HonchoProxyService`. The composite `/workspace/info` endpoint calls `getWorkspaceInfo` + `getQueueStatus` and returns `Map.of("workspace", ws, "queue", queue)`. The `scheduleDream` endpoint extracts `peerId` from the request body before calling (the v3 path is `/peers/{peerId}/dreams`, so the controller must read it from the body to build the path-var map the proxy expects). The `sessionContext` endpoint has special parsing for the `tokens` (Integer) and `summary` (Boolean) query params that the proxy's typed method takes as separate args rather than a free-form map.
+
+### apiVersion propagation pattern
+The cleanest path: extend `Profile` with `apiVersion`, update `ProfileDao.ROW` to read `api_version`, update `insert`/`update` to write it, and have `HonchoController.call()` resolve it via:
+```java
+var apiVersion = HonchoClientFactory.resolveVersion(
+    pwk.profile().apiVersion(),
+    HonchoApiVersion.fromString(properties.apiVersion())
+);
+```
+This honors the per-profile override (if set) and falls back to `honcho.api-version` (V3 by default). The factory helper treats null/blank as "use fallback" so a profile with no `apiVersion` set (pre-T16 rows, created before the column was exposed via the DTO) still works.
+
+### Compact-ctor comment in `Profile.java` is load-bearing
+The new `apiVersion` field is intentionally NOT validated in the compact constructor. The cross-reference comment explains: pre-T16 rows (column added by `SchemaMigrator`, never set by user) load cleanly because the field is nullable + blankable. `HonchoClientFactory.resolveVersion` handles the null/blank fallback. Without the comment, a future maintainer would "fix" the missing validation and break legacy rows.
+
+### Test approach
+MockMvc + `@SpringBootTest` + `@AutoConfigureMockMvc` + `@MockitoBean HonchoProxyService` (the Spring Boot 3.5+ replacement for the deprecated `@MockBean`; importing the old one produced a new deprecation warning on `mvn package`). Real `ProfileService` so the profile round-trip (create → fetch → read apiVersion) is exercised end-to-end.
+
+For each of the 24 endpoints: configure the mock to return a marker, hit the endpoint, verify the response is 200 + marker, and `verify(...)` that the right typed method was called with the right args. Plus:
+- 401/400/404 envelope (3 tests)
+- Composite `/workspace/info` verifies BOTH `getWorkspaceInfo` and `getQueueStatus` were called
+- `scheduleDream` with body containing `peerId` verifies the field is extracted; missing/blank `peerId` → 400
+- `sessionContext` verifies `tokens` + `summary` are parsed (and malformed tokens becomes null, not 400)
+- Default apiVersion: profile without override → `HonchoApiVersion.V3` flows into the context
+- Profile with `apiVersion="v2"` → `HonchoApiVersion.V2` flows into the context
+- `HonchoCallException` 4xx surfaces as-is, 5xx mapped to 502
+
+### Test count
+- `HonchoControllerTest`: 36 tests passing
+- Full `mvn -B test`: 244/244 passing (208 baseline + 36 new). BUILD SUCCESS.
+- `mvn -B clean package`: BUILD SUCCESS, **ZERO new deprecation warnings**. The 24 deprecation warnings on `HonchoController` (from the `honcho.get/post/put/delete` call sites) are GONE. The 4 remaining deprecation warnings are in `HonchoProxyServiceTest` (testing the `@Deprecated` path-based methods — those tests stay until the methods are removed in a post-Phase-1 cleanup, per T16 spec).
+
+### Files NOT touched (per T16 spec)
+- `HonchoProxyService` — already done in T15
+- `HonchoClient` / `HonchoV3Client` — already done in T14
+- The 4 `@Deprecated` path-based methods on `HonchoProxyService` — kept for post-Phase-1 cleanup; they're no longer called from anywhere
+- Any other controller — only `HonchoController.java`
+
+### Acceptance criteria — all met
+- [x] File modified: `src/main/java/com/revytechinc/honchoinspector/controller/HonchoController.java`
+- [x] File added: `src/test/java/com/revytechinc/honchoinspector/controller/HonchoControllerTest.java` (new)
+- [x] Every `honcho.get/post/put/delete` call replaced with the matching typed method
+- [x] `call()` helper reads `profile.apiVersion()` and passes it to `HonchoContext` via 5-arg ctor
+- [x] All `@GetMapping` / `@PostMapping` / `@DeleteMapping` annotations KEPT
+- [x] All `@Operation` / `@ApiResponses` / `@Parameter` annotations KEPT (added one note to `scheduleDream` describing the peerId-from-body path translation)
+- [x] `workspaceInfo` calls `honcho.getWorkspaceInfo(ctx)` + `honcho.getQueueStatus(ctx)` instead of two `honcho.get(...)` calls
+- [x] Zero `honcho.get` / `honcho.post` / `honcho.put` / `honcho.delete` references in HonchoController.java (grep returns zero matches)
+- [x] mvn test passes: 208 baseline + 36 (T16) = 244
+- [x] mvn -B package succeeds with zero new warnings from the controller
+
+### Lesson
+The `@MockitoBean` deprecation in Spring Boot 3.5 caught me — first test pass used `@MockBean` and produced a new deprecation warning. Spring Boot 3.4+ added `@MockitoBean` (`org.springframework.test.context.bean.override.mockito.MockitoBean`) as the new-style replacement; the class is in spring-test 6.2.7 which is on the classpath via spring-boot-starter-test. Use `@MockitoBean` for new test code; the older `@MockBean` (`org.springframework.boot.test.mock.mockito.MockBean`) still works but is deprecated for removal.
