@@ -745,3 +745,48 @@ Then `containsEntry("tokens", 4096)` works because AssertJ infers V=Object and `
 
 ### HonchoProviderRegistry collision warning is expected
 The `usesHonchoProviderRegistry` test passes two Mockito mocks of `HonchoProvider` that both claim `LIST_PEERS`. The registry logs a WARN ("first-registered wins, keeping X") because the two mock classes share the same auto-generated class name suffix — both show up as `HonchoProvider$MockitoMock$<suffix>`. This is a benign test artifact: the test asserts that EXACTLY ONE of the two mocks received the call. The WARN is expected and doesn't indicate a bug.
+
+## T15: HonchoProxyService refactor (2026-06-18)
+
+### Files changed
+- `src/main/java/com/revytechinc/honchoinspector/honcho/HonchoClient.java` (231 lines) — added `Object call(HonchoOperation, HonchoContext, Object, Map<String,String>, Map<String,?>)` as the generic dispatch entry point. Abstract on purpose.
+- `src/main/java/com/revytechinc/honchoinspector/honcho/v3/HonchoV3Client.java` (295 lines) — renamed `private dispatch(...)` to `public @Override call(...)`. The 24 typed methods now all delegate to `call(...)`. One dispatch path; no duplication.
+- `src/main/java/com/revytechinc/honchoinspector/service/HonchoProxyService.java` (288 lines) — constructor is now `(HonchoClientFactory factory, HonchoProperties properties)`. Added `call(...)` + 24 typed convenience methods + `properties()` getter. `testConnection(ctx)` is now a one-liner wrapping `call(GET_WORKSPACE_INFO, ctx, null, null, null)`. Old `get/post/put/delete` kept as `@Deprecated(forRemoval=true)` stubs that throw `UnsupportedOperationException` with a clear T16 migration message.
+- `src/test/java/com/revytechinc/honchoinspector/service/HonchoProxyServiceTest.java` (NEW, 38 tests) — pure Mockito unit tests, no Spring context. Covers call() happy path, V2/V3 version resolution, exception propagation (HonchoCallException + UnsupportedHonchoVersionException), testConnection(), 24 typed methods (one test per op), properties(), and 4 @Deprecated smoke tests.
+- `src/test/java/com/revytechinc/honchoinspector/honcho/HonchoClientFactoryTest.java` — added 1 line to the `NoOpHonchoClient` base class to implement the new `call()` method (so FakeV3Client / FakeV4Client still compile).
+- `src/main/java/com/revytechinc/honchoinspector/config/HttpClientConfig.java` — added `@EnableConfigurationProperties(HonchoProperties.class)`. The T4 decisions.md note said this had been added in T4 but it had not actually been committed; the prior `HonchoProxyService` used `@Value` directly so the missing wiring went unnoticed. T15 surfaced the gap because the refactored service now constructor-injects `HonchoProperties`.
+
+### T15 public API on HonchoProxyService — TWO side-by-side surfaces
+
+1. **Operation-based (stable, future-proof)**:
+   - `Object call(HonchoOperation op, HonchoContext ctx, Object requestBody, Map<String,String> pathVars, Map<String,?> queryParams) throws HonchoCallException`
+   - 24 typed convenience methods mirroring `HonchoClient` (one per op).
+   - `void testConnection(HonchoContext ctx)` — wraps `call(GET_WORKSPACE_INFO, ...)`.
+   - `HonchoProperties properties()` — read-only accessor.
+
+2. **Path-based (@Deprecated, forRemoval=true)**:
+   - `get(ctx, path, query)`, `post(ctx, path, query, body)`, `put(ctx, path, query, body)`, `delete(ctx, path)`.
+   - All throw `UnsupportedOperationException` with a migration message pointing at `T16` and the new `call(HonchoOperation, ...)` entry point.
+   - These EXIST only so `HonchoController.java` continues to compile until T16 refactors it to use the operation-based surface.
+
+T16 will delete the 4 @Deprecated call sites from the controller; a post-Phase-1 cleanup will delete the @Deprecated methods themselves.
+
+### Mockito @SuppressWarnings("unchecked") for typed ArgumentCaptor
+`ArgumentCaptor.forClass(Map.class)` is a raw `ArgumentCaptor<Map>`. Assigning to a typed variable like `ArgumentCaptor<Map<String, Object>>` requires `@SuppressWarnings("unchecked")`. The `Map<String, ?>` (wildcard) form does NOT work for `assertThat(...).containsEntry(K, V)` because the wildcard value type rejects concrete `int`/`Integer` values; must use `Object` for the captor value type.
+
+### Mockito matcher rule (REPEAT GOTCHA)
+If any argument to a method is a Mockito matcher (`any()`, `eq()`, `isNull()`, `argThat()`, `capture()`), EVERY argument must be a matcher. A raw `null` in the arg list is NOT a matcher; you must use `isNull()` from `org.mockito.ArgumentMatchers`. Shadowing Mockito's `isNull` with a local `static <T> T isNull()` helper breaks this in confusing ways. Use Mockito's import, not a local helper.
+
+### Spec Javadoc for `HonchoClient.call`
+The new `call()` method on `HonchoClient` is declared abstract, not default. A default impl that threw `UnsupportedOperationException` would silently mask configuration errors; abstract forces every `HonchoClient` impl to think about dispatch.
+
+### Test count
+- HonchoProxyServiceTest: 38 new tests, all passing.
+- mvn test full suite: 208/208 (170 baseline + 38 new). BUILD SUCCESS.
+- mvn -B package: BUILD SUCCESS. 24 deprecation warnings on HonchoController.java (expected — the controller still uses the @Deprecated path-based methods; T16 removes those call sites).
+
+### HonchoCallException & UnsupportedHonchoVersionException
+Both exceptions are propagated by `HonchoProxyService.call()` unchanged. `HonchoCallException` comes from the `HonchoClient`; `UnsupportedHonchoVersionException` comes from `HonchoClientFactory.clientFor()`. The `HonchoController.call()` method already has a `catch (HonchoCallException e)` clause; it does NOT catch `UnsupportedHonchoVersionException` so a config error surfaces as a generic 500. T16 may want to add an explicit handler for that case. NOT in T15 scope.
+
+### Lesson
+The T4 decisions.md note claimed `@EnableConfigurationProperties(HonchoProperties.class)` was added to `HttpClientConfig` during T4, but it was never committed. Pre-T15 code never noticed because the old `HonchoProxyService` used `@Value` directly. T15 surfaced the gap immediately because the refactored service constructor-injects the properties record. **Always verify that `decisions.md` notes match the on-disk state** when picking up a new task — the notepad is a guideline, not the source of truth.

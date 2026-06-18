@@ -91,27 +91,27 @@ public class HonchoV3Client implements HonchoClient {
 
     @Override
     public Object listPeers(HonchoContext ctx, Map<String, ?> filters) throws HonchoCallException {
-        return dispatch(HonchoOperation.LIST_PEERS, ctx, null, null, filters);
+        return call(HonchoOperation.LIST_PEERS, ctx, null, null, filters);
     }
 
     @Override
     public Object createPeer(HonchoContext ctx, Object createPeerRequest) throws HonchoCallException {
-        return dispatch(HonchoOperation.CREATE_PEER, ctx, createPeerRequest, null, null);
+        return call(HonchoOperation.CREATE_PEER, ctx, createPeerRequest, null, null);
     }
 
     @Override
     public Object getPeerCard(HonchoContext ctx, String peerId) throws HonchoCallException {
-        return dispatch(HonchoOperation.GET_PEER_CARD, ctx, null, pathVars("peerId", peerId), null);
+        return call(HonchoOperation.GET_PEER_CARD, ctx, null, pathVars("peerId", peerId), null);
     }
 
     @Override
     public Object updatePeerCard(HonchoContext ctx, String peerId, Object cardData) throws HonchoCallException {
-        return dispatch(HonchoOperation.UPDATE_PEER_CARD, ctx, cardData, pathVars("peerId", peerId), null);
+        return call(HonchoOperation.UPDATE_PEER_CARD, ctx, cardData, pathVars("peerId", peerId), null);
     }
 
     @Override
     public Object getPeerRepresentation(HonchoContext ctx, String peerId) throws HonchoCallException {
-        return dispatch(HonchoOperation.GET_REPRESENTATION, ctx, null, pathVars("peerId", peerId), null);
+        return call(HonchoOperation.GET_REPRESENTATION, ctx, null, pathVars("peerId", peerId), null);
     }
 
     // ------------------------------------------------------------------
@@ -120,27 +120,27 @@ public class HonchoV3Client implements HonchoClient {
 
     @Override
     public Object peerChat(HonchoContext ctx, String peerId, Object chatRequest) throws HonchoCallException {
-        return dispatch(HonchoOperation.PEER_CHAT, ctx, chatRequest, pathVars("peerId", peerId), null);
+        return call(HonchoOperation.PEER_CHAT, ctx, chatRequest, pathVars("peerId", peerId), null);
     }
 
     @Override
     public Object searchPeers(HonchoContext ctx, String peerId, Object searchRequest) throws HonchoCallException {
-        return dispatch(HonchoOperation.SEARCH_PEERS, ctx, searchRequest, pathVars("peerId", peerId), null);
+        return call(HonchoOperation.SEARCH_PEERS, ctx, searchRequest, pathVars("peerId", peerId), null);
     }
 
     @Override
     public Object listPeerConclusions(HonchoContext ctx, String peerId, Map<String, ?> filters) throws HonchoCallException {
-        return dispatch(HonchoOperation.LIST_PEER_CONCLUSIONS, ctx, null, pathVars("peerId", peerId), filters);
+        return call(HonchoOperation.LIST_PEER_CONCLUSIONS, ctx, null, pathVars("peerId", peerId), filters);
     }
 
     @Override
     public Object listPeerSessions(HonchoContext ctx, String peerId, Map<String, ?> filters) throws HonchoCallException {
-        return dispatch(HonchoOperation.LIST_PEER_SESSIONS, ctx, null, pathVars("peerId", peerId), filters);
+        return call(HonchoOperation.LIST_PEER_SESSIONS, ctx, null, pathVars("peerId", peerId), filters);
     }
 
     @Override
     public Object queryPeerConclusions(HonchoContext ctx, String peerId, Object queryRequest) throws HonchoCallException {
-        return dispatch(HonchoOperation.QUERY_PEER_CONCLUSIONS, ctx, queryRequest, pathVars("peerId", peerId), null);
+        return call(HonchoOperation.QUERY_PEER_CONCLUSIONS, ctx, queryRequest, pathVars("peerId", peerId), null);
     }
 
     // ------------------------------------------------------------------
@@ -149,37 +149,37 @@ public class HonchoV3Client implements HonchoClient {
 
     @Override
     public Object listSessions(HonchoContext ctx, Map<String, ?> filters) throws HonchoCallException {
-        return dispatch(HonchoOperation.LIST_SESSIONS, ctx, null, null, filters);
+        return call(HonchoOperation.LIST_SESSIONS, ctx, null, null, filters);
     }
 
     @Override
     public Object createSession(HonchoContext ctx, Object createSessionRequest) throws HonchoCallException {
-        return dispatch(HonchoOperation.CREATE_SESSION, ctx, createSessionRequest, null, null);
+        return call(HonchoOperation.CREATE_SESSION, ctx, createSessionRequest, null, null);
     }
 
     @Override
     public Object getSession(HonchoContext ctx, String sessionId) throws HonchoCallException {
-        return dispatch(HonchoOperation.GET_SESSION, ctx, null, pathVars("sessionId", sessionId), null);
+        return call(HonchoOperation.GET_SESSION, ctx, null, pathVars("sessionId", sessionId), null);
     }
 
     @Override
     public Object deleteSession(HonchoContext ctx, String sessionId) throws HonchoCallException {
-        return dispatch(HonchoOperation.DELETE_SESSION, ctx, null, pathVars("sessionId", sessionId), null);
+        return call(HonchoOperation.DELETE_SESSION, ctx, null, pathVars("sessionId", sessionId), null);
     }
 
     @Override
     public Object getSessionContext(HonchoContext ctx, String sessionId, Integer tokens, Boolean summary) throws HonchoCallException {
-        return dispatch(HonchoOperation.GET_SESSION_CONTEXT, ctx, null, pathVars("sessionId", sessionId), contextQueryParams(tokens, summary));
+        return call(HonchoOperation.GET_SESSION_CONTEXT, ctx, null, pathVars("sessionId", sessionId), contextQueryParams(tokens, summary));
     }
 
     @Override
     public Object getSessionSummaries(HonchoContext ctx, String sessionId) throws HonchoCallException {
-        return dispatch(HonchoOperation.GET_SESSION_SUMMARIES, ctx, null, pathVars("sessionId", sessionId), null);
+        return call(HonchoOperation.GET_SESSION_SUMMARIES, ctx, null, pathVars("sessionId", sessionId), null);
     }
 
     @Override
     public Object getSessionPeers(HonchoContext ctx, String sessionId) throws HonchoCallException {
-        return dispatch(HonchoOperation.GET_SESSION_PEERS, ctx, null, pathVars("sessionId", sessionId), null);
+        return call(HonchoOperation.GET_SESSION_PEERS, ctx, null, pathVars("sessionId", sessionId), null);
     }
 
     // ------------------------------------------------------------------
@@ -188,17 +188,17 @@ public class HonchoV3Client implements HonchoClient {
 
     @Override
     public Object listSessionMessages(HonchoContext ctx, String sessionId, Map<String, ?> filters) throws HonchoCallException {
-        return dispatch(HonchoOperation.LIST_SESSION_MESSAGES, ctx, null, pathVars("sessionId", sessionId), filters);
+        return call(HonchoOperation.LIST_SESSION_MESSAGES, ctx, null, pathVars("sessionId", sessionId), filters);
     }
 
     @Override
     public Object addMessage(HonchoContext ctx, String sessionId, Object messageRequest) throws HonchoCallException {
-        return dispatch(HonchoOperation.ADD_MESSAGE, ctx, messageRequest, pathVars("sessionId", sessionId), null);
+        return call(HonchoOperation.ADD_MESSAGE, ctx, messageRequest, pathVars("sessionId", sessionId), null);
     }
 
     @Override
     public Object searchSessionMessages(HonchoContext ctx, String sessionId, Object searchRequest) throws HonchoCallException {
-        return dispatch(HonchoOperation.SEARCH_SESSION_MESSAGES, ctx, searchRequest, pathVars("sessionId", sessionId), null);
+        return call(HonchoOperation.SEARCH_SESSION_MESSAGES, ctx, searchRequest, pathVars("sessionId", sessionId), null);
     }
 
     // ------------------------------------------------------------------
@@ -207,25 +207,25 @@ public class HonchoV3Client implements HonchoClient {
 
     @Override
     public Object getQueueStatus(HonchoContext ctx) throws HonchoCallException {
-        return dispatch(HonchoOperation.GET_QUEUE_STATUS, ctx, null, null, null);
+        return call(HonchoOperation.GET_QUEUE_STATUS, ctx, null, null, null);
     }
 
     @Override
     public Object searchMessages(HonchoContext ctx, Object searchRequest) throws HonchoCallException {
-        return dispatch(HonchoOperation.SEARCH_MESSAGES, ctx, searchRequest, null, null);
+        return call(HonchoOperation.SEARCH_MESSAGES, ctx, searchRequest, null, null);
     }
 
     @Override
     public Object scheduleDream(HonchoContext ctx, String peerId, Object dreamRequest) throws HonchoCallException {
-        return dispatch(HonchoOperation.SCHEDULE_DREAM, ctx, dreamRequest, pathVars("peerId", peerId), null);
+        return call(HonchoOperation.SCHEDULE_DREAM, ctx, dreamRequest, pathVars("peerId", peerId), null);
     }
 
     @Override
     public Object getWorkspaceInfo(HonchoContext ctx) throws HonchoCallException {
-        return dispatch(HonchoOperation.GET_WORKSPACE_INFO, ctx, null, null, null);
+        return call(HonchoOperation.GET_WORKSPACE_INFO, ctx, null, null, null);
     }
 
-    // ------------------------------------------------------------------
+// ------------------------------------------------------------------
     // Dispatch core
     // ------------------------------------------------------------------
 
@@ -236,7 +236,7 @@ public class HonchoV3Client implements HonchoClient {
      * arguments, returning the provider's result unchanged.
      *
      * <p>The {@code this} reference passed to {@code execute} is the
-     * {@link HonchoClient} instance \u2014 the provider can use it to
+     * {@link HonchoClient} instance — the provider can use it to
      * reach back into the client surface (e.g. for retries, logging)
      * if it ever needs to. None of the eight v3 providers do, but the
      * interface reserves the option.
@@ -245,8 +245,17 @@ public class HonchoV3Client implements HonchoClient {
      * (from the registry's "no provider covers this op" branch) are
      * both declared by {@link HonchoProvider#execute}, so callers see
      * them as runtime exceptions just as the provider raised them.
+     *
+     * <p><strong>T15 design choice:</strong> the 24 typed convenience
+     * methods above all delegate here with the right {@link HonchoOperation}
+     * constant + pathVars + queryParams built from the typed arguments.
+     * External callers (e.g. {@code HonchoProxyService}) that need to
+     * forward an operation they don't have a typed method for can call
+     * this method directly. Keeping the dispatch logic in exactly one
+     * place ensures the typed and untyped paths cannot diverge.
      */
-    private Object dispatch(
+    @Override
+    public Object call(
         HonchoOperation op,
         HonchoContext ctx,
         Object requestBody,

@@ -1,6 +1,7 @@
 package com.revytechinc.honchoinspector.config;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.client.RestClient;
@@ -8,6 +9,7 @@ import org.springframework.web.client.RestClient;
 import java.time.Duration;
 
 @Configuration
+@EnableConfigurationProperties(HonchoProperties.class)
 public class HttpClientConfig {
 
     @Bean
