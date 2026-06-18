@@ -1,0 +1,558 @@
+# Security audit — `honcho-inspector-backend`
+
+> **Scope:** the Spring Boot 3.5 / Java 25 backend at the current `HEAD`.
+> **Method:** static review of `src/main/java/**`, `src/main/resources/**`, `pom.xml`, `bin/honcho-inspector`, `etc/**`. No live testing.
+> **Date of review:** current commit.
+> **Audience:** operators and contributors of `honcho-inspector`.
+> **Related docs:** [`docs/reverse-proxy.md`](reverse-proxy.md), [`README.md`](../README.md).
+
+---
+
+## 1. Threat model
+
+### 1.1 What this service is
+
+A thin, multi-user, multi-profile reverse-proxy in front of one or more Honcho
+API instances. It owns:
+
+- a SQLite database of users, encrypted Honcho API keys, and session tokens
+  (default location: `$HONCHO_CONFIG_DIR/honcho-inspector.db`);
+- an admin-style Angular UI client (different repo), reachable only via
+  `X-Session-Id: <hex>` header authentication;
+- a single binary that listens on HTTP by default and is expected to be put
+  behind a TLS-terminating reverse proxy in production.
+
+### 1.2 Assets
+
+| Asset | Where it lives | Sensitivity |
+| --- | --- | --- |
+| User passwords | `users.password_hash` (bcrypt, cost 12) | Medium — bcrypt-protected |
+| Honcho API keys (per profile) | `honcho_profiles.api_key_encrypted` (AES-256-GCM, 12-byte IV per encryption) | **High** — grants Honcho workspace access |
+| `HONCHO_CRYPTO_KEY` (the KEK for the column above) | Operator env var; not on disk | **High** — decrypts every API key in the DB |
+| Session IDs (24-byte SecureRandom hex, 192 bits) | `auth_sessions` + browser-local storage in the UI | **High** — auth is session-id-only |
+| Audit trail | _None — not implemented_ | (gap) |
+
+### 1.3 Adversaries considered
+
+1. **Network attacker** between browser and backend (no TLS) — mitigated by
+   putting the service behind a TLS-terminating reverse proxy (see
+   [`docs/reverse-proxy.md`](reverse-proxy.md)).
+2. **Network attacker** between backend and Honcho upstream — the operator
+   controls both endpoints and is expected to use TLS.
+3. **Anonymous remote attacker** hitting `/api/auth/login` to brute-force a
+   weak password — partially mitigated by bcrypt; **no rate limiting today**
+   (see finding **F-01**).
+4. **Compromised UI session** (stolen `X-Session-Id`) — bounded by session
+   TTL and the ability of the operator to revoke sessions by deleting rows
+   in the DB; no session-list endpoint or admin tools exist.
+5. **Malicious local admin user** — they can save a profile pointing at an
+   arbitrary `baseUrl`. The backend will dutifully forward authenticated
+   requests to that URL on their behalf. This is a form of SSRF that
+   operators must accept (see finding **F-08**).
+6. **Attacker with file read on the host** — they get the SQLite file. Without
+   `HONCHO_CRYPTO_KEY` they cannot decrypt the API keys. **With** it (e.g.
+   process env readable), they can. Documented in §5.
+
+### 1.4 Out of scope
+
+- The Angular UI repo (`honcho-inspector-ui`).
+- The Honcho upstream service itself.
+- The host OS / container runtime — the backend assumes a hardened POSIX or
+  Windows host.
+
+---
+
+## 2. What the code does well
+
+These are real positives. They are the baseline; findings in §3 assume them.
+
+- **Honcho API key never reaches the browser.** Encryption at rest, decryption
+  only inside `HonchoProxyService` for the lifetime of one request.
+  (`auth/CryptoService.java`, `auth/ProfileService.java`.)
+- **All SQL is parameterised.** `JdbcTemplate` with `?` placeholders in every
+  DAO. No string concatenation, no `Statement.executeQuery`. Verified across
+  `UserDao`, `AuthSessionDao`, `ProfileDao`.
+- **No Spring Security on the classpath, no filter chain surprises.** The
+  56-line `SessionAuthFilter` is the only authn gate, and it has a 3-entry
+  public-path allowlist (`/api/auth/login`, `/api/auth/register`,
+  `/api/health`). Easy to audit.
+- **Constructor injection only** — no `@Autowired` field injection anywhere.
+  Reduces the attack surface for bean-injection issues and is easier to
+  reason about.
+- **CORS is whitelist-only, no wildcards.** Origins are matched exactly from
+  `CORS_ALLOWED_ORIGINS`. `allowCredentials(false)` — so the API never relies
+  on cookies.
+- **No stateful CSRF surface.** Authentication is a custom header
+  (`X-Session-Id`), not a cookie. Browsers will refuse to set the header
+  cross-origin without explicit CORS opt-in, so the standard CSRF threat
+  model doesn't apply.
+- **bcrypt cost 12** for password hashing
+  (`auth/PasswordHasher.java`). Work factor is the current
+  OWASP-recommended baseline.
+- **AES-256-GCM with a 12-byte random IV per encryption** for API keys
+  (`auth/CryptoService.java`). 128-bit auth tag. No nonce reuse, no ECB, no
+  CBC.
+- **24-byte (192-bit) session IDs** generated with `SecureRandom` and
+  formatted as hex (`auth/AuthService.newId`). 192 bits is well above the
+  OWASP session-token minimum.
+- **Schema is idempotent and integrity-preserving.** `CREATE TABLE IF NOT
+  EXISTS`, `FOREIGN KEY ... ON DELETE CASCADE`, `PRAGMA foreign_keys = ON`
+  in the JDBC connection init SQL, indexed on the columns that matter.
+- **Jackson `default-property-inclusion: non_null`** — responses don't leak
+  nulls by accident.
+- **Eager validation** with `jakarta.validation` on registration, login, and
+  profile DTOs (`@NotBlank`, `@Size(min = 8)`).
+- **Startup info logger** prints a one-line summary of port, profiles,
+  config dir, Honcho upstream, CORS, and session TTL — useful for prod
+  diagnostics without leaking secrets.
+
+---
+
+## 3. Findings
+
+Severity uses CVSS v3.1 qualitative levels (Critical / High / Medium / Low /
+Info). **No critical or high findings.** The application is in good shape for
+a self-hosted admin surface; the medium and low items below are hardening
+opportunities, not known exploitable bugs.
+
+### F-01 — No rate limiting on `/api/auth/login` or `/api/auth/register` (Medium)
+
+**Where:** `auth/AuthController.java` (`login`, `register`),
+`filter/SessionAuthFilter.java`.
+
+**What.** `/api/auth/login` and `/api/auth/register` are not throttled. An
+attacker can:
+- brute-force weak passwords (bcrypt cost 12 helps — ~10–50ms per attempt on
+  modern CPUs — but is not a substitute for rate limiting);
+- script mass registration to fill the `users` table, denial-of-service the
+  admin, or simply enumerate usernames via the 409 response (`UserExistsException`
+  in `AuthService.register`).
+
+**Why it matters.** This is the only authentication endpoint. With bcrypt's
+work factor and a strong password, online brute force is hard. With a weak
+password (cost 12 ≈ 10ms on server hardware = ~6 attempts/min per CPU core
+per attacker thread) it is not.
+
+**Remediation.** Add a per-IP and per-username rate limit. Options:
+- Spring Boot 3.5 + `spring-boot-starter-actuator` is not enough; pull in
+  `bucket4j-spring-boot-starter` (in-memory) or front the service with the
+  reverse proxy's `limit_req` zone (see
+  [`docs/reverse-proxy.md`](reverse-proxy.md) §3.1 — nginx example already
+  includes this).
+- Log failed-login events with the username, source IP, and timestamp to
+  support offline analysis.
+- Return the same 401 for "user not found" and "wrong password" (already
+  done — good — but be aware this is timing-observable; see F-09).
+
+**Status:** Open. Tracked in this doc.
+
+### F-02 — CORS `allowedHeaders("*")` is overly permissive (Low)
+
+**Where:** `config/CorsConfig.java:33` —
+`.allowedHeaders("*")`.
+
+**What.** Any header is allowed cross-origin. For a strict API, the actual
+header set is small: `Content-Type`, `X-Session-Id`, `X-Honcho-Profile-Id`,
+`Accept`, plus the CORS preflight headers. `*` lets browsers send
+`Authorization`, `Cookie`, `X-Forwarded-For`, etc. on cross-origin preflights.
+
+**Why it matters.** With `allowCredentials(false)` and no cookie auth, the
+exploitable risk is small. But it weakens defence-in-depth: if a future
+change moves to cookie auth without updating CORS, a permissive header
+allowlist becomes the difference between safe and unsafe.
+
+**Remediation.** Replace `*` with an explicit list, e.g.
+`.allowedHeaders("Content-Type", "Accept", "X-Session-Id", "X-Honcho-Profile-Id")`.
+
+**Status:** Open.
+
+### F-03 — No security HTTP response headers set by the application (Medium)
+
+**Where:** every controller; the `application.yml` `server.error.*` block
+only configures error-body inclusion, not headers.
+
+**What.** The backend sets none of the modern security headers:
+`Strict-Transport-Security`, `X-Content-Type-Options`, `X-Frame-Options`,
+`Referrer-Policy`, `Permissions-Policy`, `Content-Security-Policy`.
+
+**Why it matters.** The application is JSON-only, so most of these are
+belt-and-braces. The two that matter are:
+- **HSTS** — without it, the first visit to a freshly-installed instance
+  is one plaintext round-trip away from being MITM'd. The reverse proxy
+  should set this (see [`docs/reverse-proxy.md`](reverse-proxy.md) §3.1 —
+  it does), but if the operator forgets, the app is the last line of
+  defence.
+- **`X-Content-Type-Options: nosniff`** — prevents MIME-sniffing of error
+  JSON in legacy browsers.
+
+**Remediation.** Add a tiny `Filter` (or `WebMvcConfigurer` advice) that
+sets the safe-by-default headers:
+```
+X-Content-Type-Options: nosniff
+Referrer-Policy: no-referrer
+Permissions-Policy: ()
+```
+and a CSP of `default-src 'none'; frame-ancestors 'none'` (the body is
+JSON, so the strictest CSP is fine). HSTS belongs on the reverse proxy.
+
+**Status:** Open.
+
+### F-04 — No HTTPS enforcement at the application layer (Info → Medium in prod)
+
+**Where:** `application.yml`, `bin/honcho-inspector`, every controller.
+
+**What.** The backend serves plain HTTP on `${PORT:8080}`. There is no
+built-in redirect to HTTPS, no HSTS, no port-redirect filter. The whole
+security model assumes the operator puts a TLS-terminating reverse proxy in
+front. This is by design, but it is a hard dependency that is **not yet
+documented** in the README — fixed by the new
+[`docs/reverse-proxy.md`](reverse-proxy.md).
+
+**Remediation.** Keep it this way (the proxy is the right place for TLS).
+The new doc makes the requirement explicit.
+
+**Status:** Resolved by documentation.
+
+### F-05 — `e.getMessage()` is returned in 500 responses (Low)
+
+**Where:** `controller/HonchoController.java:191` —
+`return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));`.
+
+**What.** Unexpected exceptions (`Exception e`) are converted to a 500
+response whose body is `{"error": <exception.getMessage()>}`. The
+`HonchoCallException` messages include the configured Honcho base URL
+(`"Cannot reach Honcho at " + ctx.baseUrl() + ": " + e.getMessage()`).
+
+**Why it matters.** The base URL is operator-set (not user-set), so it
+isn't a per-user secret. But the upstream error message can include DNS
+errors, connection-refused detail, library internals — useful to a
+reconnaissance attacker. The bundled `application.yml` sets
+`server.error.include-message: always` and `include-stacktrace: never`,
+which compounds the leak at Spring's error-mapping layer for unmapped
+exceptions.
+
+**Remediation.** Map unexpected exceptions to a fixed
+`{"error":"internal server error"}` and log the detail with a correlation
+id. Set `server.error.include-message: when_authorized` (or `never` in
+prod) and rely on a `@ControllerAdvice` for the friendly envelope.
+
+**Status:** Open.
+
+### F-06 — `HONCHO_CRYPTO_KEY` unset falls back to ephemeral, but the app still starts (Low)
+
+**Where:** `auth/CryptoService.java:36-50`.
+
+**What.** If `honcho.crypto-key` is empty or unset, the service logs a
+warning and generates a random 32-byte AES key per process. Profiles can be
+created, encrypted values are written, but on restart the key is lost and
+all `decrypt()` calls fail.
+
+**Why it matters.** This is reasonable dev behaviour but a footgun in prod.
+An operator who deploys without setting the env var will see a working
+service for one boot, then mysterious 500s after the first restart. Worse,
+if they notice and re-encrypt with a fresh key, **the old encrypted
+profiles become unrecoverable** and the user is silently locked out of
+their Honcho workspaces.
+
+**Remediation.** Fail fast in prod. In
+`CryptoService.<init>`, check the active Spring profile; if it includes
+`prod` and the key is missing, throw `IllegalStateException` and refuse to
+start. Keep the ephemeral mode for `dev`/`test` only.
+
+**Status:** Open.
+
+### F-07 — No input length cap on `ProfileCreateDto.apiKey` / `baseUrl` (Low)
+
+**Where:** `auth/ProfileController.java:35-41`.
+
+**What.** The DTO declares `apiKey`, `baseUrl`, `workspaceId`,
+`honchoUserName`, `label` as `@NotBlank` only — no `@Size` cap. The
+underlying `JdbcTemplate` will accept any length.
+
+**Why it matters.** A malicious or buggy UI can submit a 10MB `apiKey` and
+bloat the SQLite row. Spring's `server.tomcat.max-http-form-post-size`
+default is 2MB which is a coarse safety net, but a per-field cap is
+cheaper and clearer.
+
+**Remediation.** Add `@Size(max = 4096)` (or whatever the largest plausible
+Honcho API key is) to the relevant DTO fields.
+
+**Status:** Open.
+
+### F-08 — `Profile.baseUrl` is not validated for scheme or private/loopback targets (Medium)
+
+**Where:** `auth/Profile.java`, `service/HonchoProxyService.java:121-126`,
+`auth/ProfileService.create`.
+
+**What.** A user can set `baseUrl` to anything: `http://169.254.169.254/`
+(AWS / OpenStack / Azure metadata), `http://127.0.0.1:6379/` (local
+Redis), or `file:///etc/passwd`-shaped schemes depending on the
+`RestClient`'s URI parser. The only sanitisation is
+`sanitizeBase()`: strip trailing slashes, strip `/mcp`.
+
+**Why it matters.** A malicious admin (or a user who hijacked a session)
+can use the backend as a SSRF proxy. The blast radius depends on the
+network the backend is on. In a typical deployment the backend is on a
+host that can reach the local Honcho instance and the public internet
+only; private/loopback exposure is still real.
+
+**Remediation.**
+- Reject schemes other than `https` (and `http` for self-hosted Honcho
+  deployments that don't terminate TLS internally — keep both, with a
+  warning).
+- Optionally, reject RFC 1918 / loopback / link-local / cloud-metadata
+  targets in `baseUrl`. Make this an env var, e.g.
+  `honcho.allow-private-base-urls: false` (default), so self-hosted
+  operators on the same host can opt in.
+- In `ProfileController.test`, also enforce the same validation, since
+  `testConnection` will happily make a request to the supplied URL.
+
+**Status:** Open.
+
+### F-09 — Username enumeration via login timing (Low)
+
+**Where:** `auth/AuthService.java:49-54`.
+
+**What.** On `login`, the code first does a DB lookup; on miss, it throws
+`InvalidCredentialsException` immediately. On hit, it runs `bcrypt.matches`
+(10–50ms). A timing-distinguishability attacker can enumerate valid
+usernames with a few hundred requests each.
+
+**Why it matters.** Low. Username enumeration on this surface is
+information disclosure only — the attacker still has to guess a
+bcrypt-protected password. Still, the standard advice is to spend a
+constant amount of time per failed login.
+
+**Remediation.** On user-miss, run a dummy `bcrypt.matches` against a
+precomputed hash of a random password to equalise wall-clock time. A
+sleeker alternative: log and continue to a real verify, returning the same
+401 either way.
+
+**Status:** Open.
+
+### F-10 — No audit log of security-relevant events (Medium)
+
+**Where:** `auth/AuthService.java`, `auth/AuthController.java`,
+`auth/ProfileController.java`, `controller/HonchoController.java`.
+
+**What.** Successful logins, failed logins, profile creates/updates/
+deletes, and proxy failures are not logged at a security level. The
+default Spring `INFO` log is fine for ops, but a security audit needs
+`who did what when to which resource`.
+
+**Why it matters.** A multi-user admin surface with no audit log is hard
+to investigate after an incident. Operators have to correlate
+application logs and DB row timestamps by hand.
+
+**Remediation.** Add a `security-events` log appender (or an `auth_events`
+table) that records: login (success/fail, username, source IP), logout,
+profile CRUD (user, profile id, action), password change (when added).
+Spring's `ApplicationEventPublisher` is the natural fit.
+
+**Status:** Open.
+
+### F-11 — `error.include-message: always` leaks upstream error text to the client (Low)
+
+**Where:** `src/main/resources/application.yml:5-6`,
+`controller/HonchoController.java:191`.
+
+**What.** `server.error.include-message: always` is the bundled default.
+This is fine in dev; in prod it forwards framework and upstream error
+messages to the browser, which is a small information disclosure.
+
+**Why it matters.** Spring's `BasicErrorController` will then return
+`{"timestamp":..., "status":..., "error":..., "message":<the exception
+message>, "path":...}` for unmapped exceptions. Combined with F-05, the
+caller learns a fair amount about the upstream.
+
+**Remediation.** In the prod config example, set
+`server.error.include-message: when_authorized` and
+`include-binding-errors: never`. Keep `include-stacktrace: never` (already
+set).
+
+**Status:** Open.
+
+### F-12 — `User.isAdmin` is a boolean with no role system (Info)
+
+**Where:** `auth/User.java`, `auth/AuthController.java`, schema.
+
+**What.** The schema has `is_admin INTEGER` and a check in `AuthController`
+is implied by "first user becomes admin" — but **no endpoint ever reads or
+checks `is_admin`**. There is no admin-only route, no role-based access
+control. The field exists for future use.
+
+**Why it matters.** None today, but it is a future-bug magnet: a
+contributor adding an `/api/admin/...` route could plausibly check the
+field without an auth gate, expecting one to exist.
+
+**Remediation.** Either (a) implement the role check and the missing
+admin endpoints, with tests; or (b) drop the column until it's needed. If
+kept, add an explicit test that asserts `/api/admin` is gated.
+
+**Status:** Open.
+
+### F-13 — `HonchoConfigDirResolver.resolve()` `mkdir` happens in the launcher, not the resolver (Info)
+
+**Where:** `bin/honcho-inspector:67` (`mkdir -p "$CONFIG_DIR"`),
+`config/HonchoConfigDirResolver.java:38-48`.
+
+**What.** The launcher creates the config dir, which is correct. The
+resolver only logs. This is good — the JVM process doesn't need write
+access to `/etc/honcho-inspector/`. Worth a one-line comment in
+`HonchoConfigDirResolver.resolve()` for the next reader.
+
+**Status:** Cosmetic.
+
+### F-14 — `forward-headers-strategy: framework` trusts `X-Forwarded-*` from any peer (Low)
+
+**Where:** `application.yml:3`, `config/CorsConfig.java` (no `Origin`
+validation against the proxy chain).
+
+**What.** `server.forward-headers-strategy: framework` makes Spring honour
+`X-Forwarded-Proto`, `X-Forwarded-For`, etc. from any source. The trusted
+boundary is the reverse proxy, not the JVM. If a client can hit the
+backend port directly (because it is reachable from outside the proxy),
+they can spoof these headers and trick future code that reads them.
+
+**Why it matters.** Direct port exposure is a deployment-time mistake,
+not a code bug — but a defence-in-depth change is to pin the strategy to
+`native` (use the Servlet container's `RemoteIpValve` / equivalent) and
+configure a trusted-proxy CIDR at the proxy, not the app.
+
+**Remediation.** Document the assumption in
+[`docs/reverse-proxy.md`](reverse-proxy.md) (the new doc does: the
+backend should not be reachable except from the proxy on
+`127.0.0.1`/loopback). Optionally switch to `native` and document the
+forwarded-header flow.
+
+**Status:** Resolved by documentation.
+
+### F-15 — `HonchoCallException` body is truncated to 500 chars, not redacted (Info)
+
+**Where:** `service/HonchoProxyService.java:132-136`.
+
+**What.** `safeBody` truncates the upstream error body but does not
+redact. If the upstream is misbehaving and echoes request headers (some
+proxies do), the body could contain a Honcho API key in plaintext.
+
+**Why it matters.** Unlikely in practice — Honcho's documented behaviour
+is to return JSON errors with a `detail` field. But the proxy never knows
+what a future upstream might return.
+
+**Remediation.** In `safeBody`, search for the configured API key (and
+obvious redaction patterns like `Bearer <token>`) and replace with
+`[REDACTED]` before returning.
+
+**Status:** Open.
+
+### F-16 — `deleteExpired` exists in the DAO but is never called (Info)
+
+**Where:** `auth/AuthSessionDao.java:52-54`.
+
+**What.** `SESSION_TTL_MINUTES=0` means sessions never expire
+(`AuthSession.isExpired` returns false on a missing `expires_at`). The
+DAO has a `deleteExpired` method but no scheduled job invokes it. The
+README documents this honestly ("0 = never expire").
+
+**Why it matters.** Not a bug, but if an operator sets
+`SESSION_TTL_MINUTES=60`, expired rows will accumulate forever.
+
+**Remediation.** Add a `@Scheduled` job (with `@EnableScheduling`) that
+calls `deleteExpired` every N minutes. Or document the operator
+responsibility to vacuum manually.
+
+**Status:** Open.
+
+---
+
+## 4. Dependency / supply-chain notes
+
+`pom.xml` declares six runtime dependencies; all are first-party
+(`org.springframework.boot`, `org.springframework.security`,
+`org.xerial.sqlite-jdbc`) plus a `devtools` runtime-conditional.
+
+- `spring-boot-starter-web` 3.5.0, `spring-boot-starter-jdbc` 3.5.0,
+  `spring-boot-starter-validation` 3.5.0, `spring-security-crypto` 3.5.0,
+  `sqlite-jdbc` pinned to `3.46.1.3`. Versions inherit from
+  `spring-boot-starter-parent:3.5.0`.
+- No `log4j`, no `snakeyaml` outside Spring's own re-export, no
+  `commons-*` baggage, no `jackson-databind` override.
+- `devtools` is `runtime` + `optional`, so it is not in the production
+  fat jar. Good.
+
+**Recommendation.** Add a CI step that runs `mvn dependency:tree` against
+the production profile and fails on any `devtools` artifact. Optionally,
+add `mvn org.owasp:dependency-check-maven:check` or
+`mvn com.github.spotbugs:spotbugs:check` to a future security pipeline.
+
+---
+
+## 5. Operational hardening checklist
+
+For a fresh production install:
+
+- [ ] `HONCHO_CRYPTO_KEY` is set to a `base64 -w0 32 /dev/urandom` value
+      and **stored in a secret manager**, not in the on-disk yaml.
+- [ ] `CORS_ALLOWED_ORIGINS` is the exact public origin(s) of the UI
+      (`https://inspector.example.com`); no wildcards, no `localhost`.
+- [ ] `SESSION_TTL_MINUTES` is non-zero (e.g. `60` or `240`).
+- [ ] The application port is **not** reachable from outside the host —
+      bind to `127.0.0.1` or a unix socket; rely on the reverse proxy for
+      public ingress.
+- [ ] The reverse proxy sets HSTS, modern ciphers, security headers, and
+      rate limits (see [`docs/reverse-proxy.md`](reverse-proxy.md)).
+- [ ] The `$HONCHO_CONFIG_DIR` and its parent are owned by a dedicated
+      service user, mode `0750`. The SQLite file is mode `0640`.
+- [ ] The sqlite file is on a filesystem that supports `fcntl` locking
+      (not a network FS).
+- [ ] Backups of `$HONCHO_CONFIG_DIR/honcho-inspector.db` are stored
+      encrypted; the backup process reads `HONCHO_CRYPTO_KEY` from the
+      same secret store.
+- [ ] Log shipping is configured and the security-events channel (when
+      added — see F-10) is forwarded to a SIEM.
+- [ ] The first registration is done immediately after install, and
+      `/api/health` is checked to confirm `users=1` so the admin
+      invitation is closed.
+- [ ] `bin/honcho-inspector` runs as a non-root user; the JVM is started
+      without `agentlib` or `jdwp` flags.
+- [ ] `/api/health` is exposed to a private monitoring network only; the
+      counts leak minimal info but should not be public.
+
+---
+
+## 6. Developer hardening checklist
+
+For contributors and PR reviewers:
+
+- [ ] No new SQL string concatenation — use `JdbcTemplate` parameter
+      binding.
+- [ ] Any new endpoint that touches a per-user resource checks the
+      `current.user().id()` ownership first, mirroring
+      `ProfileController` / `HonchoController.call`.
+- [ ] Any new endpoint that accepts user-supplied text applies `@NotBlank`
+      and a sane `@Size(max=...)`.
+- [ ] Any new DTO field returned to the browser is reviewed for secret
+      leakage (mirror `UserResponse.from` — never echo
+      `passwordHash`, `apiKeyEncrypted`, etc.).
+- [ ] If a future change adds cookie-based auth, add CSRF tokens
+      (Spring Security's `CookieCsrfTokenRepository` is the standard
+      choice). Header-based auth (`X-Session-Id`) is CSRF-safe by
+      construction; do not switch to cookies without a CSRF plan.
+- [ ] Any new HTTP client uses `JdkClientHttpRequestFactory` (Java 11+
+      `HttpClient`) with a real connection pool — the current
+      `SimpleClientHttpRequestFactory` in `HttpClientConfig` is
+      per-request, blocking, and not pooled.
+- [ ] Any new failure path returns a fixed-string error to the caller
+      and logs the detail. Do not return `e.getMessage()` directly
+      (see F-05).
+- [ ] If the active Spring profile is `prod`, the code refuses to start
+      without `HONCHO_CRYPTO_KEY` (see F-06).
+
+---
+
+## 7. Reporting a vulnerability
+
+Email `security@revyt...` (TBD by the project owner) with a description
+and reproduction. Do not file public GitHub issues for suspected
+vulnerabilities. This is a placeholder section — replace with the real
+contact before tagging a release.

@@ -9,14 +9,41 @@
 #
 # Anything not set here falls back to the bundled defaults (see
 # src/main/resources/application.yml in honcho-inspector-backend).
+#
+# --------------------------------------------------------------------------
+# Production safety checklist (read docs/SECURITY.md §5 before deploying)
+# --------------------------------------------------------------------------
+# 1. Set HONCHO_CRYPTO_KEY in the environment, NOT in this file. Use
+#    `openssl rand -base64 32` and load it from a secret manager.
+# 2. The backend should bind to 127.0.0.1 only (see `server.address` below)
+#    and be reachable exclusively from the reverse proxy. TLS, HSTS, and
+#    security headers are the proxy's job — see docs/reverse-proxy.md.
+# 3. CORS must list the *exact* public origin of the UI (https://...). No
+#    wildcards; no http://localhost in prod.
+# 4. Set session.ttl-minutes to a non-zero value so idle sessions expire.
 
 server:
   # port: 8080
+  # Bind to loopback only — the reverse proxy is the public listener.
+  # Without this, the backend is reachable on the host's external IPs.
+  address: 127.0.0.1
+  # Trim what Spring's error envelope leaks. The default is
+  # `include-message: always` (set in the bundled yaml for dev clarity);
+  # in prod, prefer `when_authorized` or `never` so unmapped exceptions
+  # don't echo upstream error text to the browser.
+  error:
+    include-message: when_authorized
+    include-binding-errors: never
+    include-stacktrace: never
+    include-exception: false
 
 # CORS — comma-separated list of allowed origins. Must include the URL the
-# browser will use to reach the honcho-inspector UI in production.
+# browser will use to reach the honcho-inspector UI in production. When
+# the UI is served from the same origin as the API (recommended — see
+# docs/reverse-proxy.md §2.4), CORS is irrelevant for that path; this
+# list is defence-in-depth.
 cors:
-  # allowed-origins: "https://honcho.example.com,http://localhost:4200"
+  # allowed-origins: "https://honcho.example.com"
 
 # Honcho upstream. The user also enters this in the login form per session;
 # this default is used for the startup banner and any default-fallback calls.
@@ -25,10 +52,13 @@ honcho:
   # api-version: "v3"
   # request-timeout-ms: 30000
 
-# Session config. ttl-minutes=0 means sessions never expire (current in-memory behavior).
+# Session config. ttl-minutes=0 means sessions never expire. In prod,
+# set this to a real value (e.g. 60) so abandoned sessions are
+# reaped. The `last_seen_at` index on `auth_sessions` makes this O(1).
 session:
-  # ttl-minutes: 0
+  # ttl-minutes: 60
 
 logging:
   level:
-    com.honcho.dashboard: INFO
+    com.revytechinc.honchoinspector: INFO
+    # org.springframework.web: INFO   # uncomment to see per-request access lines
