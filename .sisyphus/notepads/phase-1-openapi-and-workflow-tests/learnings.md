@@ -1720,3 +1720,29 @@ Fixed 10 F4 violations across T4a, T4b, T4, and T26:
 ### Final test count
 - **Tests run: 354, Failures: 0, Errors: 0, Skipped: 1** (the runningAsRoot test).
 - 12 files changed: 4 new (HonchoPropertiesTest, MdcEnrichmentTest) + 8 modified (3 main src, 3 test src, 2 notepad files).
+
+## F4 Re-scan (post-3df68b3)
+
+Re-verified all 10 violations flagged by the original F4 audit after the fix
+commit `3df68b3 fix(phase-1): F4 Scope Fidelity Audit — address 10 violations`.
+
+| # | Violation | Fix verified at |
+|---|-----------|----------------|
+| 1 | T4a `resolveOrCreate()` missing | `HonchoConfigDirResolver.java:74` |
+| 2 | T4a `XDG_USER_ETC` missing | `HonchoConfigDirResolver.java:24` |
+| 3 | T4a `isRunningAsRoot()` missing | `HonchoConfigDirResolver.java:128` |
+| 4 | T4a `StartupInfoLogger` not using `resolveOrCreate()` | `StartupInfoLogger.java:70-77` |
+| 5 | T4a 5 new tests missing | `HonchoConfigDirResolverTest.java:127,140,153,178,207` |
+| 6 | T4b SessionAuthFilter MDC missing | `SessionAuthFilter.java:8,21-22,59-64` |
+| 7 | T4b HonchoProxyService MDC missing | `HonchoProxyService.java:6,88-93,97-98` |
+| 8 | T4b HonchoV3Client MDC peer_id missing | `HonchoV3Client.java:8,266-274,277` |
+| 9 | T4 HonchoPropertiesTest missing | `HonchoPropertiesTest.java` (3 tests, 86 lines) |
+| 10 | T26 tests + live gating | `HonchoWorkflowIntegrationTest.java` (14 @Test), `LiveHonchoProxyIT.java:58-59` (both `@EnabledIfEnvironmentVariable` annotations) |
+
+### mvn test outcome
+- `mvn -B test -DexcludedGroups='drift,live'` → **354 run, 0 failures, 0 errors, 1 skipped** (runningAsRoot_skipsFallback skipped on non-root via Assumptions.assumeTrue).
+- BUILD SUCCESS in 47.5s.
+
+### Operational observation from logs
+- Test runs now trigger the new fallback path on Linux dev: `config dir primary path not writable (/etc/honcho-inspector), falling back to /home/mlapointe/.local/etc/honcho-inspector`. StartupInfoLogger renders the `[fallback: <path>]` tag correctly. The dev environment is non-root so the `~/.local/etc/honcho-inspector` fallback fires as designed.
+- HonchoMockConfigTest, HonchoWorkflowIntegrationTest, and CustomProviderSpiTest all show the fallback in their captured logs — T4a is actually exercising in CI.
