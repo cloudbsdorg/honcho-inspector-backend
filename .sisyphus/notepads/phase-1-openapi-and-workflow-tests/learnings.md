@@ -1444,3 +1444,70 @@ mvn -B -o package
 
 ### Cross-link to regenerating-openapi.md (does not yet exist)
 - The plan task spec mandates cross-links to `docs/regenerating-openapi.md`. The file is not yet on disk (T22 is the planned owner, also see regenerating-fixtures.md for the fixture counterpart). Cross-link written anyway — Markdown links resolve to anchor text only when the target ships, and the explicit reference tells the next reader what T22 should produce. Also cross-linked `docs/regenerating-fixtures.md` which DOES exist.
+
+## T31: docs/regenerating-openapi.md (2026-06-18)
+
+- New file: `docs/regenerating-openapi.md` (392 lines, 7 required `##` sections + 1 "Related" appendix).
+- Sections (in order): Why two OpenAPI artifacts? / When to regenerate the snapshot / How to regenerate / How to update the hand-written YAML / How drift check works / Phase 2 path placeholders / CI integration / Related.
+- mvn -Popenapi-snapshot command documented 4x (section 3, jq verify paragraph, ci.yml block, full-pipeline block). ci.yml cross-link present in section 7 (line 342) and Related (line 390).
+- No emojis. No mention of `docs/honcho-versioning.md`. No duplication of `docs/honcho-providers.md` content (cross-linked once in Why-two section + Related).
+- mvn -B test post-change: 328/328 passing, BUILD SUCCESS. OpenApiDriftCheckTest included and green.
+- Style match: prose density + table-of-links close to `docs/regenerating-fixtures.md` (the sibling fixture-regen doc). Section ordering and depth match the T31 task spec in the plan file.
+- Cross-link targets used (relative paths): `openapi.yaml`, `openapi.generated.json`, `../src/test/java/.../OpenApiDriftCheckTest.java`, `../../.github/workflows/ci.yml`, `honcho-providers.md`, `regenerating-fixtures.md`.
+- Port-override flag `-Dopenapi.port=NNNN` documented inline with the regeneration command (inherited from the `openapi-snapshot` profile in `pom.xml`).
+
+## T28 + T29 (2026-06-18)
+
+### T28 verification — HonchoClientFactoryTest already covers all 7 spec scenarios
+Read the existing `HonchoClientFactoryTest.java` (143 lines) and confirmed all 7 spec test names are present, no additions needed:
+1. `emptyFactoryThrowsForAllVersions` (L70) ✓
+2. `v3OnlyFactoryReturnsV3Client` (L81) ✓
+3. `multipleClientsDispatchByVersion` (L99) ✓
+4. `resolveVersionPrefersOverride` (L112) ✓
+5. `resolveVersionFallsBackToDefault` (L118) ✓
+6. `resolveVersionParsesCaseInsensitive` (L128) ✓
+7. `resolveVersionThrowsOnInvalid` (L134) ✓
+
+The test uses a `NoOpHonchoClient` abstract base class (returns null from every method) with concrete `FakeV3Client` / `FakeV4Client` subclasses that override `supportedVersions()`. None of the factory tests actually invoke the 24 operation methods, so null is a fine placeholder.
+
+### T29 verification — HonchoProviderRegistryTest already covers all 5 spec scenarios
+Read the existing `HonchoProviderRegistryTest.java` (279 lines) and confirmed all 5 spec test names are present, no additions needed:
+1. `filtersByVersion` (L134) ✓
+2. `collisionLogsAndFirstWins` (L152) ✓
+3. `missingOperationThrowsHelpful` (L194) ✓
+4. `coversReturnsTrueForRegisteredOpAndFalseOtherwise` (L213) — combines both `coversReturnsTrue` and `coversReturnsFalse` assertions into a single test ✓
+5. `coveredOperationsReturnsAllRegistered` (L225) ✓
+
+Collision test uses NAMED static inner classes (`AlphaListPeersProvider` / `BetaListPeersProvider`) instead of anonymous classes — anonymous classes in the same enclosing scope can get the same JVM-internal numerical suffix, breaking the deterministic "alphabetically first wins" assertion. The test even asserts the class name ordering as a sanity check on itself.
+
+### T29 NEW — CustomProviderSpiTest.java (SPI proof)
+Created `src/test/java/com/revytechinc/honchoinspector/honcho/CustomProviderSpiTest.java`. 3 tests, all pass:
+1. `customProviderWinsForListPeers` — primary SPI proof: `factory.clientFor(V3).listPeers(ctx, Map.of())` returns the marker Map `{"fromCustomProvider": true, "sessionId": "marker"}` (proves custom provider WINS over default PeersProviderV3)
+2. `customProviderAdvertisesTheExpectedMetadata` — asserts `operations() == {LIST_PEERS}`, `supportedVersions() == {V3}`, `pathTemplate == "custom/special/path"`, `httpMethod == GET` (deliberately different from default PeersProviderV3's POST)
+3. `defaultPeersProviderStillExistsAlongsideCustomProvider` — confirms the override is per-operation, not whole-bean replacement: both CustomTestProviderV3 and PeersProviderV3 are in the context
+
+### Key architectural insight: how the override works
+`HonchoProviderRegistry` sorts providers alphabetically by fully qualified class name and uses `putIfAbsent` for each claimed operation. `CustomTestProviderV3`'s package (`com.revytechinc.honchoinspector.honcho`) sorts BEFORE `PeersProviderV3`'s (`com.revytechinc.honchoinspector.honcho.v3`) — C (ASCII 67) < v (ASCII 118). So the custom provider wins the collision for `LIST_PEERS` deterministically, independent of Spring's bean ordering.
+
+Confirmed by the runtime log:
+```
+HonchoProviderRegistry(vV3) operation LIST_PEERS claimed by both
+  com.revytechinc.honchoinspector.honcho.CustomProviderSpiTest$CustomTestProviderV3
+  and com.revytechinc.honchoinspector.honcho.v3.PeersProviderV3;
+  first-registered (alphabetically by class name) wins,
+  keeping com.revytechinc.honchoinspector.honcho.CustomProviderSpiTest$CustomTestProviderV3
+```
+
+### Why path & verb differ from default
+The default `PeersProviderV3.LIST_PEERS` uses `POST /v3/workspaces/{ws}/peers/list`. CustomTestProviderV3 uses `GET custom/special/path`. The differences are intentional — they make the override observable in a real upstream HTTP trace. The marker Map alone proves the dispatch, but the path/verb combo is what would surface in a production access log.
+
+### Why `spring.main.allow-bean-definition-overriding=true`
+Scoped to this test only via `@SpringBootTest(properties = ...)` (NOT enabled globally). The two beans (`peersProviderV3` and `customTestProviderV3`) have different class names, so no actual override collision occurs at bean registration. The property is a defensive safety net in case a future Spring upgrade or refactor changes bean naming conventions.
+
+### Why no `@MockitoBean HonchoClientFactory` (unlike IntegrationTestBase)
+`IntegrationTestBase` silences the production `HonchoClientFactory` via `@MockitoBean(name = "honchoClientFactory")` because both the real `HonchoV3Client` and the `HonchoMockConfig` mock client claim V3, which would crash the production factory's fail-fast constructor. My test does NOT import `HonchoMockConfig`, so only the real `HonchoV3Client` exists, and the production factory boots fine. The custom provider is just a `HonchoProvider` bean that Spring auto-injects into `HonchoV3Client`'s `List<HonchoProvider>` constructor parameter.
+
+### Test results
+- `mvn test -Dtest=HonchoClientFactoryTest,HonchoProviderRegistryTest,CustomProviderSpiTest`: 15/15 pass
+- `mvn -B test` (full suite): 328/328 pass (baseline was 325, +3 from CustomProviderSpiTest)
+- `mvn -B package`: BUILD SUCCESS, fat jar created

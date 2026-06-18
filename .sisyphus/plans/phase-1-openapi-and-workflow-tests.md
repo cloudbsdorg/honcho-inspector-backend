@@ -2796,7 +2796,7 @@ Max Concurrent: 8 (Wave 2)
   - Message: `test(honcho): add unit tests for all 24 V3 providers (path/method/body assertions)`
   - Files: new test files
 
-- [ ] 28. Unit tests: `HonchoClientFactory` version routing + unsupported-version throw
+- [x] 28. Unit tests: `HonchoClientFactory` version routing + unsupported-version throw
 
   **What to do**:
   - Create `src/test/java/com/revytechinc/honchoinspector/honcho/HonchoClientFactoryTest.java`:
@@ -2848,7 +2848,7 @@ Max Concurrent: 8 (Wave 2)
   - Message: `test(honcho): add HonchoClientFactory unit tests (routing, fallback, error messages)`
   - Files: new `HonchoClientFactoryTest.java`
 
-- [ ] 29. Unit tests: `HonchoProviderRegistry` auto-discovery + custom-provider SPI test
+- [x] 29. Unit tests: `HonchoProviderRegistry` auto-discovery + custom-provider SPI test
 
   **What to do**:
   - Create `src/test/java/com/revytechinc/honchoinspector/honcho/HonchoProviderRegistryTest.java`:
@@ -2994,7 +2994,7 @@ _  - Create `src/test/java/com/revytechinc/honchoinspector/honcho/CustomProvider
   - Message: `docs(honcho): add honcho-providers.md with anatomy, add-endpoint tutorial, add-V4 walkthrough, troubleshooting`
   - Files: new `docs/honcho-providers.md`
 
-- [ ] 31. `docs/regenerating-openapi.md` (snapshot regeneration)
+- [x] 31. `docs/regenerating-openapi.md` (snapshot regeneration)
 
   **What to do**:
   - Create `docs/regenerating-openapi.md` with sections:
