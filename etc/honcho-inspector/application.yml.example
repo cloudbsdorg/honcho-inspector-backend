@@ -49,8 +49,17 @@ cors:
 # this default is used for the startup banner and any default-fallback calls.
 honcho:
   # base-url: "https://mcp.honcho.cloudbsd.org"
-  # api-version: "v3"
+  # Honcho API version (default if profile.api_version is null). Supported: v3.
+  api-version: v3
   # request-timeout-ms: 30000
+  # Provider strict-mode (default false). When true, the server fails to start if any registered
+  # HonchoProvider claims a version that has no HonchoClient implementation. Set true in prod
+  # to prevent forward-incompatible deploys.
+  providers:
+    strict-mode: false
+  # Per-profile api_version override: edit a profile row in the honcho_profiles table
+  # (column api_version TEXT). NULL inherits honcho.api-version above. This is how two
+  # profiles can talk to different Honcho versions simultaneously. See docs/honcho-providers.md.
 
 # Session config. ttl-minutes=0 means sessions never expire. In prod,
 # set this to a real value (e.g. 60) so abandoned sessions are
@@ -62,3 +71,9 @@ logging:
   level:
     com.revytechinc.honchoinspector: INFO
     # org.springframework.web: INFO   # uncomment to see per-request access lines
+
+# --------------------------------------------------------------------------
+# Honcho provider architecture (HonchoClient + HonchoProvider registry,
+# api_version negotiation, strict-mode failfast):
+#   docs/honcho-providers.md
+# --------------------------------------------------------------------------

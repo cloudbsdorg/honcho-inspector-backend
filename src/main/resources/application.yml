@@ -36,6 +36,11 @@ honcho:
   request-timeout-ms: ${HONCHO_REQUEST_TIMEOUT_MS:30000}
   # OS-aware default config dir, used by HonchoConfigDirResolver.
   config-dir: ${HONCHO_CONFIG_DIR:#{null}}
+  # Provider strict-mode (default false). When true, the server fails to start if any registered
+  # HonchoProvider claims a version that has no HonchoClient implementation. Set true in prod
+  # to prevent forward-incompatible deploys.
+  providers:
+    strict-mode: false
 
 # CORS allowed origins. Comma-separated list.
 cors:

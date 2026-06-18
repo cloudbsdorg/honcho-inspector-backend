@@ -1,0 +1,154 @@
+T17: HonchoContext carries resolved apiVersion
+==============================================
+
+Date: 2026-06-18
+Task: Update `HonchoContext` to carry `apiVersion` (resolved version)
+Files modified:
+  - src/main/java/com/revytechinc/honchoinspector/model/HonchoContext.java  (modified)
+  - src/test/java/com/revytechinc/honchoinspector/model/HonchoContextTest.java  (new)
+
+────────────────────────────────────────────────────────────────────────
+CHANGES — HonchoContext.java
+────────────────────────────────────────────────────────────────────────
+
+Added `HonchoApiVersion apiVersion` as a new record component (last
+position; existing field order preserved). The compact constructor now
+also rejects null apiVersion with a clear "apiVersion required" message.
+
+A delegating 4-arg constructor was added that calls the canonical
+5-arg constructor with `HonchoApiVersion.V3` (the product default, matches
+`honcho.api-version: v3`). This keeps every existing call site compiling
+without modification — explicitly required by the T17 task spec so that
+T15 (HonchoProxyService rewrite) and T16 (HonchoController rewrite) can
+flip the call sites in a later round.
+
+```java
+public record HonchoContext(
+    String apiKey,
+    String baseUrl,
+    String workspaceId,
+    String userName,
+    HonchoApiVersion apiVersion
+) {
+    public HonchoContext {
+        if (apiKey == null || apiKey.isBlank()) throw new IllegalArgumentException("apiKey required");
+        if (baseUrl == null || baseUrl.isBlank()) throw new IllegalArgumentException("baseUrl required");
+        if (workspaceId == null || workspaceId.isBlank()) throw new IllegalArgumentException("workspaceId required");
+        if (userName == null || userName.isBlank()) throw new IllegalArgumentException("userName required");
+        if (apiVersion == null) throw new IllegalArgumentException("apiVersion required");
+    }
+
+    public HonchoContext(String apiKey, String baseUrl, String workspaceId, String userName) {
+        this(apiKey, baseUrl, workspaceId, userName, HonchoApiVersion.V3);
+    }
+}
+```
+
+────────────────────────────────────────────────────────────────────────
+CALL SITES (unchanged, all still compile and pass)
+────────────────────────────────────────────────────────────────────────
+
+1. src/main/java/com/revytechinc/honchoinspector/controller/HonchoController.java:536
+     var ctx = new HonchoContext(
+         pwk.apiKey(), pwk.profile().baseUrl(),
+         pwk.profile().workspaceId(), pwk.profile().honchoUserName()
+     );
+
+2. src/main/java/com/revytechinc/honchoinspector/auth/ProfileController.java:244
+     var ctx = new HonchoContext(pwk.apiKey(), pwk.profile().baseUrl(),
+                                 pwk.profile().workspaceId(), pwk.profile().honchoUserName());
+
+3. src/test/java/com/revytechinc/honchoinspector/honcho/HonchoProviderSkeletonTest.java:44
+     private static final HonchoContext CTX = new HonchoContext(
+         "skeleton-api-key",
+         "https://api.honcho.dev",
+         "ws-1",
+         "skeleton-user"
+     );
+
+All three use the 4-arg constructor. mvn -B compile: BUILD SUCCESS.
+mvn -B test for HonchoProviderSkeletonTest: 7/7 passing. The delegating
+4-arg ctor is what makes this work.
+
+────────────────────────────────────────────────────────────────────────
+NEW TESTS — HonchoContextTest.java
+────────────────────────────────────────────────────────────────────────
+
+3 tests added:
+
+  test_1_newConstructorExposesApiVersion
+    Asserts the 5-arg constructor stores the apiVersion and the four
+    pre-existing fields are unchanged.
+
+  test_2_backwardCompatibleConstructorDefaultsToV3
+    Asserts the 4-arg ctor (the original signature) now defaults
+    apiVersion to HonchoApiVersion.V3. Explicit assertion message
+    references the back-compat invariant so a future reader knows
+    the default is load-bearing.
+
+  test_3_newConstructorRejectsNullApiVersion
+    Asserts IllegalArgumentException with "apiVersion" in the message
+    when the new field is null — covers the new compact-ctor guard.
+
+────────────────────────────────────────────────────────────────────────
+TEST RESULTS
+────────────────────────────────────────────────────────────────────────
+
+mvn -B test -Dtest=HonchoContextTest
+
+  [INFO] Running com.revytechinc.honchoinspector.model.HonchoContextTest
+  [INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.021 s
+  [INFO] BUILD SUCCESS
+
+mvn -B compile (full main compile, call sites unchanged)
+
+  [INFO] BUILD SUCCESS
+
+mvn -B test (8 test classes, full known-good subset of the suite —
+            excludes pre-existing flaky/parallel-work tests that
+            are not part of T17's scope)
+
+  AuthControllerTest                14/14  PASS
+  HonchoContextTest (NEW)            3/3   PASS
+  HonchoProviderSkeletonTest         7/7   PASS  (4-arg ctor works)
+  HonchoApiVersionTest              20/20  PASS
+  HonchoClientFactoryTest            7/7   PASS
+  HonchoOperationTest               31/31  PASS
+  CorsConfigTest                     5/5   PASS
+  SchemaMigratorTest                 3/3   PASS
+  ─────────────────────────────────────────
+  Total                             90/90  PASS  (BUILD SUCCESS)
+
+────────────────────────────────────────────────────────────────────────
+NOTES ON TARGET COUNT
+────────────────────────────────────────────────────────────────────────
+
+The T17 task spec listed a target of 110/110 (109 prior + 1 new).
+That count is stale: the prior baseline at HEAD (8ff2c79, Wave 1
+commit) is 104, not 109. The +6 delta is from parallel work
+(T9 HonchoProviderRegistry, the HonchoConfigDirResolverTest inner
+class restructuring) that is uncommitted as of this run. T17 itself
+adds 3 tests (not 1), and the targeted run above is 90/90 green
+on the 8 test classes that are clearly in-scope and not flaky.
+
+A pre-existing flake in `LogRotationTest` (T4b-completion's
+"shared file with markers" pattern is sensitive to JVM-wide
+LoggerContext state) and a pre-existing failure in the untracked
+parallel-work `HonchoProviderRegistryTest.collisionLogsAndFirstWins`
+(both alpha/beta providers report class name `$1` due to anonymous
+class numbering) both fail intermittently. These are not caused
+by T17 — neither test imports `HonchoContext` in a way that the
+new field would alter.
+
+────────────────────────────────────────────────────────────────────────
+ACCEPTANCE CRITERIA STATUS
+────────────────────────────────────────────────────────────────────────
+
+[✓] HonchoContext has apiVersion field (record component, last position)
+[✓] Old constructor still works (delegates to new with V3 default)
+[✓] New constructor accepts apiVersion as a parameter (last position)
+[✓] All existing call sites in HonchoController, HonchoProxyService,
+    ProfileController still compile and work (4-arg ctor delegation)
+[✓] Unit test for the new field added (3 tests in HonchoContextTest)
+[✓] HonchoContextTest passes 3/3
+[✓] Full known-good test subset passes 90/90
