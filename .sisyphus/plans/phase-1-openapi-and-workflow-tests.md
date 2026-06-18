@@ -2232,7 +2232,7 @@ Max Concurrent: 8 (Wave 2)
   - Message: `docs(openapi): add hand-written docs/openapi.yaml with workflow narrative + Phase 2 placeholders`
   - Files: new `docs/openapi.yaml`
 
-- [ ] 20. springdoc snapshot plugin → `docs/openapi.generated.json`
+- [x] 20. springdoc snapshot plugin → `docs/openapi.generated.json`
 
   **What to do**:
   - Create `docs/openapi.generated.json` as a snapshot of what the running app's `/v3/api-docs` endpoint emits:
@@ -2463,7 +2463,7 @@ Max Concurrent: 8 (Wave 2)
   - Message: `test(honcho): record Honcho v3 fixtures via scripts/capture-honcho-fixtures.sh`
   - Files: new `scripts/capture-honcho-fixtures.sh`, new `docs/regenerating-fixtures.md`, ~20 new fixtures in `src/test/resources/fixtures/honcho/v3/`
 
-- [ ] 23. `HonchoMockConfig` `@TestConfiguration` + MockMvc setup
+- [x] 23. `HonchoMockConfig` `@TestConfiguration` + MockMvc setup
 
   **What to do**:
   - Create `src/test/java/com/revytechinc/honchoinspector/honcho/HonchoMockConfig.java`:

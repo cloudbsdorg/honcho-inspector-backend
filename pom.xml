@@ -76,4 +76,71 @@
             </plugin>
         </plugins>
     </build>
+
+    <!-- mvn -Popenapi-snapshot verify -DskipTests
+         Regenerates target/openapi-snapshot.json by running the app
+         and curling /v3/api-docs. Used by the T21 drift check and
+         for ad-hoc regeneration by operators.
+
+         Port defaults to 8080; override with -Dopenapi.port=NNNN
+         when 8080 is occupied (e.g. by an Angular dev server). -->
+    <profiles>
+        <profile>
+            <id>openapi-snapshot</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.springframework.boot</groupId>
+                        <artifactId>spring-boot-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>start-spring-boot</id>
+                                <phase>pre-integration-test</phase>
+                                <goals>
+                                    <goal>start</goal>
+                                </goals>
+                                <configuration>
+                                    <jvmArguments>
+                                        -Dserver.port=${openapi.port}
+                                        -DHONCHO_DB_PATH=jdbc:sqlite::memory:
+                                        -DHONCHO_CRYPTO_KEY=ignored
+                                    </jvmArguments>
+                                    <wait>2000</wait>
+                                    <maxAttempts>60</maxAttempts>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>stop-spring-boot</id>
+                                <phase>post-integration-test</phase>
+                                <goals>
+                                    <goal>stop</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>curl-api-docs</id>
+                                <phase>integration-test</phase>
+                                <goals>
+                                    <goal>exec</goal>
+                                </goals>
+                                <configuration>
+                                    <executable>curl</executable>
+                                    <arguments>
+                                        <argument>-s</argument>
+                                        <argument>http://localhost:${openapi.port}/v3/api-docs</argument>
+                                    </arguments>
+                                    <outputFile>${project.build.directory}/openapi-snapshot.json</outputFile>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>

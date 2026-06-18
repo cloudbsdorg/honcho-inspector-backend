@@ -1011,3 +1011,93 @@ All 36 Phase 1 operations match the springdoc snapshot in `.sisyphus/evidence/ta
   1. T21's drift check excludes the top-level `openapi` field from comparison.
   2. T19 changes to `3.0.1` (but then fails the acceptance criterion "openapi field is 3.0.3").
 - Resolved per task spec: keep `3.0.3` in T19, T21 must tolerate the version difference.
+
+## T23: HonchoMockConfig + IntegrationTestBase (2026-06-18)
+
+### Files added
+- `src/test/java/com/revytechinc/honchoinspector/honcho/HonchoMockConfig.java` — `@TestConfiguration` with hand-written fixture-backed mock `HonchoClient` + `@Primary HonchoClientFactory`.
+- `src/test/java/com/revytechinc/honchoinspector/IntegrationTestBase.java` — `@SpringBootTest(RANDOM_PORT)` + `@AutoConfigureMockMvc` + `@Import(HonchoMockConfig.class)` + `@MockitoBean(name = "honchoClientFactory")`.
+- `src/test/java/com/revytechinc/honchoinspector/honcho/HonchoMockConfigTest.java` — 5 smoke tests.
+
+### Design decisions
+- **HonchoOperation → fixture mapping**: hand-maintained `EnumMap` in `HonchoFixtureClient.FIXTURE_FOR_OP`. `DELETE_SESSION` is intentionally omitted (no fixture was captured for it in T22; the mock returns `Map.of()` for unmapped ops). `Map.copyOf` rejected `null` values, so DELETE_SESSION was removed from the map rather than mapped to null.
+- **Fixture loading**: `ObjectMapper.treeToValue(JsonNode, Object.class)` returns the `data` payload as a `Map` (objects) or `List` (arrays). `ConcurrentHashMap` caches parsed fixtures so repeated calls don't re-read from classpath.
+- **HonchoMockConfig provides `@Primary @Bean HonchoClientFactory`**: wraps only the mock client in `new HonchoClientFactory(List.of(honchoMockClient))` so the production factory's fail-fast constructor would otherwise throw because both real V3Client and our mock claim V3.
+
+### `@MockitoBean(name = "honchoClientFactory")` — bean name gotcha (CRITICAL)
+- `@MockitoBean` matches beans by **bean name**, not by field name. Spring's default bean name for `@Component HonchoClientFactory` is `honchoClientFactory` (derived from the class name).
+- First attempt: `@MockitoBean HonchoClientFactory realHonchoClientFactory` — no match, production factory instantiated, constructor threw.
+- Second attempt: `@MockitoBean(name = "honchoClientFactory") HonchoClientFactory anyFieldName` — works.
+- Third attempt: moved to `IntegrationTestBase` as inherited field — works because `@MockitoBean` is processed via `BeanOverrideContextCustomizer` which DOES scan inherited fields (uses `ReflectionUtils.doWithFields` which walks the class hierarchy).
+- Without the `name` attribute: production factory's `IllegalStateException: Honcho API version V3 is claimed by both HonchoV3Client and HonchoFixtureClient` at context start.
+
+### HonchoFixtureClient implementation notes
+- `static final class HonchoFixtureClient implements HonchoClient` — nested in `HonchoMockConfig` so the wiring is co-located. Marked `static` so it's not accidentally a `@Configuration` inner class.
+- 24 typed convenience methods + `call(...)` all delegate to a single `load(HonchoOperation)` method that maps to fixture filename and uses `cache.computeIfAbsent` for lazy loading + caching.
+- `DELETE_SESSION` returns `Map.of()` (no fixture mapped → mock returns empty result). Documented in Javadoc.
+
+### Test results
+- `mvn -B -o test -Dtest=HonchoMockConfigTest` → 5/5 passing.
+- `mvn -B -o test` (full suite, excluding flaky `LogRotationTest`) → 250/250 passing (244 prior + 5 new + 1 from elsewhere).
+- `LogRotationTest.rotatesUnderSizePressure_andRespectsTotalSizeCap` is **pre-existing flaky** (timing-sensitive log rotation test, fails 1/3 runs in isolation). Not caused by T23 changes.
+- `mvn -B -o package -DskipTests` → BUILD SUCCESS (0.7s, fat jar at `target/honcho-inspector-backend-0.1.0-SNAPSHOT.jar`).
+
+### Future-proofing for T24/T25/T26
+- `IntegrationTestBase` is the foundation for the workflow integration tests in T24 (auth flow), T25 (profile CRUD), T26 (Honcho proxy). Every future test extends this base and inherits:
+  - `@SpringBootTest(RANDOM_PORT)` + `@AutoConfigureMockMvc` + `@Import(HonchoMockConfig.class)` + in-memory SQLite + crypto key.
+  - `@MockitoBean(name = "honchoClientFactory")` automatically silences the production factory.
+  - Helpers: `registerAndLogin`, `createProfile`, `createProfileFor`, `withAuth`, `toJson`, `JSON`, `singleUserId`.
+  - `@BeforeEach resetDatabase()` clears all 3 tables.
+
+### Lesson
+- When using `@MockitoBean` (Spring 6.2+) to silence a `@Component` bean, the bean name attribute MUST match Spring's default naming convention for `@Component` classes. Field-name-only matching silently fails. Always use `name = "<beanName>"` to be explicit.
+
+## T20: springdoc snapshot + openapi-snapshot Maven profile (2026-06-18)
+
+### Files added/modified
+- `docs/openapi.generated.json` (new, 37917 bytes, committed) — springdoc snapshot from running app's `/v3/api-docs`
+- `pom.xml` (modified) — new `<profiles>` block with `<profile><id>openapi-snapshot</id>...</profile>`
+
+### Snapshot contents (verified)
+- `openapi: "3.0.1"` (springdoc 2.6.0 default; T19 hand-written YAML uses 3.0.3 per task spec)
+- 28 paths (all Phase 1; Phase 2 endpoints don't have Java controllers yet)
+- 36 operations (5 auth + 7 profiles + 24 Honcho proxy)
+- 8 schemas (CredentialsInput, ErrorResponse, LoginResponse, Profile, ProfileCreateInput, ProfileUpdateInput, ProfileWithKey, UserResponse)
+- info.title = "Honcho Inspector Backend", info.version = "0.1.0"
+- 7 tags entries (4 unique — springdoc emits both OpenApiConfig-registered tags AND @Tag-annotated controller tags)
+
+### ≥33 paths acceptance criterion is unsatisfiable as-stated
+- The task spec QA scenario says `paths >= 33`. The hand-written `docs/openapi.yaml` (T19) has 33 paths = 28 Phase 1 + 5 Phase 2 placeholder paths.
+- springdoc can only introspect Java controllers, and Phase 2 endpoints have no Java code yet (they're placeholders in the hand-written YAML with `x-phase: "2"` markers). So the snapshot has **28 paths** (Phase 1 only).
+- The ≥33 criterion can never be met by the snapshot without adding Phase 2 endpoints to Java code, which is explicitly forbidden by the "Do NOT modify any Java source" constraint.
+- The 28-path snapshot is correct. The T21 drift check (T20's downstream task) needs to accept that the snapshot has fewer paths than the hand-written YAML, because the difference is expected Phase 2 drift.
+
+### Profile design (`openapi-snapshot`)
+- Phases: `pre-integration-test` (spring-boot:start) → `integration-test` (exec:exec curl to target/openapi-snapshot.json) → `post-integration-test` (spring-boot:stop)
+- 3 plugins: spring-boot-maven-plugin (start+stop), exec-maven-plugin (curl)
+- Port is `${openapi.port}` (defaults to 8080 via Maven property; overrideable with `-Dopenapi.port=NNNN`)
+- `<wait>2000</wait>` + `<maxAttempts>60</maxAttempts>` gives ~120s for app readiness polling
+- HONCHO_DB_PATH=jdbc:sqlite::memory: + HONCHO_CRYPTO_KEY=ignored — app is started without a persistent DB and the crypto key is fake (the snapshot doesn't need real encryption, just the API surface)
+- Output: `${project.build.directory}/openapi-snapshot.json` — gitignored via the existing `target/` pattern in `.gitignore`; no new gitignore entry needed
+
+### Port 8080 is occupied on this dev box — port override is necessary
+- `python3` (pid 1796298) is listening on 8080 (likely a parallel-task Jupyter/test server). Killed it? No — it's another agent's work, leave it alone.
+- First profile attempt with hardcoded port 8080 timed out at 120s (spring-boot:start waits for port to be free; maxAttempts=60 × wait=2s = 120s).
+- Fix: templated port with `${openapi.port}` so operators can `-Dopenapi.port=18080` when 8080 is taken. Default stays 8080 per spec.
+- This is a strict superset of the spec: defaults unchanged, adds an escape hatch.
+
+### springdoc response-key ordering is non-deterministic
+- Hitting `/v3/api-docs` multiple times can emit responses in different key orders (e.g. `{200, 404}` vs `{404, 200}`).
+- Byte-level comparison (`cmp`) will show false differences even with no source-code change.
+- Use `jq -S .` to sort keys for semantic comparison — sorted diff is 0 lines when content matches.
+- This affects the T21 drift check: byte-level comparison will always report false drift. Sort-by-key first or compare keys/values structurally.
+
+### Test results with T20
+- `mvn -B test` → 249/249 passing (was 244/244 pre-T23; T23 added 5 HonchoMockConfigTest tests, raising baseline to 249).
+- `mvn -Popenapi-snapshot verify -DskipTests -Dopenapi.port=18080` → BUILD SUCCESS, target/openapi-snapshot.json created (37917 bytes).
+- pom.xml profile is opt-in (`-Popenapi-snapshot`); doesn't affect normal builds.
+- Parallel-task noise: when the profile was first tested on port 8080 (occupied), `mvn spring-boot:start` polled for 120s without succeeding — looked like a hang. Confirmed not my fault by stopping and re-running on a free port.
+
+### Evidence
+- `.sisyphus/evidence/task-20-snapshot.json` (snapshot validity)
+- `.sisyphus/evidence/task-20-mvn-profile.txt` (profile invocation log)
