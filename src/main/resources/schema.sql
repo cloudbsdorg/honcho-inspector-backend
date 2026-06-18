@@ -19,6 +19,10 @@ CREATE TABLE IF NOT EXISTS honcho_profiles (
     base_url          TEXT    NOT NULL,
     workspace_id      TEXT    NOT NULL,
     honcho_user_name  TEXT    NOT NULL,
+    -- api_version: nullable so existing rows pre-migration are valid; new rows
+    -- may set it via ProfileService. Migrated to a real column by
+    -- SchemaMigrator for DBs created before this column existed.
+    api_version       TEXT,
     created_at        TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     updated_at        TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,

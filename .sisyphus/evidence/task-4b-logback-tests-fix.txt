@@ -1,0 +1,132 @@
+T4b-completion fix: logback tests go green — 97/97 passing
+
+Environment: source .sisyphus/env.sh
+Command: mvn -B test
+Result: Tests run: 97, Failures: 0, Errors: 0, Skipped: 0 — BUILD SUCCESS (8.7 s)
+
+Per-class results:
+- AuthControllerTest:                       14/14 PASS (6.807 s)
+- LogMdcTest:                                1/1  PASS (0.235 s)
+- LogScrubbingTest:                          1/1  PASS (0.019 s)
+- JsonlFormatTest:                           1/1  PASS (0.018 s)
+- LogRotationTest:                           1/1  PASS (0.376 s)
+- LogbackConfigTest:                         3/3  PASS (0.210 s)
+- HonchoProviderSkeletonTest:                7/7  PASS (0.006 s)
+- HonchoApiVersionTest:                     20/20 PASS (0.026 s)
+- HonchoOperationTest:                      31/31 PASS (0.012 s)
+- HonchoConfigDirResolverTest:              10/10 PASS (0.002 s)
+- CorsConfigTest:                            5/5  PASS (0.002 s)
+- SchemaMigratorTest:                        3/3  PASS (0.007 s)
+
+==========================================================
+What was wrong (root cause, more nuanced than the task spec):
+==========================================================
+
+The task spec said "Spring properties don't propagate to Logback — use
+@DynamicPropertySource or System.setProperty in @BeforeAll". The actual
+problem is that Spring Boot's LogbackLoggingSystem is a JVM-wide SINGLETON
+(loaded once via SpringFactoriesLoader), and so is the underlying
+ch.qos.logback.classic.LoggerContext.
+
+Consequence: the very first @SpringBootTest to load a Spring context
+initializes the FILE_JSONL RollingFileAppender against the system
+properties in effect at THAT moment. Subsequent @SpringBootTest classes
+do NOT re-read logback-spring.xml — they share the same LoggerContext
+that was already configured.
+
+This means:
+1. Setting `System.setProperty("HONCHO_CONFIG_DIR", ...)` in @BeforeAll
+   is TOO LATE — the appender was already configured with the
+   previous class's value (or with the default `${HONCHO_CONFIG_DIR:-.}` = ".").
+2. Setting it in a `static {}` initializer is also too late — the
+   class isn't loaded until JUnit scans for it, but the first
+   @SpringBootTest has already triggered Logback init.
+3. `@DynamicPropertySource` only sets Spring Environment properties,
+   which Logback does not read — so that doesn't help either.
+
+The ONLY way to get per-class isolation is to FORCE the LoggerContext
+to re-read logback-spring.xml after setting the system property. The
+helper does this via JoranConfigurator.doConfigure() on a reset context.
+
+==========================================================
+What was changed
+==========================================================
+
+1. LogbackTestSupport.java — rewrote with two helpers:
+   - prepareLogsDir(Path) — creates <configDir>/logs/
+   - reloadConfig() — re-reads logback-spring.xml into the existing
+     LoggerContext after context.reset(). Must be called AFTER setting
+     the system property and BEFORE the first log event.
+
+2. All 4 logging tests (JsonlFormatTest, LogMdcTest, LogRotationTest,
+   LogScrubbingTest) follow the same pattern:
+   - @BeforeAll: set HONCHO_CONFIG_DIR (and HONCHO_LOG_MAX_FILE_SIZE,
+     HONCHO_LOG_TOTAL_SIZE_CAP for LogRotationTest) as System properties
+   - @BeforeAll: prepareLogsDir(CONFIG_DIR) to ensure the dir exists
+   - @BeforeAll: reloadConfig() to force Logback to re-read the config
+   - Tests assert against CONFIG_DIR.resolve("logs/honcho-inspector.jsonl")
+   - @AfterAll: clear System properties + delete the test config dir
+
+3. LogbackConfigTest.java — UNCHANGED (it doesn't depend on file output,
+   just appender registration; it still passes).
+
+4. LogRotationTest was changed to use HONCHO_LOG_TOTAL_SIZE_CAP=10KB
+   instead of HONCHO_LOG_MAX_HISTORY=2. Rationale: maxHistory is
+   TIME-BASED and won't prune same-day rotations, so it cannot bound
+   the file count for a sub-second test that runs thousands of
+   rollovers. totalSizeCap is the only knob that prunes size-driven
+   rotation in the same day. The assertion was changed from
+   `total <= 3` to `totalSizeBytes <= 15KB` to verify pruning.
+
+==========================================================
+Verification
+==========================================================
+
+Full mvn test output (filtered to test summaries):
+
+```
+[INFO] Running com.revytechinc.honchoinspector.auth.AuthControllerTest
+[INFO] Tests run: 14, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 6.807 s -- in com.revytechinc.honchoinspector.auth.AuthControllerTest
+[INFO] Running com.revytechinc.honchoinspector.logging.LogMdcTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.235 s -- in com.revytechinc.honchoinspector.logging.LogMdcTest
+[INFO] Running com.revytechinc.honchoinspector.logging.LogScrubbingTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.019 s -- in com.revytechinc.honchoinspector.logging.LogScrubbingTest
+[INFO] Running com.revytechinc.honchoinspector.logging.JsonlFormatTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.018 s -- in com.revytechinc.honchoinspector.logging.JsonlFormatTest
+[INFO] Running com.revytechinc.honchoinspector.logging.LogRotationTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.376 s -- in com.revytechinc.honchoinspector.logging.LogRotationTest
+[INFO] Running com.revytechinc.honchoinspector.logging.LogbackConfigTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.210 s -- in com.revytechinc.honchoinspector.logging.LogbackConfigTest
+[INFO] Running com.revytechinc.honchoinspector.honcho.HonchoProviderSkeletonTest
+[INFO] Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.006 s -- in com.revytechinc.honchoinspector.honcho.HonchoProviderSkeletonTest
+[INFO] Running com.revytechinc.honchoinspector.honcho.HonchoApiVersionTest
+[INFO] Tests run: 20, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.026 s -- in com.revytechinc.honchoinspector.honcho.HonchoApiVersionTest
+[INFO] Running com.revytechinc.honchoinspector.honcho.HonchoOperationTest
+[INFO] Tests run: 31, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.012 s -- in com.revytechinc.honchoinspector.honcho.HonchoOperationTest
+[INFO] Running com.revytechinc.honchoinspector.config.HonchoConfigDirResolverTest
+[INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.002 s -- in com.revytechinc.honchoinspector.config.HonchoConfigDirResolverTest
+[INFO] Running com.revytechinc.honchoinspector.config.CorsConfigTest
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.002 s -- in com.revytechinc.honchoinspector.config.CorsConfigTest
+[INFO] Running com.revytechinc.honchoinspector.config.SchemaMigratorTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.007 s -- in com.revytechinc.honchoinspector.config.SchemaMigratorTest
+[INFO]
+[INFO] Results:
+[INFO]
+[INFO] Tests run: 97, Failures: 0, Errors: 0, Skipped: 0
+[INFO]
+[INFO] BUILD SUCCESS
+[INFO] Total time:  8.773 s
+```
+
+==========================================================
+Did NOT modify (per task MUST NOT list)
+==========================================================
+
+- src/main/resources/logback-spring.xml — UNCHANGED
+- src/test/java/com/revytechinc/honchoinspector/logging/LogbackConfigTest.java — UNCHANGED
+- No new Maven dependencies
+- No git commit
+- No `}` in any regex
+- No @TempDir (incompatible with @DynamicPropertySource anyway)
+- No Mockito.mockStatic
+- No main code changes

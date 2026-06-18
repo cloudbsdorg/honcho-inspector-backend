@@ -88,6 +88,16 @@ All config is externalized. Priority (high → low):
 | `HONCHO_DB_FILE`               | `honcho-inspector.db`                  | Just the filename; resolved against `HONCHO_CONFIG_DIR` |
 | `HONCHO_CRYPTO_KEY`            | (random, ephemeral — values lost on restart) | Base64 32 bytes; encrypts profile API keys at rest |
 | `SESSION_TTL_MINUTES`          | `0` (never expire)                     | Set non-zero to expire idle sessions |
+| `HONCHO_LOG_LEVEL`             | `INFO`                                 | Root + our packages; `org.springframework.web` logs at the same level |
+| `HONCHO_LOG_MAX_FILE_SIZE`     | `100MB`                                | Active JSONL file cap before mid-day roll (`SizeAndTimeBasedRollingPolicy`) |
+| `HONCHO_LOG_MAX_HISTORY`       | `30`                                   | Number of days of rotated `.jsonl.gz` files kept |
+| `HONCHO_LOG_TOTAL_SIZE_CAP`    | `500MB`                                | Total disk cap across active + rotated files; oldest pruned first |
+
+Logs are emitted as **structured JSONL** (one JSON event per line) to
+`$HONCHO_CONFIG_DIR/logs/honcho-inspector.jsonl` and stdout, with API
+keys / Bearer tokens / passwords scrubbed at the encoder. Full policy,
+schema, sizing math, and `jq` / `gunzip` one-liners are in
+[`docs/logging.md`](docs/logging.md).
 
 Generate a strong crypto key:
 ```bash

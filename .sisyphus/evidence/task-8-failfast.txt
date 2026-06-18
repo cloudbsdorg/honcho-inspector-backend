@@ -1,0 +1,2 @@
+OK [empty]: HonchoClient com.revytechinc.honchoinspector.honcho.T8FailFastProbe$EmptyClient returned an empty supportedVersions() set; an implementation must claim at least one version
+OK [collision]: Honcho API version V3 is claimed by both com.revytechinc.honchoinspector.honcho.T8FailFastProbe$V3OnlyClient and com.revytechinc.honchoinspector.honcho.T8FailFastProbe$AnotherV3Client; each version must be served by exactly one HonchoClient

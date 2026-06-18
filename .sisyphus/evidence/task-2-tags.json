@@ -1,0 +1,22 @@
+{
+  "tags": [
+    {
+      "name": "admin",
+      "description": "Reserved for future admin-only endpoints (user management, audit log, etc.). Currently empty \u2014 kept here so the OpenAPI "
+    },
+    {
+      "name": "auth",
+      "description": "User registration, login, logout, and session lookup. Public endpoints (no `X-Session-Id` required) plus `/api/auth/me` "
+    },
+    {
+      "name": "profiles",
+      "description": "CRUD for Honcho profiles owned by the current user. Each profile stores an encrypted API key, base URL, workspace id, an"
+    },
+    {
+      "name": "honcho-proxy",
+      "description": "Pass-through proxy to the Honcho v3 REST API. Every endpoint requires `X-Session-Id` AND `X-Honcho-Profile-Id`. Requests"
+    }
+  ],
+  "raw_count": 7,
+  "unique_count": 4
+}

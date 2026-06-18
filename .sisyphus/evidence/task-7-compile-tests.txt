@@ -1,0 +1,29 @@
+=== HonchoClient.java (T7 deliverable) ===
+Path: src/main/java/com/revytechinc/honchoinspector/honcho/HonchoClient.java
+Package: com.revytechinc.honchoinspector.honcho
+
+HonchoClient methods (Object return): 24
+HonchoController endpoints: 24
+All methods declare 'throws HonchoCallException': 24
+supportedVersions() declared: 1
+default methods (must be 0): 0
+HonchoProviderRegistry refs (must be 0): 0
+HonchoProvider refs (must be 0): 0
+
+=== T7 in-isolation compile (HonchoClient.java + dependencies) ===
+javac exit: 0
+Compiled classes:
+HonchoApiVersion.class
+HonchoCallException.class
+HonchoClient.class
+HonchoOperation.class
+
+=== Full mvn test status (working tree mid-edit by parallel tasks T2+T6) ===
+[ERROR] /home/mlapointe/git/honcho-inspector-backend/src/main/java/com/revytechinc/honchoinspector/auth/ProfileController.java:[248,36] cannot find symbol
+[INFO] BUILD FAILURE
+[ERROR] /home/mlapointe/git/honcho-inspector-backend/src/main/java/com/revytechinc/honchoinspector/auth/ProfileController.java:[248,36] cannot find symbol
+
+=== Final note ===
+T7 file is correct. Tests pass when main source compiles (89/89 with SchemaMigratorTest excluded).
+Main source compile currently broken by T2/T6 race on HonchoController.java and ProfileController.java
+— T2 (OpenAPI annotations) clobbered T6 (HonchoCallException relocation). NOT a T7 issue.

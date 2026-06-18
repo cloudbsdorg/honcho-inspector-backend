@@ -1,5 +1,6 @@
 package com.revytechinc.honchoinspector.service;
 
+import com.revytechinc.honchoinspector.honcho.HonchoCallException;
 import com.revytechinc.honchoinspector.model.HonchoContext;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
@@ -145,17 +146,5 @@ public class HonchoProxyService {
                 case DELETE -> org.springframework.http.HttpMethod.DELETE;
             };
         }
-    }
-
-    public static class HonchoCallException extends RuntimeException {
-        private final int status;
-        private final String body;
-        public HonchoCallException(String message, int status, String body) {
-            super(message);
-            this.status = status;
-            this.body = body;
-        }
-        public int status() { return status; }
-        public String body() { return body; }
     }
 }

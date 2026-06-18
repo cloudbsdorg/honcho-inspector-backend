@@ -641,7 +641,7 @@ Max Concurrent: 8 (Wave 2)
   - Files: `pom.xml`
   - Pre-commit: `mvn test`
 
-- [ ] 2. Add OpenAPI metadata bean + DTO `@Schema` annotations
+- [x] 2. Add OpenAPI metadata bean + DTO `@Schema` annotations
 
   **What to do**:
   - Create `src/main/java/com/revytechinc/honchoinspector/config/OpenApiConfig.java`:
@@ -716,7 +716,7 @@ Max Concurrent: 8 (Wave 2)
   - Message: `docs(openapi): add OpenApiConfig + DTO/controller @Schema + @Tag/@Operation annotations`
   - Files: `pom.xml`, new `config/OpenApiConfig.java`, modified controller + DTO files
 
-- [ ] 3. Schema migration: add `honcho_profiles.api_version` column
+- [x] 3. Schema migration: add `honcho_profiles.api_version` column
 
   **What to do**:
   - Edit `src/main/resources/schema.sql`:
@@ -975,7 +975,7 @@ Max Concurrent: 8 (Wave 2)
   - Message: `feat(config): ensure config dir exists; fall back to ~/.local/etc/<product>/ when system path unwritable`
   - Files: `config/HonchoConfigDirResolver.java`, `config/StartupInfoLogger.java`, modified `HonchoConfigDirResolverTest.java`, `docs/SECURITY.md`
 
-- [ ] 4b. Structured JSONL logging + rotation/retention policy
+- [x] 4b. Structured JSONL logging + rotation/retention policy
 
   **What to do**:
   - **Format requirement (user-specified)**: every log line is a single JSON object on its own line (JSONL / NDJSON). No plain-text logs. This makes logs ingestible by Loki / Elasticsearch / Datadog / `jq` without parsing.
@@ -1268,7 +1268,7 @@ Max Concurrent: 8 (Wave 2)
   - Message: `feat(honcho): add HonchoApiVersion + HonchoOperation enums`
   - Files: new `honcho/HonchoApiVersion.java`, `honcho/HonchoOperation.java`, new tests
 
-- [ ] 6. `HonchoProvider` interface (supports multi-operation providers)
+- [x] 6. `HonchoProvider` interface (supports multi-operation providers)
 
   **What to do**:
   - Create `src/main/java/com/revytechinc/honchoinspector/honcho/HonchoProvider.java`:
@@ -1338,7 +1338,7 @@ Max Concurrent: 8 (Wave 2)
   - Message: `feat(honcho): add multi-operation HonchoProvider interface + relocate HonchoCallException`
   - Files: new `honcho/HonchoProvider.java`, modified `service/HonchoProxyService.java`, new test
 
-- [ ] 7. `HonchoClient` interface (24 methods)
+- [x] 7. `HonchoClient` interface (24 methods)
 
   **What to do**:
   - Create `src/main/java/com/revytechinc/honchoinspector/honcho/HonchoClient.java`:
@@ -1421,7 +1421,7 @@ Max Concurrent: 8 (Wave 2)
   - Message: `feat(honcho): add HonchoClient interface covering all current operations`
   - Files: new `honcho/HonchoClient.java`
 
-- [ ] 8. `HonchoClientFactory` bean
+- [x] 8. `HonchoClientFactory` bean
 
   **What to do**:
   - Create `src/main/java/com/revytechinc/honchoinspector/honcho/HonchoClientFactory.java`:

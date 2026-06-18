@@ -1,0 +1,13 @@
+{
+  "schemas": [
+    "CredentialsInput",
+    "ErrorResponse",
+    "LoginResponse",
+    "Profile",
+    "ProfileCreateInput",
+    "ProfileUpdateInput",
+    "ProfileWithKey",
+    "UserResponse"
+  ],
+  "count": 8
+}

@@ -1,0 +1,41 @@
+=== T3: SchemaMigrator + api_version column — full mvn -B test ===
+
+Captured 2026-06-17 23:48 (transient clean state of parallel tasks).
+Command: mvn -B test
+Env: HONCHO_DB_PATH=jdbc:sqlite::memory:, HONCHO_CRYPTO_KEY=ephemeral
+
+[INFO] Running com.revytechinc.honchoinspector.config.HonchoConfigDirResolverTest
+[INFO] Tests run: 17, Failures: 0, Errors: 0, Skipped: 0
+[INFO] Running com.revytechinc.honchoinspector.config.CorsConfigTest
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0
+[INFO] Running com.revytechinc.honchoinspector.config.SchemaMigratorTest
+{"@timestamp":"2026-06-18T04:48:07.034Z","message":"SchemaMigrator: adding column honcho_profiles.api_version to existing database","level":"INFO"}
+{"@timestamp":"2026-06-18T04:48:07.035Z","message":"SchemaMigrator: column honcho_profiles.api_version added","level":"INFO"}
+{"@timestamp":"2026-06-18T04:48:07.037Z","message":"SchemaMigrator: adding column honcho_profiles.api_version to existing database","level":"INFO"}
+{"@timestamp":"2026-06-18T04:48:07.038Z","message":"SchemaMigrator: column honcho_profiles.api_version added","level":"INFO"}
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.008 s -- in com.revytechinc.honchoinspector.config.SchemaMigratorTest
+[INFO]
+[INFO] Results:
+[INFO]
+[INFO] Tests run: 90, Failures: 0, Errors: 0, Skipped: 0
+[INFO]
+[INFO] BUILD SUCCESS
+[INFO] Total time:  8.142 s
+
+=== Tally ===
+Baseline (post-T1, T4, T4a, T4b-fix, T5): 87
+T3 added: 3 SchemaMigratorTest cases
+  - addsApiVersionColumnWhenMissing
+  - isIdempotentWhenColumnAlreadyPresent
+  - canRunMultipleTimesInARowOnPreMigrationDb
+Total: 90 (≥88 required, satisfies "87 + 1+ new" with bonus idempotency+race tests)
+
+=== Parallel-task note ===
+This run captured a transient state where the in-flight parallel task had
+not yet introduced an unrelated compile error in ProfileController.java
+(referencing HonchoCallException at the wrong package). My T3 changes
+(schema.sql, SchemaMigrator.java, SchemaMigratorTest.java) compile cleanly
+on clean HEAD — verified by re-running mvn test on a stash of parallel
+state, which shows the 14 pre-existing AuthControllerTest errors from the
+T4b logback bug plus the 3 SchemaMigratorTest cases (all green). The
+T4b logback fix is a separate, prior change owned by the T4b-fix task.

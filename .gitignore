@@ -14,3 +14,8 @@ HELP.md
 # SQLite databases (created by spring-boot:run)
 *.db
 *.db-journal
+
+# Sisyphus orchestrator working state (keep env.sh, evidence/, notepads/ in repo)
+logs/
+.sisyphus/boulder.json
+.sisyphus/run-continuation/

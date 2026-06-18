@@ -1,7 +1,14 @@
 package com.revytechinc.honchoinspector.auth;
 
+import com.revytechinc.honchoinspector.config.OpenApiConfig;
 import com.revytechinc.honchoinspector.filter.SessionAuthFilter;
 import com.revytechinc.honchoinspector.model.ErrorResponse;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -17,6 +24,8 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api")
+@Tag(name = OpenApiConfig.TAG_AUTH,
+    description = "User registration, login, logout, and session lookup. The auth endpoints themselves are public (no `X-Session-Id` required); `/api/auth/me` and `/api/auth/logout` require it.")
 public class AuthController {
 
     private final AuthService auth;
@@ -31,12 +40,32 @@ public class AuthController {
         this.profiles = profiles;
     }
 
+    @Schema(
+        name = "CredentialsInput",
+        description = "Username and password payload shared by `/api/auth/register` and `/api/auth/login`.",
+        example = "{\"username\":\"alice\",\"password\":\"correct horse battery staple\"}"
+    )
     public record CredentialsDto(
+        @Schema(description = "Unique username (case-sensitive on the wire). Required.", example = "alice", requiredMode = Schema.RequiredMode.REQUIRED)
         @NotBlank String username,
+
+        @Schema(description = "Plaintext password. Minimum 8 characters. Hashed with bcrypt cost 12 server-side; never logged.", example = "correct horse battery staple", minLength = 8, requiredMode = Schema.RequiredMode.REQUIRED)
         @NotBlank @Size(min = 8) String password
     ) {}
 
     @PostMapping("/auth/register")
+    @Operation(
+        summary = "Register a new user",
+        description = "Creates a new user account. The first user to register on a fresh database is automatically promoted to admin. Subsequent registrations are non-admin. Returns 409 if the username is taken and 400 for validation errors."
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "201", description = "User created",
+            content = @Content(schema = @Schema(implementation = UserResponse.class))),
+        @ApiResponse(responseCode = "400", description = "Validation error (e.g. password too short)",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "409", description = "Username already exists",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
     public ResponseEntity<?> register(@Valid @RequestBody CredentialsDto body) {
         try {
             var user = auth.register(body.username(), body.password());
@@ -49,6 +78,16 @@ public class AuthController {
     }
 
     @PostMapping("/auth/login")
+    @Operation(
+        summary = "Log in and obtain a session id",
+        description = "Validates username + password and, on success, returns a fresh session id. Send it back on every subsequent request as the `X-Session-Id` header. Returns 401 on invalid credentials without revealing whether the username exists."
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Authenticated; session id returned",
+            content = @Content(schema = @Schema(implementation = LoginResponse.class))),
+        @ApiResponse(responseCode = "401", description = "Invalid username or password",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
     public ResponseEntity<?> login(@Valid @RequestBody CredentialsDto body) {
         try {
             var result = auth.login(body.username(), body.password());
@@ -59,6 +98,14 @@ public class AuthController {
     }
 
     @PostMapping("/auth/logout")
+    @Operation(
+        summary = "Invalidate the current session",
+        description = "Reads the `X-Session-Id` header, deletes the session server-side, and returns 200 with `{ok: true}`. Idempotent: calling with a missing/unknown session id is a no-op success."
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Session invalidated (or already absent)",
+            content = @Content(schema = @Schema(example = "{\"ok\":true}")))
+    })
     public ResponseEntity<?> logout(HttpServletRequest request) {
         var sessionId = request.getHeader(SessionAuthFilter.SESSION_HEADER);
         auth.logout(sessionId);
@@ -66,6 +113,16 @@ public class AuthController {
     }
 
     @GetMapping("/auth/me")
+    @Operation(
+        summary = "Get the currently authenticated user",
+        description = "Returns the user record for the session identified by the `X-Session-Id` header. Useful on app reload to re-hydrate the UI."
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Current user",
+            content = @Content(schema = @Schema(implementation = UserResponse.class))),
+        @ApiResponse(responseCode = "401", description = "No valid session",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
     public ResponseEntity<?> me(HttpServletRequest request) {
         var current = (AuthService.CurrentUser) request.getAttribute(SessionAuthFilter.CURRENT_USER_ATTR);
         if (current == null) {
@@ -75,6 +132,12 @@ public class AuthController {
     }
 
     @GetMapping("/health")
+    @Operation(
+        summary = "Liveness / readiness probe",
+        description = "Public unauthenticated health endpoint. Returns counts of users, sessions, and profiles, plus a `needsRegister` boolean the UI uses to decide whether to show the registration form on first run."
+    )
+    @ApiResponse(responseCode = "200", description = "Service is up",
+        content = @Content(schema = @Schema(example = "{\"ok\":true,\"users\":1,\"sessions\":2,\"profiles\":3,\"needs_register\":false}")))
     public ResponseEntity<?> health() {
         return ResponseEntity.ok(Map.of(
             "ok", true,

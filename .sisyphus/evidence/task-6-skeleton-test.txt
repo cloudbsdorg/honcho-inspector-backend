@@ -1,0 +1,58 @@
+=== HonchoProvider skeleton test evidence ===
+
+Date: 2026-06-17 23:59 UTC
+Task: T6 (HonchoProvider interface + skeleton test)
+
+--- 1. Test class ---
+File: src/test/java/com/revytechinc/honchoinspector/honcho/HonchoProviderSkeletonTest.java
+Methods: 7 tests
+  - providerDeclaresExactlyTheOperationsItHandles
+  - providerAdvertisesAtLeastOneSupportedVersion
+  - providerReturnsPerOperationPathTemplate
+  - providerReturnsPerOperationHttpMethod
+  - executeDispatchesOnOperationArgument
+  - executeRejectsUnownedOperationWithHonchoCallException
+  - pathTemplateDefaultsFailLoudForUnknownOperation
+
+--- 2. Test impl: PeerCardProvider (inner @Component) ---
+Handles 2 operations on a single resource (peers/<id>/card):
+  - HonchoOperation.GET_PEER_CARD    -> HttpMethod.GET, "peers/{peerId}/card"
+  - HonchoOperation.UPDATE_PEER_CARD -> HttpMethod.POST, "peers/{peerId}/card"
+
+Implements all 5 HonchoProvider methods:
+  - operations()         -> Set(GET_PEER_CARD, UPDATE_PEER_CARD)
+  - supportedVersions()  -> Set(V3)
+  - pathTemplate(op)     -> switch dispatch
+  - httpMethod(op)       -> switch dispatch
+  - execute(...)         -> switch dispatch (returns op-specific result string)
+
+--- 3. mvn test run (skeleton only) ---
+
+$ mvn -B test -Dtest=HonchoProviderSkeletonTest
+
+[INFO] -------------------------------------------------------
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+[INFO] Running com.revytechinc.honchoinspector.honcho.HonchoProviderSkeletonTest
+[INFO] Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.047 s
+[INFO]
+[INFO] Results:
+[INFO]
+[INFO] Tests run: 7, Failures: 0, Errors: 0, Skipped: 0
+[INFO]
+[INFO] BUILD SUCCESS
+[INFO] Total time:  0.958 s
+[INFO] Finished at: 2026-06-17T23:57:49-05:00
+
+--- 4. What this proves ---
+- A single @Component class can implement HonchoProvider and serve
+  multiple related operations (2+ ops, not 1-per-file).
+- The interface is implementable: all 5 abstract/default methods
+  have a clear, well-typed contract.
+- The dispatch-on-op pattern (switch in execute()) works: test calls
+  execute() with each op and asserts the right branch was exercised.
+- The "throw on unowned op" contract is enforceable: passing an op the
+  provider doesn't own throws HonchoCallException with status 501.
+- The default pathTemplate/httpMethod behavior (throw on missing
+  override) is testable: a bare HonchoProvider without overrides
+  throws UnsupportedOperationException with a helpful message.
