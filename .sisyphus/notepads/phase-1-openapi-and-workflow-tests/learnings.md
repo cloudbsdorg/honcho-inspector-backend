@@ -1511,3 +1511,123 @@ Scoped to this test only via `@SpringBootTest(properties = ...)` (NOT enabled gl
 - `mvn test -Dtest=HonchoClientFactoryTest,HonchoProviderRegistryTest,CustomProviderSpiTest`: 15/15 pass
 - `mvn -B test` (full suite): 328/328 pass (baseline was 325, +3 from CustomProviderSpiTest)
 - `mvn -B package`: BUILD SUCCESS, fat jar created
+
+## T33: CI workflow + README badge (2026-06-18)
+
+### Files added/changed
+- `.github/workflows/ci.yml` (new, 60 lines) — exact YAML spec from task: triggers push/PR to main + workflow_dispatch with `run_live_honcho_test` boolean input. Matrix is `java: [ '25' ]`. Steps: checkout v4, setup-java v4 (temurin + cache: maven), `mvn -B verify`, then a manual-only live-test step gated by `if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_live_honcho_test == true }}` that re-runs `mvn -B verify -Dgroups=live` with `HONCHO_LIVE_*` secrets in env.
+- `README.md` — added `[![CI](...)](...)` badge on line 3, between the `# honcho-inspector-backend` title and the "Java 25 / Spring Boot 3.5.0 backend" description.
+
+### Spec-vs-QA grep mismatch (cosmetic)
+The task spec mandated the EXACT YAML using `java-version: ${{ matrix.java }}` (matrix-based). The QA scenario's grep `grep -E 'java-version.*25|java-version.*"25"' .github/workflows/ci.yml` therefore returns 0 matches — because the literal `25` is in `matrix.java: [ '25' ]`, not on the `java-version:` line. The YAML is correct per the explicit MUST DO; the QA regex was written assuming a non-matrix YAML. Both `grep -E 'mvn.*verify'` (3 matches) and the badge grep (1 match) succeed. JDK 25 is unambiguous via the matrix.
+
+### `cache: maven` (single source of Maven caching)
+Did NOT add a separate `actions/cache@v4` step. `actions/setup-java@v4` with `cache: maven` already caches `~/.m2/repository` (keyed on OS + hash of `**/pom.xml`). Per task's MUST NOT DO: "Do NOT cache JDK installations (use `actions/setup-java` cache only)".
+
+### Live test gating
+The manual-only step sets `HONCHO_LIVE_TEST=1` + `HONCHO_LIVE_WORKSPACE_ID` + `HONCHO_LIVE_URL` + `HONCHO_LIVE_API_KEY` from `${{ secrets.* }}`. These secrets must be configured in repo Settings → Secrets and variables → Actions before the dispatch workflow can succeed. The `if:` guard means they are NEVER referenced on push/PR runs (no accidental secret exposure in logs).
+
+### Verification
+- `python3 -c "import yaml; d=yaml.safe_load(open('.github/workflows/ci.yml')); assert 'jobs' in d; print('OK')"` → `OK`
+- `grep -E 'mvn.*verify' .github/workflows/ci.yml` → 3 hits (`mvn -B verify` x2 + the live-test step).
+- `grep -E 'workflows/ci.yml' README.md` → 1 hit (badge URL).
+- `mvn -B -DskipTests=true compile` → BUILD SUCCESS (no Java changes; only YAML + README edits, so test results are unchanged from the 328/328 baseline).
+- `.github/` did not exist before this task — created it via `mkdir -p` before writing the workflow file.
+
+### Lesson
+For CI workflows using a matrix, the JDK version literal appears in the matrix block, NOT on the `java-version:` line. QA grep patterns should match either location, e.g. `grep -E "java:\s*\[\s*['\"]25['\"]|java-version:\s*['\"]?25"` to handle both styles.
+
+## T34: NegativePathIntegrationTest (2026-06-18)
+
+### File added
+- `src/test/java/com/revytechinc/honchoinspector/NegativePathIntegrationTest.java` — 14 test cases, extends `IntegrationTestBase`.
+
+### Test cases (exact names from the plan)
+1. `honchoProxyWithoutSessionReturns401` — GET /api/peers, no X-Session-Id → 401 (SessionAuthFilter)
+2. `honchoProxyWithoutProfileHeaderReturns400` — session, no X-Honcho-Profile-Id → 400 with `{error: "missing X-Honcho-Profile-Id header"}`
+3. `honchoProxyWithOtherUsersProfileReturns404` — Alice's session + Bob's profileId → 404 `{error: "profile not found"}`
+4. `registerWithExistingUsernameReturns409` — second register of same username → 409
+5. `registerWithShortPasswordReturns400` — `password="a"` (1 char, < @Size(min=8)) → 400
+6. `registerWithEmptyUsernameReturns400` — `username=""` (@NotBlank) → 400
+7. `loginWithWrongPasswordReturns401` — register alice, login with wrong password → 401
+8. `loginWithNonexistentUserReturns401` — login as unknown user → 401
+9. `profileCreateWithoutSessionReturns401` — POST /api/profiles, no X-Session-Id → 401
+10. `profileRevealForOtherUserReturns404` — Bob reveals Alice's profile → 404
+11. `profileRevealForNonexistentProfileReturns404` — reveal with 48-char "0000...0" id → 404
+12. `profileDeleteAlreadyDeletedReturns404` — delete twice; second → 404
+13. `messageAddToNonexistentSessionReturnsHonchoError` — POST /api/sessions/sess_bogus/messages → 404 via mock
+14. `peerGetNonexistentReturnsHonchoError` — GET /api/peers/nonexistent/card → 404 via mock
+
+### Design: @MockitoBean HonchoProxyService for tests 13/14
+- The fixture-backed HonchoClient (from HonchoMockConfig) returns canned data for every op regardless of input, so a "non-existent session" or "non-existent peer" would come back 200 with the fixture payload. To exercise the controller's HonchoCallException → 4xx mapping, tests 13/14 stub `@MockitoBean HonchoProxyService` to throw `HonchoCallException("session not found", 404, body)` for the specific methods.
+- The `@MockitoBean` replaces the real HonchoProxyService for ALL tests in the class, but tests 1-12 never reach the proxy through the controller (they short-circuit at the auth filter, profile-header check, cross-user ownership check, or profile controller), so the mock's default null returns for unstubbed methods are harmless.
+- Used `@MockitoBean` (Spring Boot 3.4+ replacement for deprecated `@MockBean`) matching by type — no `name` attribute needed since there's only one `HonchoProxyService` bean.
+- `MockitoResetTestExecutionListener` (Spring's default) resets the mock between tests, so test 13's `addMessage` stub doesn't leak into test 14's `getPeerCard` stub.
+
+### HonchoController.call() error mapping verified
+- `catch (HonchoCallException e)` → `ResponseEntity.status(e.status() >= 500 ? 502 : e.status()).body(Map.of("error", e.getMessage(), "body", e.body() == null ? "" : e.body()))`
+- For `HonchoCallException("session not found", 404, "...")` the response is 404 with `{"error": "session not found", "body": "..."}` — confirmed by test 13's `jsonPath("$.error").value("session not found")`.
+
+### HonchoProxyService method signatures (for @MockitoBean stubs)
+- `addMessage(HonchoContext ctx, String sessionId, Object messageRequest)` — stubbed with `any(HonchoContext.class), anyString(), any()`
+- `getPeerCard(HonchoContext ctx, String peerId)` — stubbed with `any(HonchoContext.class), anyString()`
+
+### Test results
+- `mvn -B -o test -Dtest=NegativePathIntegrationTest` → 14/14 passing, BUILD SUCCESS (~9s).
+- `mvn -B -o test` (full suite) → 342/342 passing, BUILD SUCCESS (~44s).
+  - 328 baseline (verified via prior test runs in the notepad) + 14 new = 342. Target met.
+- Evidence: `mvn -B -o test -Dtest=NegativePathIntegrationTest` output (no evidence file needed; test output is in the terminal).
+
+### Plan-vs-spec tension
+- The plan's "What to do" lists test names that overlap with T24/T25/T26 (e.g. `honchoProxyWithoutProfileHeaderReturns400` is also T26's `proxyEndpointWithoutProfileHeaderReturns400`). The plan's "Must NOT do" says "Do not duplicate scenarios from T24/T25" but the test names are mandated. Resolved: included the mandated test names; the assertions test the same contract but from a different angle (cross-cutting negative paths vs. happy-path workflows). Class-level Javadoc documents this.
+- The `@MockitoBean HonchoProxyService` approach is the "Option C" from the inherited wisdom — the recommended way to force Honcho errors when the mock client returns fixture data regardless of input.
+
+## T32: Cross-link updates across README.md / docs/SECURITY.md / docs/reverse-proxy.md (2026-06-18)
+
+### Files modified (docs only — no Java touched)
+- `README.md` (237 → 254 lines)
+  - "API surface" section: 3 cross-links added ([docs/openapi.yaml], [drift check](docs/regenerating-openapi.md), Swagger UI URL).
+  - New "Honcho provider layer" subsection after "Honcho proxy": 1 paragraph explaining factory + provider + per-profile version override + cross-link to docs/honcho-providers.md.
+  - "Repo layout" updated: added docs/honcho-providers.md, docs/regenerating-openapi.md, docs/openapi.yaml, docs/openapi.generated.json, and .github/workflows/ci.yml entries.
+- `docs/SECURITY.md` (581 → ~608 lines)
+  - New §6 "Swagger UI and OpenAPI spec exposure" between §5 (operational hardening checklist) and the old §6 (Logging).
+  - §6 → §7, §7 → §8, §8 → §9 (Logging, Developer hardening checklist, Reporting a vulnerability renumbered).
+- `docs/reverse-proxy.md` (655 → ~782 lines)
+  - New §6 "Swagger UI and OpenAPI spec" between §5 (Caddy) and the old §6 (Operational checklist).
+  - §6.1 nginx, §6.2 Apache, §6.3 Caddy — all with commented-out Option A (IP allowlist) and Option B (basic auth) examples.
+  - §7 → §8 (Operational checklist + Reference renumbered).
+
+### Files verified (no edit needed)
+- `etc/honcho-inspector/application.yml.example` already had 2 references to docs/honcho-providers.md (lines 62 and 78) from T18. No changes needed.
+
+### Verification results
+- `grep -cE '\]\(docs/(openapi\.yaml|honcho-providers\.md|regenerating-openapi\.md)' README.md` → 3 (≥3 ✓)
+- `grep -cE '\]\(reverse-proxy\.md\)' docs/SECURITY.md` → 8 (≥1 ✓; uses correct relative path from docs/ subdirectory)
+- `grep -cE '(swagger-ui|/v3/api-docs)' docs/reverse-proxy.md` → 13 (≥2 ✓)
+- Bracket/paren balance check (excluding code blocks and inline code): all 3 files balanced.
+- Section anchors exist for all cross-referenced §-numbers:
+  - SECURITY.md §6 (Swagger UI) ✓
+  - reverse-proxy.md §6 (Swagger UI) ✓
+  - honcho-providers.md §8 (Strict mode) ✓
+- `mvn -B test` → `Tests run: 342, Failures: 0, Errors: 0, Skipped: 0` (BUILD SUCCESS in 8s, post-T32). No regressions.
+
+### Spec verification quirk
+The verification expectation "`grep -E '\]\(docs/reverse-proxy\.md\)' docs/SECURITY.md` returns ≥1" uses a path pattern that, taken literally, would create a broken link from `docs/SECURITY.md` (would resolve to `docs/docs/reverse-proxy.md`). The existing project convention in SECURITY.md uses the correct relative path `(reverse-proxy.md)` for sibling docs — followed in all 8 reverse-proxy references in the file. Functional correctness preserved.
+
+### Cross-link inventory
+- `README.md`:
+  - `[docs/openapi.yaml](docs/openapi.yaml)` (×1, in API surface)
+  - `[drift check](docs/regenerating-openapi.md)` (×1, in API surface)
+  - `[docs/honcho-providers.md](docs/honcho-providers.md)` (×1, in Honcho provider layer)
+  - Inline code references to `docs/openapi.yaml` and `docs/openapi.generated.json` (no link)
+- `docs/SECURITY.md`:
+  - `[`docs/honcho-providers.md`](honcho-providers.md)` (×1, in new §6)
+  - `[`docs/reverse-proxy.md`](reverse-proxy.md)` (×1, in new §6) — new addition
+  - Plus 7 pre-existing references to `reverse-proxy.md`
+- `docs/reverse-proxy.md`:
+  - `[`docs/SECURITY.md`](SECURITY.md)` (×2, in new §6)
+  - `[`docs/honcho-providers.md`](honcho-providers.md)` (×1, in new §6)
+  - Plus 4 pre-existing SECURITY.md references
+
+### Lesson
+For docs-only cross-link work: verify that any spec-supplied verification grep pattern matches the file's actual directory context. A pattern like `\]\(docs/...\)` only works from the repo root; from a subdirectory the correct relative link is `\]\(...\)` (sibling). Use `../docs/...` if you must start with `docs/` from a subdirectory.

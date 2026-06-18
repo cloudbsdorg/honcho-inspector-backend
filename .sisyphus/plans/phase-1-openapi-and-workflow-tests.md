@@ -582,7 +582,7 @@ Max Concurrent: 8 (Wave 2)
 > EVERY task MUST have: Recommended Agent Profile + Parallelization info + QA Scenarios.
 > **A task WITHOUT QA Scenarios is INCOMPLETE. No exceptions.**
 
-- [ ] 1. Add springdoc-openapi-starter-webmvc-ui dependency
+- [x] 1. Add springdoc-openapi-starter-webmvc-ui dependency
 
   **What to do**:
   - Edit `pom.xml`: add `<dependency><groupId>org.springdoc</groupId><artifactId>springdoc-openapi-starter-webmvc-ui</artifactId><version>2.6.0</version></dependency>` (version compatible with Spring Boot 3.5).
@@ -797,7 +797,7 @@ Max Concurrent: 8 (Wave 2)
   - Message: `feat(db): add honcho_profiles.api_version column + idempotent SchemaMigrator`
   - Files: `schema.sql`, new `config/SchemaMigrator.java`, new test
 
-- [ ] 4. Add `honcho.providers.strict-mode` config + wire `honcho.api-version`
+- [x] 4. Add `honcho.providers.strict-mode` config + wire `honcho.api-version`
 
   **What to do**:
   - Edit `src/main/resources/application.yml`:
@@ -869,7 +869,7 @@ Max Concurrent: 8 (Wave 2)
   - Message: `feat(config): add honcho.providers.strict-mode + HonchoProperties @ConfigurationProperties bean`
   - Files: `application.yml`, `application.yml.example`, new `config/HonchoProperties.java`, modified `service/HonchoProxyService.java`, new test
 
-- [ ] 4a. Config-dir resilience — create dirs + per-user fallback
+- [x] 4a. Config-dir resilience — create dirs + per-user fallback
 
   **What to do**:
   - Modify `src/main/java/com/revytechinc/honchoinspector/config/HonchoConfigDirResolver.java`:
@@ -1174,7 +1174,7 @@ Max Concurrent: 8 (Wave 2)
   - Message: `feat(logging): structured JSONL events + rolling retention policy`
   - Files: `pom.xml`, new `logback-spring.xml`, `application.yml`, `HonchoProperties.java` (extended), `SessionAuthFilter.java` (MDC), `HonchoProxyService.java` (MDC), new `docs/logging.md`, `docs/SECURITY.md`, `README.md`, new tests
 
-- [ ] 5. `HonchoApiVersion` + `HonchoOperation` enums
+- [x] 5. `HonchoApiVersion` + `HonchoOperation` enums
 
   **What to do**:
   - Create `src/main/java/com/revytechinc/honchoinspector/honcho/HonchoApiVersion.java`:
@@ -3048,7 +3048,7 @@ _  - Create `src/test/java/com/revytechinc/honchoinspector/honcho/CustomProvider
   - Message: `docs(openapi): add regenerating-openapi.md with snapshot workflow + drift check explanation`
   - Files: new `docs/regenerating-openapi.md`
 
-- [ ] 32. README + SECURITY.md + reverse-proxy.md cross-link updates
+- [x] 32. README + SECURITY.md + reverse-proxy.md cross-link updates
 
   **What to do**:
   - Edit `README.md`:
@@ -3103,7 +3103,7 @@ _  - Create `src/test/java/com/revytechinc/honchoinspector/honcho/CustomProvider
   - Message: `docs: cross-link Swagger UI + openapi.yaml + honcho-providers.md across README/SECURITY/reverse-proxy`
   - Files: `README.md`, `docs/SECURITY.md`, `docs/reverse-proxy.md`
 
-- [ ] 33. CI workflow (`.github/workflows/ci.yml`)
+- [x] 33. CI workflow (`.github/workflows/ci.yml`)
 
   **What to do**:
   - Create `.github/workflows/ci.yml`:
@@ -3174,7 +3174,7 @@ _  - Create `src/test/java/com/revytechinc/honchoinspector/honcho/CustomProvider
   - Message: `ci: add .github/workflows/ci.yml running mvn verify on JDK 25 + manual live-test dispatch`
   - Files: new `.github/workflows/ci.yml`, modified `README.md` (badge)
 
-- [ ] 34. Negative-path integration tests (401, 400, 404, 409)
+- [x] 34. Negative-path integration tests (401, 400, 404, 409)
 
   **What to do**:
   - Create `src/test/java/com/revytechinc/honchoinspector/NegativePathIntegrationTest.java`:

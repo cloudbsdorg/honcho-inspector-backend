@@ -520,7 +520,31 @@ For a fresh production install:
 
 ---
 
-## 6. Logging
+## 6. Swagger UI and OpenAPI spec exposure
+
+The Spring Boot 3.5 / springdoc-openapi-starter-webmvc-ui 2.6.0 setup
+exposes Swagger UI at `/swagger-ui.html` and the OpenAPI 3 spec at
+`/v3/api-docs`. Both endpoints are intentionally public (no `X-Session-Id`
+required) by design — the design choice is documented in
+[`docs/honcho-providers.md`](honcho-providers.md) §8 *Strict mode* and the
+operator's choice is to gate via the reverse proxy.
+
+If you want to restrict access to Swagger UI (e.g. restrict to internal
+IPs or require basic auth), see [`docs/reverse-proxy.md`](reverse-proxy.md)
+for nginx, Apache, and Caddy examples — every example config in that doc
+ships with the gating snippet commented out, so the default is no gating
+and you opt in.
+
+The `/v3/api-docs` endpoint reveals the full API contract (paths,
+request/response DTOs, descriptions, parameter metadata). It is safe to
+expose on a private network but should NOT be exposed to the public
+internet without an auth layer in the reverse proxy — `/v3/api-docs`
+describes the surface an attacker would otherwise have to discover by
+hand.
+
+---
+
+## 7. Logging
 
 The backend emits **structured JSONL** (one JSON event per line) to both
 `$HONCHO_CONFIG_DIR/logs/honcho-inspector.jsonl` (rolling, gzipped) and
@@ -543,7 +567,7 @@ retention controls. Full policy, schema, sizing math, and
 
 ---
 
-## 7. Developer hardening checklist
+## 8. Developer hardening checklist
 
 For contributors and PR reviewers:
 
@@ -573,7 +597,7 @@ For contributors and PR reviewers:
 
 ---
 
-## 8. Reporting a vulnerability
+## 9. Reporting a vulnerability
 
 Email `security@revyt...` (TBD by the project owner) with a description
 and reproduction. Do not file public GitHub issues for suspected
