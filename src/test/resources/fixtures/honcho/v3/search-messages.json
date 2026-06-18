@@ -1,0 +1,115 @@
+{
+  "_meta": {
+    "captured_at": "2026-06-18T07:14:43Z",
+    "honcho_version": "3.0.7",
+    "endpoint": "POST /v3/workspaces/{ws}/search",
+    "method": "POST",
+    "synthetic": false
+  },
+  "data": [
+    {
+      "id": "IxYA8tK7iEU5IW0IDFEf3",
+      "content": "hello from fixture-capture 1781766866",
+      "peer_id": "fixture-capture-1781766866",
+      "session_id": "fixture-session-1781766866",
+      "metadata": {
+        "source": "fixture"
+      },
+      "created_at": "2026-06-18T07:14:27.362170Z",
+      "workspace_id": "default",
+      "token_count": 10
+    },
+    {
+      "id": "E9WplFW5WAbfkoeasIDah",
+      "content": "hello from fixture-capture 1781766883",
+      "peer_id": "fixture-capture-1781766883",
+      "session_id": "fixture-session-1781766883",
+      "metadata": {
+        "source": "fixture"
+      },
+      "created_at": "2026-06-18T07:14:44.394246Z",
+      "workspace_id": "default",
+      "token_count": 10
+    },
+    {
+      "id": "jKAPCqRkGloHQqPjn69d6",
+      "content": "Reconciling ALL plan-checkbox drift: T0/T3/T4/T5/T6. Working from a worktree at pppoe1.cloudbsd.org:~/git/freebsd-src-oci-fb-build on branch framebuffer, HEAD bc76be73b4a. Pi (this session) only does local edits; all build/test happens on the host. Source moves between Pi and host via git push/fetch only.",
+      "peer_id": "mark",
+      "session_id": "displayd-reconcile-wave1-t0-t6",
+      "metadata": {},
+      "created_at": "2026-06-08T19:05:49.931766Z",
+      "workspace_id": "default",
+      "token_count": 87
+    },
+    {
+      "id": "P02Y8wOSo4kW-_s1fWuF-",
+      "content": "Testing Infrastructure (Unified Output Schema): All test runners must expose unified JSON with: test_run_id (UUID v4), environment_type (bhyve/jail), environment_name, start_time/end_time (ISO 8601), exit_code, artifacts (console_log, test_results, kernel_messages, crash_dumps, network_captures), structured_results (tests_total/passed/failed/skipped, duration_ms). Version 1.0.0 of the schema.",
+      "peer_id": "sisyphus",
+      "session_id": "application-guidelines-content",
+      "metadata": {},
+      "created_at": "2026-06-08T04:20:11.734941Z",
+      "workspace_id": "default",
+      "token_count": 95
+    },
+    {
+      "id": "blNt0lHgnt7kcLnfzqy56",
+      "content": "Confirmed. I read the sisyphus→mlapointe card (4 systems, stack prefs, audit-by-values, communication style, i18n/print/RLT rules, parallel-agent waves, Honcho usage). Created peers rev and cloudbawt with observeMe=true and a session openclaw-cloudbawt-onboarding-2026 with both as observers. I will use this session as the ongoing chat ledger and only re-derive or add new conclusions for facts that are not already on the sisyphus→mlapointe card.",
+      "peer_id": "cloudbawt",
+      "session_id": "openclaw-cloudbawt-onboarding-2026",
+      "metadata": {},
+      "created_at": "2026-06-08T13:32:30.896253Z",
+      "workspace_id": "default",
+      "token_count": 114
+    },
+    {
+      "id": "YZD6ToJGhFE3mGXkGTaNh",
+      "content": "LESSON (Next.js 16, 2026-06-08): Next.js 16 has BREAKING CHANGES from training data — the i18n config moved out of `next.config.ts` into per-route dynamic imports. Current pattern: `getDictionary = (locale) => import('./dictionaries/${locale}.json').then(m => m.default)`, used from server OR client components. ALWAYS read `node_modules/next/dist/docs/` before writing any Next.js 16 code. (AGENTS.md says this explicitly for runbsd.ca; it's generally true: don't trust your training data on framework internals.)",
+      "peer_id": "sisyphus",
+      "session_id": "lessons-2026",
+      "metadata": {},
+      "created_at": "2026-06-08T06:34:47.997022Z",
+      "workspace_id": "default",
+      "token_count": 128
+    },
+    {
+      "id": "Xa0Giyw92JHE31p7o87me",
+      "content": "PLANNING Chapter 4 (Build Status): Each project maintains 0002-<Project>-Build-Status.md with CI/CD pipeline table (Component/Build/Test/Deploy) and artifacts list. Last Updated timestamp required.",
+      "peer_id": "sisyphus",
+      "session_id": "application-guidelines-content",
+      "metadata": {},
+      "created_at": "2026-06-08T04:19:03.898654Z",
+      "workspace_id": "default",
+      "token_count": 46
+    },
+    {
+      "id": "8GeNhHwlZoCK_gWRuCsXR",
+      "content": "Critical i18next gotcha: fallbackLng: 'en' does NOT fall through to nested keys. When target locale has a parent key (e.g. experience.entries) defined, i18next returns undefined for child fields even if child isn't in target — does not fall back to English. Each locale must define the entries array with at least identical structure or .map() crashes. First Arabic fix missed hero.stats.vulnsReduced and hero.stats.tasksAutomated which were never in the en.json hero.stats — those had to be added to en.json first.",
+      "peer_id": "sisyphus",
+      "session_id": "mark-lapointe-com-i18n-2026",
+      "metadata": {},
+      "created_at": "2026-06-08T08:01:49.881410Z",
+      "workspace_id": "default",
+      "token_count": 113
+    },
+    {
+      "id": "I0MUm2XEEqnQYOz1OYzIw",
+      "content": "PLANNING Chapter 4 (Claiming/Completion Protocol): Claiming: verify dependencies DONE, set Status IN PROGRESS, set Assigned To to your identifier (hostname for agents), set Start timestamp, commit and push immediately. Completion: implement and verify tests pass, set Status DONE, set End timestamp, update Notes, commit and push immediately.",
+      "peer_id": "sisyphus",
+      "session_id": "application-guidelines-content",
+      "metadata": {},
+      "created_at": "2026-06-08T04:19:03.898654Z",
+      "workspace_id": "default",
+      "token_count": 70
+    },
+    {
+      "id": "c7-pnapf7E2pCg8FcfxHy",
+      "content": "PLANNING Chapter 9 (References): Kernel Emulation Framework Plans at github.com/cloudbsdorg/freebsd-src-build-emulation/tree/main/.plan is the reference implementation. PPPoE Load Balancer Plans at github.com/cloudbsdorg/freebsd-src-pppoe/tree/main/.plan is reference with all new document types (risk management, tooling, alternatives).",
+      "peer_id": "sisyphus",
+      "session_id": "application-guidelines-content",
+      "metadata": {},
+      "created_at": "2026-06-08T04:19:03.898654Z",
+      "workspace_id": "default",
+      "token_count": 74
+    }
+  ]
+}

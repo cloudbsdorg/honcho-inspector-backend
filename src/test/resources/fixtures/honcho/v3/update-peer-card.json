@@ -1,0 +1,16 @@
+{
+  "_meta": {
+    "captured_at": "2026-06-18T07:14:43Z",
+    "honcho_version": "3.0.7",
+    "endpoint": "POST /v3/workspaces/{ws}/peers/{peerId}/card",
+    "method": "POST",
+    "synthetic": true,
+    "synthetic_reason": "real call failed"
+  },
+  "data": {
+    "peer_card": [
+      "Prefers concise answers",
+      "Updated by fixture-capture"
+    ]
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "_meta": {
+    "captured_at": "2026-06-18T07:14:43Z",
+    "honcho_version": "3.0.7",
+    "endpoint": "GET /v3/workspaces/{ws}",
+    "method": "GET",
+    "synthetic": true,
+    "synthetic_reason": "real call failed"
+  },
+  "data": {
+    "id": "fixture-ws",
+    "metadata": {
+      "source": "fixture-capture"
+    },
+    "configuration": {},
+    "created_at": "2026-06-18T07:14:43Z"
+  }
+}

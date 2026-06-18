@@ -2143,7 +2143,7 @@ Max Concurrent: 8 (Wave 2)
   - Message: `docs(config): document honcho.providers.strict-mode + per-profile api_version in example config`
   - Files: `application.yml`, `application.yml.example`
 
-- [ ] 19. Hand-written `docs/openapi.yaml` with full workflow narrative
+- [x] 19. Hand-written `docs/openapi.yaml` with full workflow narrative
 
   **What to do**:
   - Create `docs/openapi.yaml` with:
@@ -2362,7 +2362,7 @@ Max Concurrent: 8 (Wave 2)
   - Message: `test(openapi): add drift check between hand-written openapi.yaml and springdoc snapshot`
   - Files: new `src/test/java/.../docs/OpenApiDriftCheckTest.java`
 
-- [ ] 22. Recorded Honcho V3 fixtures (curl real Honcho once, save JSONs)
+- [x] 22. Recorded Honcho V3 fixtures (curl real Honcho once, save JSONs)
 
   **What to do**:
   - Document the capture process in `docs/regenerating-fixtures.md` (created here; full content in T31):

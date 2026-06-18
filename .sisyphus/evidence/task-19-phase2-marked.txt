@@ -1,0 +1,9 @@
+Phase 2 operation markers:
+  GET    /api/orgs                      opId=listOrgs             x-phase=2
+  POST   /api/orgs                      opId=createOrg            x-phase=2
+  GET    /api/orgs/{id}/members         opId=listOrgMembers       x-phase=2
+  GET    /api/stats                     opId=workspaceStats       x-phase=2
+  GET    /api/reports                   opId=listReports          x-phase=2
+  POST   /api/invites                   opId=createInvite         x-phase=2
+
+Total x-phase: "2" markers in file: 8
