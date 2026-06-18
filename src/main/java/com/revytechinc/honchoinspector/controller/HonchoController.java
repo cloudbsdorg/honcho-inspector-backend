@@ -551,7 +551,7 @@ public class HonchoController {
         var ctx = new HonchoContext(
             pwk.apiKey(), pwk.profile().baseUrl(),
             pwk.profile().workspaceId(), pwk.profile().honchoUserName(),
-            apiVersion
+            apiVersion, profileId
         );
         try {
             var result = call.invoke(ctx, ctx.workspaceId());

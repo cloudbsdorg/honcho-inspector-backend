@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.slf4j.MDC;
 import org.springframework.stereotype.Component;
 
 import com.revytechinc.honchoinspector.honcho.HonchoApiVersion;
@@ -262,9 +263,18 @@ public class HonchoV3Client implements HonchoClient {
         Map<String, String> pathVars,
         Map<String, ?> queryParams
     ) throws HonchoCallException {
-        HonchoProvider provider = registry.get(op);
-        return provider.execute(op, ctx, this, requestBody, pathVars, queryParams);
+        String peerId = pathVars == null ? null : pathVars.get("peerId");
+        boolean putPeer = peerId != null && !peerId.isBlank();
+        try {
+            if (putPeer) MDC.put(MDC_PEER_ID, peerId);
+            HonchoProvider provider = registry.get(op);
+            return provider.execute(op, ctx, this, requestBody, pathVars, queryParams);
+        } finally {
+            if (putPeer) MDC.remove(MDC_PEER_ID);
+        }
     }
+
+    public static final String MDC_PEER_ID = "peer_id";
 
     /**
      * Build a pathVars map from alternating key/value pairs. Centralised
