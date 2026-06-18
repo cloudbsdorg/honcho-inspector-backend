@@ -2293,7 +2293,7 @@ Max Concurrent: 8 (Wave 2)
   - Message: `chore(openapi): capture springdoc snapshot at docs/openapi.generated.json + add openapi-snapshot profile`
   - Files: new `docs/openapi.generated.json`, modified `pom.xml`
 
-- [ ] 21. Drift check assertion in Maven build
+- [x] 21. Drift check assertion in Maven build
 
   **What to do**:
   - Create `src/test/java/com/revytechinc/honchoinspector/docs/OpenApiDriftCheckTest.java`:
@@ -2527,7 +2527,7 @@ Max Concurrent: 8 (Wave 2)
   - Message: `test(honcho): add HonchoMockConfig + IntegrationTestBase scaffold with fixture-backed mock client`
   - Files: new `HonchoMockConfig.java`, new `IntegrationTestBase.java`, smoke test
 
-- [ ] 24. Workflow integration tests: `register → login → me → logout`
+- [x] 24. Workflow integration tests: `register → login → me → logout`
 
   **What to do**:
   - Create `src/test/java/com/revytechinc/honchoinspector/auth/AuthWorkflowIntegrationTest.java`:

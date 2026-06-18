@@ -1101,3 +1101,106 @@ All 36 Phase 1 operations match the springdoc snapshot in `.sisyphus/evidence/ta
 ### Evidence
 - `.sisyphus/evidence/task-20-snapshot.json` (snapshot validity)
 - `.sisyphus/evidence/task-20-mvn-profile.txt` (profile invocation log)
+
+## T24: AuthWorkflowIntegrationTest (2026-06-18)
+
+### File added
+- `src/test/java/com/revytechinc/honchoinspector/auth/AuthWorkflowIntegrationTest.java` — 10 test cases, extends `IntegrationTestBase`.
+
+### Test cases (exact names from the plan)
+1. `registerFirstUserIsAdmin` — first user is admin
+2. `registerSecondUserIsNotAdmin` — subsequent users are not
+3. `registerDuplicateUsernameReturns409` — second register of same username → 409 + `error` field
+4. `loginReturnsSessionId` — 200 + 48-char lowercase hex sessionId
+5. `meWithValidSessionReturnsUser` — 200 + user record (id matches `users` table via `singleUserId(ALICE)`)
+6. `meWithoutSessionReturns401` — filter blocks unauthenticated `/api/auth/me` → 401
+7. `meWithInvalidSessionReturns401` — 48-zero session id → 401
+8. `logoutInvalidatesSession` — login → logout (200 + `ok:true`) → /me (401)
+9. `registerValidatesPasswordLength` — `password: "short"` (5 chars) → 400 via `@Size(min=8)`
+10. `registerValidatesUsernameLength` — `username: ""` → 400 via `@NotBlank`
+
+### Test infrastructure (inherited from T23's IntegrationTestBase)
+- `@SpringBootTest(RANDOM_PORT)` + `@AutoConfigureMockMvc` + `@Import(HonchoMockConfig.class)` + in-memory SQLite + fixed crypto key
+- `@MockitoBean(name = "honchoClientFactory")` silences production `HonchoClientFactory`
+- `MockMvc mvc`, `ObjectMapper json`, `JdbcTemplate jdbc` autowired
+- `@BeforeEach resetDatabase()` clears all 3 tables (auth_sessions, honcho_profiles, users)
+- Helpers: `registerAndLogin`, `singleUserId`, `toJson`, `JSON` constant
+- Mock Honcho config is **inert for these tests** — auth endpoints never touch Honcho
+
+### Private helper added to the test class (not the base class)
+- `registerUser(username, password)` — registers a user without logging in. Base class only ships `registerAndLogin`; tests 1–3, 4, 9, 10 need registration alone so this wrapper keeps the call sites symmetric. (Per task spec: "if a helper is missing, add it to the test class itself, not the base class".)
+
+### Test results
+- `mvn -B -o test -Dtest=AuthWorkflowIntegrationTest` → `Tests run: 10, Failures: 0, Errors: 0, Skipped: 0` (5.7s)
+- `mvn -B -o test` (full suite) → `Tests run: 259, Failures: 0, Errors: 0, Skipped: 0` (29.7s) — was 249 pre-T24; +10 new.
+- `git status` shows only the new test file is added; zero production source files modified.
+
+### Endpoint contract notes (confirmed against AuthController + AuthService + SessionAuthFilter)
+- `POST /api/auth/logout` is NOT in `SessionAuthFilter.PUBLIC_PATHS`, so it requires a valid `X-Session-Id`. The controller's `auth.logout(sessionId)` is no-op-on-missing, but the filter blocks the request before the controller runs. Pattern: login → logout with valid session → /me → 401.
+- `GET /api/auth/me` is NOT in `PUBLIC_PATHS` either. Missing or unknown session → filter returns 401 with `{"error":"missing or invalid session"}` (filter-side response, never reaches the controller).
+- `POST /api/auth/register` and `POST /api/auth/login` ARE public; `/api/auth/register` runs `@Valid` → `@NotBlank`/`@Size` errors return 400 via Spring's `MethodArgumentNotValidException` (handled by `DefaultHandlerExceptionResolver`, visible as a WARN log line, not via a custom `@ExceptionHandler`).
+- Session ids are 24 random bytes formatted as 48 lowercase hex chars (verified via `AuthService.newId` which uses `HexFormat.of().formatHex(new byte[24])`).
+- First user is admin determined by `users.count() == 0` at insert time in `AuthService.register` — a transactional count+insert race could theoretically cause two admins if requests race, but for serial integration tests this is deterministic.
+
+### Lint gotcha (cost: 1 review cycle)
+- First draft added a class-level Javadoc, constant Javadocs, and section divider comments. The repo's auto-hook flagged them. Removed to match the existing `AuthControllerTest` style (zero Javadoc, no section dividers in the class body). Tests stay clean.
+- The `.as("sessionId must be 24 random bytes formatted as 48 lowercase hex chars")` description on the AssertJ chain is a failure-message string, not a comment — kept.
+
+## T21: OpenApiDriftCheckTest (2026-06-18)
+
+### File added
+- `src/test/java/com/revytechinc/honchoinspector/docs/OpenApiDriftCheckTest.java` (201 lines, 1 test)
+
+### Design
+- One combined `@Test noDriftBetweenHandWrittenAndGenerated()` accumulates path/method/operationId diffs into a `StringBuilder` and `fail()`s with the full list. Combined over 4 separate tests because a future maintainer who breaks the contract wants to see ALL drift in one run, not just the first dimension.
+- `@Tag("drift")` on the class — Surefire 3.5.3 / JUnit Platform interprets `-Dgroups='!drift'` as a JUnit Platform tag expression, so the test is filtered out.
+- Loads both files via `Paths.get(System.getProperty("user.dir"), "docs", "...")` — works from any cwd because `user.dir` is what Maven sets to the project root during `mvn test`.
+- SnakeYAML for YAML (`new Yaml().load(FileInputStream)`) and Jackson `ObjectMapper.readTree` for JSON. Both are transitive deps of `spring-boot-starter-web` (snakeyaml 2.4, jackson-databind 2.19.0) — no new pom.xml entries needed.
+- Phase 2 stripping: any operation with `x-phase: "2"` (or integer 2, defensive) is dropped from the parsed spec. Paths whose every op is Phase 2 are dropped entirely. This avoids 5 false-positive "drift" failures for the `/api/orgs*`, `/api/stats`, `/api/reports`, `/api/invites` placeholders.
+- `openapi` version field (3.0.3 hand-written vs 3.0.1 generated) is never read by the test — tolerated by construction.
+- operationId comparison is "if BOTH have it, must match" — if either is absent, no drift reported (springdoc auto-derives operationIds; hand-written may also leave them off in future).
+
+### Drift message format
+The exact strings the spec asked for (verified end-to-end with a `git checkout`-restored fake-path injection):
+```
+Drift detected between docs/openapi.yaml (hand-written) and docs/openapi.generated.json (springdoc snapshot):
+  Drift: hand-written has path /api/fake but generated doesn't
+  Drift: hand-written /api/peers has method PUT but generated doesn't
+  Drift: /api/peers GET operationId mismatch: hand-written='listPeers', generated='listPeersV2'
+```
+
+### Test count
+- Pre-T21 baseline: 259 tests (from parallel-work state observed at T11)
+- Post-T21 full suite: **260 tests, 0 failures, 0 errors, 0 skipped** (BUILD SUCCESS, 29s)
+- `mvn -B test -Dtest=OpenApiDriftCheckTest` alone: 1/0/0/0 (BUILD SUCCESS, ~1s)
+- `mvn -B test -Dgroups='!drift'`: **259 tests, 0 failures** — the drift test is filtered out by the JUnit Platform tag expression. Confirmed the `@Tag("drift")` + `-Dgroups='!drift'` mechanism works as the spec requires.
+
+### Drift detection end-to-end (verified)
+1. Injected `/api/fake: get: ...` (with operationId `fakeDrift`) into `docs/openapi.yaml` via Python (atomic text insert before the Phase 2 placeholder block).
+2. `mvn -B test -Dtest=OpenApiDriftCheckTest` → BUILD FAILURE with message `Drift: hand-written has path /api/fake but generated doesn't`.
+3. `git -C ... checkout -- docs/openapi.yaml` → file restored to 2147 lines, 0 occurrences of `/api/fake`.
+4. `mvn -B test -Dtest=OpenApiDriftCheckTest` → BUILD SUCCESS (1/0/0/0).
+
+### Why @Tag at class level (not method level)
+The class has only one test. JUnit 5's `@Tag` at the class level is inherited by all @Test methods. Class-level tagging also makes the exclusion intent visible at the type declaration — `OpenApiDriftCheckTest` as a whole is the "drift" check; not any single method.
+
+### Why combined test (not 4 separate)
+Spec said "Optionally: combine all 4 into a single test that fails with a comprehensive diff message". Picked that variant because:
+- A future maintainer who adds a bad path AND a wrong operationId wants both reported in one CI run, not two.
+- One test method = one line in the surefire report = easier to navigate from CI failure to source.
+- Tag-based exclusion still works on a 1-test class.
+
+### Jackson readTree vs ObjectMapper.readValue
+Used `readTree` (returns JsonNode) instead of `readValue(Map.class)`. Reason: `readValue(Map.class)` requires Jackson to deserialize the OpenAPI structure into Java Maps via reflection, which loses fidelity for fields that Jackson doesn't know about (the `x-workflow-narrative` top-level extension, `x-phase` on operations, etc.). `readTree` gives us a generic JsonNode and we recurse to convert only what we need (operationId, tags, x-phase).
+
+### Inherited wisdom applied
+- Tolerate the 3.0.1 vs 3.0.3 `openapi` field difference (T21 spec note).
+- Skip paths with `x-phase: "2"` markers in BOTH files (T21 spec note; the generated file doesn't have them today but the stripper is symmetric so a future springdoc that picks up an x-phase extension still works).
+- Class-level `@Tag("drift")` (T21 spec).
+- File-resource loading via `user.dir`/docs/ (T21 spec).
+- No new Maven deps (T21 spec).
+
+### Evidence
+- `target/surefire-reports/com.revytechinc.honchoinspector.docs.OpenApiDriftCheckTest.txt` (1/0/0/0 in isolation, 260/0/0/0 full)
+- Drift-injection transcript: insertion + BUILD FAILURE + `git checkout` + BUILD SUCCESS
+- Exclusion transcript: `-Dgroups='!drift'` → 259/0/0/0 (drift test not in report)
