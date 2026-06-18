@@ -1,0 +1,33 @@
+[INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 6.968 s -- in com.revytechinc.honchoinspector.auth.ProfileWorkflowIntegrationTest
+[INFO] Tests run: 14, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 5.189 s -- in com.revytechinc.honchoinspector.auth.AuthControllerTest
+[INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.362 s -- in com.revytechinc.honchoinspector.auth.AuthWorkflowIntegrationTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.139 s -- in com.revytechinc.honchoinspector.logging.LogMdcTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.026 s -- in com.revytechinc.honchoinspector.logging.LogScrubbingTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.011 s -- in com.revytechinc.honchoinspector.logging.JsonlFormatTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.339 s -- in com.revytechinc.honchoinspector.logging.LogRotationTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.256 s -- in com.revytechinc.honchoinspector.logging.LogbackConfigTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.004 s -- in com.revytechinc.honchoinspector.model.HonchoContextTest
+[INFO] Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.005 s -- in com.revytechinc.honchoinspector.honcho.HonchoProviderSkeletonTest
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.004 s -- in com.revytechinc.honchoinspector.honcho.HonchoProviderRegistryTest
+[INFO] Tests run: 20, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.034 s -- in com.revytechinc.honchoinspector.honcho.HonchoApiVersionTest
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.016 s -- in com.revytechinc.honchoinspector.honcho.HonchoMockConfigTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.111 s -- in com.revytechinc.honchoinspector.honcho.v3.WorkspaceProviderV3Test
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.001 s -- in com.revytechinc.honchoinspector.honcho.v3.MessagesProviderV3Test
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.001 s -- in com.revytechinc.honchoinspector.honcho.v3.DreamsProviderV3Test
+[INFO] Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.102 s -- in com.revytechinc.honchoinspector.honcho.v3.SessionsProviderV3Test
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.001 s -- in com.revytechinc.honchoinspector.honcho.v3.PeersProviderV3Test
+[INFO] Tests run: 33, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.056 s -- in com.revytechinc.honchoinspector.honcho.v3.HonchoV3ClientTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0 s -- in com.revytechinc.honchoinspector.honcho.v3.SearchProviderV3Test
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0 s -- in com.revytechinc.honchoinspector.honcho.v3.QueueStatusProviderV3Test
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.002 s -- in com.revytechinc.honchoinspector.honcho.v3.PeerQueryProviderV3Test
+[INFO] Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.001 s -- in com.revytechinc.honchoinspector.honcho.HonchoClientFactoryTest
+[INFO] Tests run: 31, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.010 s -- in com.revytechinc.honchoinspector.honcho.HonchoOperationTest
+[INFO] Tests run: 38, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.095 s -- in com.revytechinc.honchoinspector.service.HonchoProxyServiceTest
+[INFO] Tests run: 36, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 17.19 s -- in com.revytechinc.honchoinspector.controller.HonchoControllerTest
+[INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 4.726 s -- in com.revytechinc.honchoinspector.controller.HonchoWorkflowIntegrationTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.020 s -- in com.revytechinc.honchoinspector.docs.OpenApiDriftCheckTest
+[INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.002 s -- in com.revytechinc.honchoinspector.config.HonchoConfigDirResolverTest
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.001 s -- in com.revytechinc.honchoinspector.config.CorsConfigTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.006 s -- in com.revytechinc.honchoinspector.config.SchemaMigratorTest
+[INFO] Tests run: 280, Failures: 0, Errors: 0, Skipped: 0
+[INFO] BUILD SUCCESS
