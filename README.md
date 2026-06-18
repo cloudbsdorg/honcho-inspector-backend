@@ -137,6 +137,23 @@ Anything under `/api/peers/*`, `/api/sessions/*`, `/api/queue-status`, `/api/wor
 
 `X-Session-Id` is the row's session, `X-Honcho-Profile-Id` is which Honcho instance to talk to. These are intentionally separate so a single user can be logged into multiple Honcho workspaces and switch between them.
 
+## Deployment
+
+The backend listens on plain HTTP and **must** sit behind a TLS-terminating
+reverse proxy in any internet-reachable environment. The proxy is
+responsible for HTTPS, HSTS, security headers, and rate limiting. The
+backend itself should bind to `127.0.0.1` so it is not reachable except
+from the proxy.
+
+Ready-to-use example configs for **nginx** (primary, certs managed by
+nginx via certbot), **Apache** (certbot-managed), and **Caddy**
+(cert-managed automatically by Caddy itself) live in
+[`docs/reverse-proxy.md`](docs/reverse-proxy.md). Pick one and follow
+the requirements checklist at the bottom of that file.
+
+Production hardening (TLS, headers, secret storage, file permissions) is
+catalogued in [`docs/SECURITY.md`](docs/SECURITY.md).
+
 ## Build, test, verify
 
 ```bash
@@ -157,6 +174,19 @@ The test suite uses an in-memory SQLite (`HONCHO_DB_PATH=jdbc:sqlite::memory:`) 
 - **No CSRF tokens needed** — the API requires `X-Session-Id` (custom header), not cookies. Browsers will refuse to set the header cross-origin without explicit CORS opt-in.
 - **CORS is whitelist-only** via `CORS_ALLOWED_ORIGINS`. Origins are matched exactly, no wildcards.
 - **First user is admin.** The admin flag is a boolean; there is no admin-endpoint for creating users in this version. To make a second user an admin, set `is_admin = 1` directly in the DB.
+
+For the full threat model, audit findings (with severity + remediation
+guidance), and the operator hardening checklist, see
+[`docs/SECURITY.md`](docs/SECURITY.md). For reverse-proxy / TLS / header
+configurations to put in front of this service, see
+[`docs/reverse-proxy.md`](docs/reverse-proxy.md).
+
+### Reporting a vulnerability
+
+Email `security@revyt...` (TBD by the project owner). Do not file
+public GitHub issues for suspected vulnerabilities. The placeholder is
+in [`docs/SECURITY.md`](docs/SECURITY.md) §7 — update both before tagging
+a release.
 
 ## Dev workflow
 
@@ -183,8 +213,11 @@ bin/
   honcho-inspector                 — POSIX launcher; detects OS and sets HONCHO_CONFIG_DIR
 etc/honcho-inspector/
   application.yml.example          — drop-in config template
-docs/lessons/
-  os-config-conventions.md         — why we use OS-aware config dirs, not ~/.X
+docs/
+  SECURITY.md                      — threat model, audit findings, hardening checklists
+  reverse-proxy.md                 — nginx (primary), Apache, Caddy configs + requirements
+  lessons/
+    os-config-conventions.md       — why we use OS-aware config dirs, not ~/.X
 ```
 
 ## License
