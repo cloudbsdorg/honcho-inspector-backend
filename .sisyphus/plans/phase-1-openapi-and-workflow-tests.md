@@ -188,11 +188,11 @@ flowchart TD
 
 ### 3. Wave Execution Timeline & Critical Path
 
-How the 34 tasks roll out across waves.
+How the 35 tasks roll out across waves.
 
 ```mermaid
 flowchart LR
-  W1["Wave 1: Foundation<br/>8 tasks<br/>springdoc + schema + config +<br/>HonchoApiVersion + HonchoProvider<br/>+ HonchoClient + Factory"]
+  W1["Wave 1: Foundation<br/>9 tasks<br/>springdoc + schema + config +<br/>config-dir resilience +<br/>HonchoApiVersion + HonchoProvider<br/>+ HonchoClient + Factory"]
   W2["Wave 2: Honcho Layer<br/>10 tasks<br/>8 V3 Providers + V3Client +<br/>ProxyService + Controller refactor +<br/>HonchoContext + application.yml"]
   W3["Wave 3: OpenAPI + Tests<br/>8 tasks<br/>openapi.yaml + springdoc snapshot +<br/>drift check + recorded fixtures +<br/>HonchoMockConfig + 3 workflow tests"]
   W4["Wave 4: Docs + CI<br/>8 tasks<br/>provider/factory/SPI unit tests +<br/>honcho-providers.md +<br/>regenerating-openapi.md +<br/>CI workflow + negative-path tests"]
@@ -219,7 +219,7 @@ flowchart LR
   class DONE done
 ```
 
-**Max parallelism:** Wave 2 = 10 tasks (the bottleneck wave). Average wave = 8.5 tasks.
+**Max parallelism:** Wave 2 = 10 tasks (the bottleneck wave). Wave 1 grew from 8 to 9 tasks (added T4a config-dir resilience); average wave = 8.75 tasks.
 
 ### 4. Request Lifecycle: Login → Profile → Honcho Call
 
@@ -337,7 +337,7 @@ What's in this plan vs what's explicitly deferred.
 
 ```mermaid
 flowchart TB
-  subgraph P1["PHASE 1 (this plan - 34 tasks)"]
+  subgraph P1["PHASE 1 (this plan - 35 tasks + 4 final reviewers)"]
     direction TB
     P1A["OpenAPI spec<br/>hand-written YAML + springdoc live + drift check"]
     P1B["Provider x Factory refactor<br/>8 V3 providers + Client + Factory + Registry"]
@@ -568,7 +568,7 @@ Max Concurrent: 8 (Wave 2)
 | T34 (negative-path tests) | T24, T25, T26 | F1–F4 |
 
 ### Agent Dispatch Summary
-- **Wave 1 (8 tasks, max parallel)**: T1–T2 → `quick`; T3–T6 → `quick`; T7–T8 → `unspecified-high`
+- **Wave 1 (9 tasks, max parallel = 9)**: T1–T2 → `quick`; T3–T6 → `quick`; T7–T8, T4a → `quick`
 - **Wave 2 (10 tasks, max parallel = 8)**: T9 → `unspecified-high`; T10–T13 → `unspecified-high`; T14 → `unspecified-high`; T15–T16 → `unspecified-high`; T17–T18 → `quick`
 - **Wave 3 (8 tasks, max parallel = 8)**: T19 → `writing`; T20–T21 → `quick` + `unspecified-high`; T22–T26 → `unspecified-high`
 - **Wave 4 (8 tasks, max parallel = 8)**: T27–T29 → `unspecified-high`; T30–T32 → `writing`; T33 → `quick`; T34 → `unspecified-high`
@@ -747,9 +747,9 @@ Max Concurrent: 8 (Wave 2)
 
   **Parallelization**:
   - Can Run In Parallel: YES
-  - Parallel Group: Wave 1 (with T1, T2, T4–T8)
+  - Parallel Group: Wave 1 (with T1, T2, T4, T4a, T5–T8; effectively serial-after-T4a since SchemaMigrator writes SQLite into the config dir)
   - Blocks: T15, T26
-  - Blocked By: None
+  - Blocked By: T4a (config dir must exist before SchemaMigrator runs at startup)
 
   **References**:
   - `src/main/resources/schema.sql` — current schema
@@ -868,6 +868,112 @@ Max Concurrent: 8 (Wave 2)
   **Commit**: YES (groups with Wave 1 final commit)
   - Message: `feat(config): add honcho.providers.strict-mode + HonchoProperties @ConfigurationProperties bean`
   - Files: `application.yml`, `application.yml.example`, new `config/HonchoProperties.java`, modified `service/HonchoProxyService.java`, new test
+
+- [ ] 4a. Config-dir resilience — create dirs + per-user fallback
+
+  **What to do**:
+  - Modify `src/main/java/com/revytechinc/honchoinspector/config/HonchoConfigDirResolver.java`:
+    - Add `private static final Path XDG_USER_ETC = Paths.get(System.getProperty("user.home"), ".local", "etc", PRODUCT_NAME);`
+    - Add `public Path resolveOrCreate()` (replaces/extends `resolve()`): same OS-default logic, then attempts `Files.createDirectories(resolved)`.
+      - If create succeeds → log "config dir created" + return.
+      - If create fails with `AccessDeniedException` (or any `IOException` AND current UID is non-zero — i.e. not running as root) → fall back to `~/.local/etc/<product>/`, log a WARNING that system path is unwritable, attempt create again, return.
+      - If second attempt also fails → log ERROR with both attempted paths and the exception; throw `IllegalStateException` so the app fails fast at startup rather than mid-request.
+    - Add `static boolean isRunningAsRoot()` helper: returns `true` on Windows/macOS (no concept of non-root for this purpose), else checks if a sentinel `/proc/self/status` exists with `Uid: 0` line, OR falls back to checking if `System.getProperty("user.name").equals("root")`. (Avoids needing native code; good enough.)
+    - `resolve()` remains for backwards compatibility but `StartupInfoLogger` and the DB-path resolver are switched to call `resolveOrCreate()`.
+    - **Behavior contract:** the dir (or its per-user fallback) ALWAYS exists after `resolveOrCreate()` returns; the only failure mode is a hard startup error with both paths logged.
+  - Modify `src/main/java/com/revytechinc/honchoinspector/config/StartupInfoLogger.java` to call `resolveOrCreate()` instead of `resolve()` and log whether a fallback occurred.
+  - Add `mvn -q test -Dtest=HonchoConfigDirResolverTest` test cases:
+    - `createDirectories_newDir_succeeds` — call `resolveOrCreate()` against a temp path that does not exist; assert dir was created.
+    - `createDirectories_existingDir_succeeds` — pre-create the dir, call `resolveOrCreate()`; assert no exception, no error log.
+    - `createDirectories_permissionDenied_fallsBackToUserDir` — pre-create `/etc/honcho-inspector` as read-only via `PosixFilePermissions` (skip on Windows); run `resolveOrCreate()` as non-root (CI runs as a non-root user); assert it returns `~/.local/etc/honcho-inspector/` (or the XDG_USER_ETC constant).
+    - `createDirectories_bothPathsFail_throws` — pre-create both paths as read-only; assert `IllegalStateException` is thrown with both paths in the message.
+    - `runningAsRoot_skipsFallback` — stub `isRunningAsRoot()` to return true; assert even with permission denied, no fallback occurs (because root SHOULD be able to write `/etc/...`).
+  - Update `docs/SECURITY.md` Section 5 (deployment) with a brief note: "On first run as a non-root user, the app will create `~/.local/etc/honcho-inspector/` automatically if `/etc/honcho-inspector/` is not writable. Logs will indicate which path is in use."
+
+  **Must NOT do**:
+  - Do not silently swallow the fallback failure; the second-failure path must throw.
+  - Do not change the OS-default paths (Linux still `/etc/honcho-inspector`, FreeBSD still `/usr/local/etc/honcho-inspector`, macOS still `~/Library/Application Support/honcho-inspector`, Windows still `%APPDATA%\honcho-inspector`).
+  - Do not change `HonchoConfigDirResolver.resolve()` semantics (keep it pure path-resolution for callers that don't want auto-create).
+
+  **Recommended Agent Profile**:
+  - **Category**: `quick`
+  - **Skills**: []
+  - **Reason**: Single-file modification + filesystem tests; well-scoped.
+
+  **Parallelization**:
+  - **Can Run In Parallel**: YES
+  - **Parallel Group**: Wave 1 (with T1–T4, T5–T8)
+  - **Blocks**: T3 (schema migration writes `honcho-inspector.db` into the config dir)
+  - **Blocked By**: None
+  - **Note**: Previously T3 had no deps; the dependency is added because the dir must exist before SQLite DB creation.
+
+  **References**:
+  - `src/main/java/com/revytechinc/honchoinspector/config/HonchoConfigDirResolver.java` — current resolver (no create logic)
+  - `src/test/java/com/revytechinc/honchoinspector/config/HonchoConfigDirResolverTest.java` — existing tests to extend
+  - `src/main/java/com/revytechinc/honchoinspector/config/StartupInfoLogger.java` — currently calls `resolve()`, switch to `resolveOrCreate()`
+  - `docs/SECURITY.md` Section 5 — deployment notes
+
+  **Acceptance Criteria**:
+  - [ ] `HonchoConfigDirResolver.resolveOrCreate()` creates the resolved dir if missing
+  - [ ] On permission-denied AND non-root → falls back to `~/.local/etc/<product>/`, logs WARNING
+  - [ ] On second failure (both paths unwritable) → throws `IllegalStateException` with both paths in message
+  - [ ] `resolve()` semantics unchanged (pure path resolution, no FS side effects)
+  - [ ] All 5 new `HonchoConfigDirResolverTest` cases pass; existing 12 still pass
+  - [ ] `StartupInfoLogger` logs the resolved-or-fallback path with a `[created]` or `[fallback]` tag
+  - [ ] `mvn test` passes 34/34 (29 existing + 5 new)
+  - [ ] `docs/SECURITY.md` updated with the user-dir fallback note
+
+  **QA Scenarios (MANDATORY)**:
+  ```
+  Scenario: Resolver creates missing config dir
+    Tool: Bash (mvn + junit)
+    Preconditions: Temp test environment with no prior `/etc/honcho-inspector`
+    Steps:
+      1. `mvn -q test -Dtest=HonchoConfigDirResolverTest#createDirectories_newDir_succeeds`
+      2. Assert: "BUILD SUCCESS" and test passes
+    Expected Result: Directory is created on first call; no exception
+    Evidence: .sisyphus/evidence/task-4a-create-dir.txt
+
+  Scenario: Non-root fallback to ~/.local/etc/<product>/
+    Tool: Bash (mvn + junit + POSIX perms)
+    Preconditions: `/etc/honcho-inspector` exists but is read-only (chmod 555) AND current UID != 0
+    Steps:
+      1. `mvn -q test -Dtest=HonchoConfigDirResolverTest#createDirectories_permissionDenied_fallsBackToUserDir`
+      2. Assert: returned path contains `.local/etc/honcho-inspector` AND WARNING log emitted
+    Expected Result: Resolver returns user-local path; system path unchanged
+    Evidence: .sisyphus/evidence/task-4a-fallback.txt
+
+  Scenario: Double-failure surfaces as hard error
+    Tool: Bash (mvn + junit)
+    Preconditions: Both system path AND user path are read-only
+    Steps:
+      1. `mvn -q test -Dtest=HonchoConfigDirResolverTest#createDirectories_bothPathsFail_throws`
+      2. Assert: throws `IllegalStateException` with both paths in message
+    Expected Result: Loud failure, not silent
+    Evidence: .sisyphus/evidence/task-4a-double-fail.txt
+
+  Scenario: Startup integration
+    Tool: Bash (mvn spring-boot:run + log inspection)
+    Preconditions: Clean run as non-root in a container without `/etc/honcho-inspector`
+    Steps:
+      1. `mvn spring-boot:run &` then `sleep 8 && kill %1`
+      2. Capture stdout, grep for "config dir" log line
+      3. Assert: log shows `[fallback]` tag and `~/.local/etc/honcho-inspector` path
+    Expected Result: App starts cleanly on non-root without manual dir creation
+    Evidence: .sisyphus/evidence/task-4a-startup.txt
+
+  Scenario: Full suite green
+    Tool: Bash (mvn)
+    Steps:
+      1. `mvn test`
+      2. Assert: "Tests run: 34" (29 prior + 5 new)
+    Expected Result: All 34 tests pass
+    Evidence: .sisyphus/evidence/task-4a-mvn-full.txt
+  ```
+
+  **Commit**: YES (groups with Wave 1 final commit)
+  - Message: `feat(config): ensure config dir exists; fall back to ~/.local/etc/<product>/ when system path unwritable`
+  - Files: `config/HonchoConfigDirResolver.java`, `config/StartupInfoLogger.java`, modified `HonchoConfigDirResolverTest.java`, `docs/SECURITY.md`
 
 - [ ] 5. `HonchoApiVersion` + `HonchoOperation` enums
 
