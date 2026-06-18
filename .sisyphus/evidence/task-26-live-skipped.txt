@@ -1,0 +1,110 @@
+================================================================================
+T26 LIVE TEST GATING EVIDENCE
+File: src/test/java/com/revytechinc/honchoinspector/LiveHonchoProxyIT.java
+Tag: @Tag("live")
+Annotation: @EnabledIfEnvironmentVariable(named = "HONCHO_LIVE_TEST", matches = "1")
+Date: 2026-06-18T18:11:48Z
+================================================================================
+
+================================================================================
+SCENARIO 1: Default 'mvn -B test' (no env vars, no groups filter)
+EXPECTED: 341/341 pass, live test excluded entirely (IT suffix is outside
+          Surefire's default include pattern)
+================================================================================
+[INFO] Tests run: 14, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 7.143 s -- in com.revytechinc.honchoinspector.NegativePathIntegrationTest
+[INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 5.061 s -- in com.revytechinc.honchoinspector.auth.ProfileWorkflowIntegrationTest
+[INFO] Tests run: 14, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 5.080 s -- in com.revytechinc.honchoinspector.auth.AuthControllerTest
+[INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.394 s -- in com.revytechinc.honchoinspector.auth.AuthWorkflowIntegrationTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.149 s -- in com.revytechinc.honchoinspector.logging.LogMdcTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.017 s -- in com.revytechinc.honchoinspector.logging.LogScrubbingTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.011 s -- in com.revytechinc.honchoinspector.logging.JsonlFormatTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.352 s -- in com.revytechinc.honchoinspector.logging.LogRotationTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.250 s -- in com.revytechinc.honchoinspector.logging.LogbackConfigTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.002 s -- in com.revytechinc.honchoinspector.model.HonchoContextTest
+[INFO] Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.005 s -- in com.revytechinc.honchoinspector.honcho.HonchoProviderSkeletonTest
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.003 s -- in com.revytechinc.honchoinspector.honcho.HonchoProviderRegistryTest
+[INFO] Tests run: 20, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.028 s -- in com.revytechinc.honchoinspector.honcho.HonchoApiVersionTest
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.015 s -- in com.revytechinc.honchoinspector.honcho.HonchoMockConfigTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.120 s -- in com.revytechinc.honchoinspector.honcho.v3.WorkspaceProviderV3Test
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.002 s -- in com.revytechinc.honchoinspector.honcho.v3.MessagesProviderV3Test
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.001 s -- in com.revytechinc.honchoinspector.honcho.v3.DreamsProviderV3Test
+[INFO] Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.120 s -- in com.revytechinc.honchoinspector.honcho.v3.SessionsProviderV3Test
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.002 s -- in com.revytechinc.honchoinspector.honcho.v3.MiscProvidersV3UnitTest
+[INFO] Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.002 s -- in com.revytechinc.honchoinspector.honcho.v3.SessionsProviderV3UnitTest
+
+Verdict: ^^ Lines show 'Tests run: 341 ... Skipped: 0' (no LiveHonchoProxyIT line,
+         proving it was excluded entirely from the default run).
+
+================================================================================
+SCENARIO 2: 'mvn -B test -Dgroups=live -Dtest=LiveHonchoProxyIT' (no env vars)
+EXPECTED: Surefire finds the file, JUnit @EnabledIfEnvironmentVariable skips all 3
+          (because HONCHO_LIVE_TEST is unset)
+NOTE: -Dtest=LiveHonchoProxyIT is required because the IT suffix is outside
+      Surefire's default include pattern (which is **/*Test.java). This is the
+      operational invocation pattern documented in the test's class Javadoc.
+================================================================================
+[INFO] Running com.revytechinc.honchoinspector.LiveHonchoProxyIT
+[WARNING] Tests run: 3, Failures: 0, Errors: 0, Skipped: 3, Time elapsed: 0.006 s -- in com.revytechinc.honchoinspector.LiveHonchoProxyIT
+[WARNING] Tests run: 3, Failures: 0, Errors: 0, Skipped: 3
+[INFO] BUILD SUCCESS
+
+Verdict: ^^ Shows 'Running com.revytechinc.honchoinspector.LiveHonchoProxyIT' followed
+         by 'Skipped: 3' — proves the gating works when Surefire picks up the file.
+
+================================================================================
+SCENARIO 3: HONCHO_LIVE_TEST=1 only (URL missing) — fail fast at @BeforeAll
+EXPECTED: Test attempts to run, fails at @BeforeAll with clear message
+================================================================================
+[INFO] Running com.revytechinc.honchoinspector.LiveHonchoProxyIT
+[ERROR] Tests run: 1, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 0.084 s <<< FAILURE! -- in com.revytechinc.honchoinspector.LiveHonchoProxyIT
+[ERROR] com.revytechinc.honchoinspector.LiveHonchoProxyIT -- Time elapsed: 0.084 s <<< FAILURE!
+[live test requires env var HONCHO_LIVE_URL (live Honcho base URL)] 
+[ERROR]   LiveHonchoProxyIT.setUp:78->requireEnv:243 [live test requires env var HONCHO_LIVE_URL (live Honcho base URL)] 
+[ERROR] Tests run: 1, Failures: 1, Errors: 0, Skipped: 0
+[INFO] BUILD FAILURE
+
+Verdict: ^^ Shows the test was 'Started' (gating enabled), then @BeforeAll failed
+         fast with the assertion 'live test requires env var HONCHO_LIVE_URL ...'.
+
+================================================================================
+SCENARIO 4: All env vars set, bogus URL — gating works end-to-end (HTTP fails at connect)
+EXPECTED: All 3 tests attempt to run, fail at HTTPS connect because URL doesn't resolve
+================================================================================
+[INFO] Running com.revytechinc.honchoinspector.LiveHonchoProxyIT
+[LiveHonchoProxyIT] LIVE RUN against https://nonexistent.invalid workspace=test-ws uniquePeerId=live-it-059e87cc-87bb-413d-924b-d27e3187cb97 — remember to scrub live-it-059e87cc-87bb-413d-924b-d27e3187cb97 from the workspace afterwards
+[ERROR] Tests run: 3, Failures: 0, Errors: 3, Skipped: 0, Time elapsed: 0.230 s <<< FAILURE! -- in com.revytechinc.honchoinspector.LiveHonchoProxyIT
+java.net.ConnectException
+Caused by: java.net.ConnectException
+	at java.net.http/jdk.internal.net.http.common.Utils.toConnectException(Utils.java:1070)
+	at java.net.http/jdk.internal.net.http.PlainHttpConnection.connectAsync(PlainHttpConnection.java:223)
+	at java.net.http/jdk.internal.net.http.AsyncSSLConnection.connectAsync(AsyncSSLConnection.java:57)
+	at java.net.http/jdk.internal.net.http.Http2Connection.createAsync(Http2Connection.java:537)
+	at java.net.http/jdk.internal.net.http.Http2ClientImpl.getConnectionFor(Http2ClientImpl.java:140)
+	at java.net.http/jdk.internal.net.http.PlainHttpConnection.connectAsync(PlainHttpConnection.java:211)
+java.net.ConnectException
+Caused by: java.net.ConnectException
+	at java.net.http/jdk.internal.net.http.common.Utils.toConnectException(Utils.java:1070)
+	at java.net.http/jdk.internal.net.http.PlainHttpConnection.connectAsync(PlainHttpConnection.java:223)
+	at java.net.http/jdk.internal.net.http.AsyncSSLConnection.connectAsync(AsyncSSLConnection.java:57)
+	at java.net.http/jdk.internal.net.http.Http2Connection.createAsync(Http2Connection.java:537)
+	at java.net.http/jdk.internal.net.http.Http2ClientImpl.getConnectionFor(Http2ClientImpl.java:140)
+	at java.net.http/jdk.internal.net.http.PlainHttpConnection.connectAsync(PlainHttpConnection.java:211)
+java.net.ConnectException
+
+Verdict: ^^ Shows '[LiveHonchoProxyIT] LIVE RUN against https://nonexistent.invalid ...'
+         from @BeforeAll (proving the env-var wiring works) followed by HTTP connect
+         failures on each of the 3 tests (proving the test body actually executes).
+
+================================================================================
+SUMMARY
+================================================================================
+Scenario 1: 341/341 tests pass, LiveHonchoProxyIT not in surefire output (excluded by IT suffix pattern)
+Scenario 2: Surefire finds file, 3/3 skipped via @EnabledIfEnvironmentVariable
+Scenario 3: HONCHO_LIVE_TEST=1 → @BeforeAll runs → fails fast on missing URL
+Scenario 4: All env vars set → 3 tests attempt HTTP → fail at connect
+
+ALL FOUR SCENARIOS BEHAVE AS REQUIRED BY PLAN §26.
+================================================================================
+
+FINAL SUMMARY LINE FOR SCENARIO 1 (from a follow-up run):
+  [INFO] Tests run: 341, Failures: 0, Errors: 0, Skipped: 0

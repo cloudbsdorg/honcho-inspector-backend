@@ -1631,3 +1631,24 @@ The verification expectation "`grep -E '\]\(docs/reverse-proxy\.md\)' docs/SECUR
 
 ### Lesson
 For docs-only cross-link work: verify that any spec-supplied verification grep pattern matches the file's actual directory context. A pattern like `\]\(docs/...\)` only works from the repo root; from a subdirectory the correct relative link is `\]\(...\)` (sibling). Use `../docs/...` if you must start with `docs/` from a subdirectory.
+
+### T26: Live test gating — IT-suffix + Surefire include-pattern gotcha
+
+Adding `src/test/java/com/revytechinc/honchoinspector/LiveHonchoProxyIT.java` to satisfy plan §26's missing live-test sub-bullet surfaced a Surefire/Failsafe filename convention interaction:
+
+- The class is named with the `IT` suffix per the task spec, which conventionally signals "Failsafe integration test" and is **outside Surefire's default include pattern** (`**/*Test.java`, `**/*Tests.java`, `**/*TestCase.java`).
+- Failsafe (which normally picks up `*IT.java`) is not configured in this project's pom.xml.
+- Net effect: `mvn test` silently excludes the file from the run entirely — no skip count, no exclusion reason, just not in the surefire output. **This still satisfies the default `mvn test` gating** (no regression: 341/341 tests pass), but it also means `mvn test -Dgroups=live` alone will NOT pick the file up — Surefire still excludes it by name pattern before JUnit sees the `@Tag("live")` filter.
+- Operational invocation: `mvn test -Dgroups=live -Dtest=LiveHonchoProxyIT` (the `-Dtest=...` overrides Surefire's include pattern by exact class name). This is documented in the test's class Javadoc.
+
+The two exclusion mechanisms compose safely:
+1. Default `mvn test` → Surefire excludes by `*IT.java` filename pattern → 341/341 pass with no `Skipped: 1` count.
+2. `mvn test -Dgroups=live` → Surefire still excludes by filename → `Tests run: 0` (no live test attempted, no env-var pollution).
+3. `mvn test -Dgroups=live -Dtest=LiveHonchoProxyIT` → Surefire picks up the file → JUnit's `@EnabledIfEnvironmentVariable(HONCHO_LIVE_TEST, matches="1")` skips all 3 tests when the env var is unset (proven: `Skipped: 3`).
+4. `HONCHO_LIVE_TEST=1 ... mvn test -Dgroups=live -Dtest=LiveHonchoProxyIT` → JUnit enables the class → `@BeforeAll` runs and fails fast with a clear assertion if any of `HONCHO_LIVE_URL` / `HONCHO_LIVE_API_KEY` / `HONCHO_LIVE_WORKSPACE_ID` is missing.
+
+**Lesson:** When spec requires an `*IT.java`-suffixed file AND gates it via `-Dgroups=...`, either accept that the default include pattern will exclude it (and document the `-Dtest=...` override) or rename to `*Test.java` and use Surefire's tag filter to handle the gating. The first approach matches Maven Failsafe convention; the second matches Surefire convention. The spec chose the first.
+
+**Honcho v3 list-peers endpoint reality vs. spec assumption:** Plan §26 mentioned `GET /v3/workspaces/{ws}/peers`. The actual upstream contract is `POST /v3/workspaces/{ws}/peers/list` (v3 changed this from v2's GET). The live test tries GET first per the plan; on 404/405 it falls back to POST `/peers/list`. Either way the assertion is "endpoint exists and returns a JSON array". Honcho v3 has no `GET /peers/{peerId}` endpoint for verifying a created peer, so the create-test re-lists and searches for the unique peer id by name.
+
+**Workspace-id requirement as runtime check, not annotation:** The plan originally listed TWO `@EnabledIfEnvironmentVariable` annotations (one for `HONCHO_LIVE_TEST=1`, one for `HONCHO_LIVE_WORKSPACE_ID=inspector-tests`). The task spec simplified to ONE annotation; `HONCHO_LIVE_WORKSPACE_ID` is now read at runtime in `@BeforeAll` with a clear AssertJ failure message. This is friendlier for operators — they can target any workspace id (e.g. `inspector-tests`, `live-2026-06`, whatever) without touching test source.
