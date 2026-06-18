@@ -184,6 +184,42 @@ public interface HonchoClient {
     Object getWorkspaceInfo(HonchoContext ctx) throws HonchoCallException;
 
     /**
+     * Generic dispatch entry point used by {@code HonchoProxyService} (T15)
+     * to forward any {@link HonchoOperation} without knowing which typed
+     * convenience method maps to it.
+     *
+     * <p>Implementations are expected to resolve {@code op} to the right
+     * provider (via their per-instance {@code HonchoProviderRegistry}) and
+     * invoke it with {@code (ctx, requestBody, pathVars, queryParams)} —
+     * exactly what the typed convenience methods on this interface do.
+     * The 24 typed methods on the concrete {@code HonchoV3Client}
+     * implementation are thin one-liners that call this method with the
+     * correct {@link HonchoOperation} and {@code pathVars} built from
+     * the typed arguments, so the dispatch path is uniform regardless
+     * of whether a caller uses a typed method or {@code call(...)}.
+     *
+     * <p>This method is declared {@code abstract} on purpose — there is no
+     * useful default, and silently routing to a "first method wins"
+     * fallback would mask configuration errors.
+     *
+     * @param op          the operation to execute (must be in the implementation's
+     *                    {@link HonchoProviderRegistry} coverage set)
+     * @param ctx         authenticated Honcho call context
+     * @param requestBody deserialized JSON body, or {@code null} for GET / DELETE
+     * @param pathVars    path placeholders keyed by template name
+     *                    (e.g. {@code Map.of("peerId", "abc")}), or {@code null}
+     * @param queryParams query-string parameters, or {@code null}
+     * @return the deserialized response body, or {@code null} for 204
+     */
+    Object call(
+        HonchoOperation op,
+        HonchoContext ctx,
+        Object requestBody,
+        Map<String, String> pathVars,
+        Map<String, ?> queryParams
+    ) throws HonchoCallException;
+
+    /**
      * The set of {@link HonchoApiVersion}s this implementation can serve.
      *
      * <p>Used by the client factory (introduced in a later task) to index

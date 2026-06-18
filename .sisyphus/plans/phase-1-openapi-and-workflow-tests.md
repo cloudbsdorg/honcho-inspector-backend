@@ -1827,7 +1827,7 @@ Max Concurrent: 8 (Wave 2)
   - Message: `feat(honcho): add 4 single-op V3 providers (workspace/queue/search/dreams); total V3 = 8 files for 24 ops`
   - Files: 4 new `honcho/v3/*ProviderV3.java` + tests
 
-- [ ] 14. `HonchoV3Client` (Phase 1's only client implementation)
+- [x] 14. `HonchoV3Client` (Phase 1's only client implementation)
 
   **What to do**:
   - Create `src/main/java/com/revytechinc/honchoinspector/honcho/v3/HonchoV3Client.java`:
@@ -1890,7 +1890,7 @@ Max Concurrent: 8 (Wave 2)
   - Message: `feat(honcho): add HonchoV3Client implementing all 24 operations via provider registry`
   - Files: new `honcho/v3/HonchoV3Client.java`, new test
 
-- [ ] 15. `HonchoProxyService` refactor (factory + version routing)
+- [x] 15. `HonchoProxyService` refactor (factory + version routing)
 
   **What to do**:
   - Rewrite `src/main/java/com/revytechinc/honchoinspector/service/HonchoProxyService.java`:

@@ -49,6 +49,7 @@ class HonchoClientFactoryTest {
         @Override public Object searchMessages(HonchoContext ctx, Object searchRequest) { return null; }
         @Override public Object scheduleDream(HonchoContext ctx, String peerId, Object dreamRequest) { return null; }
         @Override public Object getWorkspaceInfo(HonchoContext ctx) { return null; }
+        @Override public Object call(com.revytechinc.honchoinspector.honcho.HonchoOperation op, HonchoContext ctx, Object requestBody, Map<String, String> pathVars, Map<String, ?> queryParams) { return null; }
     }
 
     @Component
