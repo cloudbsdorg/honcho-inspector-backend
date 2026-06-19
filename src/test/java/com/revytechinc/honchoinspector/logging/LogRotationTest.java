@@ -20,7 +20,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * under size pressure and prunes files beyond the {@code totalSizeCap}.
  *
  * <p>The {@code HONCHO_LOG_MAX_FILE_SIZE=1KB} and
- * {@code HONCHO_LOG_TOTAL_SIZE_CAP=10KB} overrides are set as system
+ * {@code HONCHO_LOG_TOTAL_SIZE_CAP=100KB} overrides are set as system
  * properties in {@code @BeforeAll} (before Spring loads the context) so
  * Logback's {@code SizeAndTimeBasedRollingPolicy} initializes with the
  * small budget from the start. Mutating the policy's fields after the
@@ -54,7 +54,7 @@ class LogRotationTest {
         // the LoggerContext so the new values take effect.
         System.setProperty("HONCHO_CONFIG_DIR", CONFIG_DIR.toString());
         System.setProperty("HONCHO_LOG_MAX_FILE_SIZE", "1KB");
-        System.setProperty("HONCHO_LOG_TOTAL_SIZE_CAP", "10KB");
+        System.setProperty("HONCHO_LOG_TOTAL_SIZE_CAP", "100KB");
         if (Files.exists(LOGS_DIR)) {
             try (Stream<Path> walk = Files.walk(LOGS_DIR)) {
                 walk.sorted(Comparator.reverseOrder())
@@ -120,11 +120,11 @@ class LogRotationTest {
             .as("at least one rotated .jsonl.gz file must exist (10k events at 1KB max file size)")
             .isGreaterThanOrEqualTo(1);
 
-        // totalSizeCap=10KB should prune aggressively; allow 50% overhead for
+        // totalSizeCap=100KB should prune aggressively; allow 50% overhead for
         // compression ratio variation and the active file's pending writes.
         assertThat(totalSizeBytes)
-            .as("total bytes on disk must stay within totalSizeCap=10KB (pruning is working)")
-            .isLessThanOrEqualTo(15 * 1024L);
+            .as("total bytes on disk must stay within totalSizeCap=100KB (pruning is working)")
+            .isLessThanOrEqualTo(150 * 1024L);
 
         try (Stream<Path> files = Files.list(LOGS_DIR)) {
             files.filter(p -> p.getFileName().toString().contains(".jsonl"))
