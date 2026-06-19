@@ -64,15 +64,43 @@ resolve_config_dir() {
 }
 
 CONFIG_DIR="$(resolve_config_dir)"
-mkdir -p "$CONFIG_DIR"
+CONFIG_DIR_STATUS="exists"
+
+# Mirror HonchoConfigDirResolver.resolveOrCreate(): try the OS default first,
+# and on permission failure fall back to the XDG user dir. We do NOT fall back
+# when running as root -- a root-level permission denied is a real config
+# error and should fail loud, not silently relocate state.
+if [ ! -d "$CONFIG_DIR" ]; then
+    if ! mkdir -p "$CONFIG_DIR" 2>/dev/null; then
+        if [ "$(id -u)" -eq 0 ]; then
+            echo "honcho-inspector: config dir primary path is not writable by root: $CONFIG_DIR" >&2
+            echo "  (root hitting permission denied is a real config error, not a fallback case)" >&2
+            exit 1
+        fi
+        XDG_FALLBACK="${HOME:-.}/.local/etc/honcho-inspector"
+        echo "honcho-inspector: config dir primary path not writable ($CONFIG_DIR), falling back to $XDG_FALLBACK" >&2
+        if ! mkdir -p "$XDG_FALLBACK" 2>/dev/null; then
+            echo "honcho-inspector: config dir primary path ($CONFIG_DIR) is not writable" >&2
+            echo "  and the XDG user fallback ($XDG_FALLBACK) also failed" >&2
+            exit 1
+        fi
+        CONFIG_DIR="$XDG_FALLBACK"
+        CONFIG_DIR_STATUS="fallback"
+    else
+        CONFIG_DIR_STATUS="created"
+    fi
+fi
 
 JAVA_OPTS="${JAVA_OPTS:-} -Xms64m -Xmx256m"
+# Spring Boot properties are passed as JVM system properties (-D form), not
+# as `--key=value`. Java 9+ rejects `--key=value` in the JVM-args slot; the
+# `--` form is only valid as a Spring program argument (after -jar).
 SPRING_OPTS=(
-    "--spring.config.additional-location=file:${CONFIG_DIR}/"
-    "--logging.file.name=${HONCHO_LOG_DIR:-${CONFIG_DIR}}/honcho-inspector-backend.log"
+    "-Dspring.config.additional-location=file:${CONFIG_DIR}/"
+    "-Dlogging.file.name=${HONCHO_LOG_DIR:-${CONFIG_DIR}}/honcho-inspector-backend.log"
 )
 
-echo "honcho-inspector: starting with jar=$JAR_FILE config-dir=$CONFIG_DIR" >&2
+echo "honcho-inspector: starting with jar=$JAR_FILE config-dir=$CONFIG_DIR [$CONFIG_DIR_STATUS]" >&2
 exec java $JAVA_OPTS \
     -Dspring.profiles.active="${SPRING_PROFILES_ACTIVE:-prod}" \
     "${SPRING_OPTS[@]}" \
