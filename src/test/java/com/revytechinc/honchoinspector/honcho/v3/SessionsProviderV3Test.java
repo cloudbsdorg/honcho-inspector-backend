@@ -34,8 +34,9 @@ import static org.mockito.Mockito.when;
  *       {@code POST}).</li>
  *   <li>URL construction produces the right absolute URL for the given
  *       {@code {ws}} and {@code {sessionId}} placeholders — verified via
- *       the package-private {@code buildUrl(...)} helper AND via a
- *       mocked {@link RestClient} chain that captures the URI passed to
+ *       {@link V3ProviderSupport#substitutePath} and
+ *       {@link V3ProviderSupport#buildUrl} AND via a mocked
+ *       {@link RestClient} chain that captures the URL passed to
  *       {@code .uri(...)}.</li>
  * </ol>
  */
@@ -64,11 +65,13 @@ class SessionsProviderV3Test {
             .as("provider is v3-only")
             .containsExactly(HonchoApiVersion.V3);
         assertThat(provider.pathTemplate(HonchoOperation.LIST_SESSIONS))
-            .isEqualTo("v3/workspaces/{ws}/sessions");
+            .isEqualTo("workspaces/{ws}/sessions");
         assertThat(provider.httpMethod(HonchoOperation.LIST_SESSIONS))
             .isEqualTo(HttpMethod.POST);
-        assertThat(provider.buildUrl(CTX, HonchoOperation.LIST_SESSIONS, wsVar("ws-42")))
-            .isEqualTo("https://api.honcho.dev/v3/workspaces/ws-42/sessions");
+        String template = provider.pathTemplate(HonchoOperation.LIST_SESSIONS);
+        String substituted = V3ProviderSupport.substitutePath(template, CTX, wsVar("ws-42"));
+        String url = V3ProviderSupport.buildUrl(CTX.baseUrl(), CTX.apiVersion().pathPrefix(), substituted, Map.of());
+        assertThat(url).isEqualTo("https://api.honcho.dev/v3/workspaces/ws-42/sessions");
     }
 
     @Test
@@ -78,11 +81,13 @@ class SessionsProviderV3Test {
         assertThat(provider.operations()).contains(HonchoOperation.CREATE_SESSION);
         assertThat(provider.supportedVersions()).containsExactly(HonchoApiVersion.V3);
         assertThat(provider.pathTemplate(HonchoOperation.CREATE_SESSION))
-            .isEqualTo("v3/workspaces/{ws}/sessions");
+            .isEqualTo("workspaces/{ws}/sessions");
         assertThat(provider.httpMethod(HonchoOperation.CREATE_SESSION))
             .isEqualTo(HttpMethod.POST);
-        assertThat(provider.buildUrl(CTX, HonchoOperation.CREATE_SESSION, wsVar("ws-42")))
-            .isEqualTo("https://api.honcho.dev/v3/workspaces/ws-42/sessions");
+        String template = provider.pathTemplate(HonchoOperation.CREATE_SESSION);
+        String substituted = V3ProviderSupport.substitutePath(template, CTX, wsVar("ws-42"));
+        String url = V3ProviderSupport.buildUrl(CTX.baseUrl(), CTX.apiVersion().pathPrefix(), substituted, Map.of());
+        assertThat(url).isEqualTo("https://api.honcho.dev/v3/workspaces/ws-42/sessions");
     }
 
     @Test
@@ -92,11 +97,13 @@ class SessionsProviderV3Test {
         assertThat(provider.operations()).contains(HonchoOperation.GET_SESSION);
         assertThat(provider.supportedVersions()).containsExactly(HonchoApiVersion.V3);
         assertThat(provider.pathTemplate(HonchoOperation.GET_SESSION))
-            .isEqualTo("v3/workspaces/{ws}/sessions/{sessionId}");
+            .isEqualTo("workspaces/{ws}/sessions/{sessionId}");
         assertThat(provider.httpMethod(HonchoOperation.GET_SESSION))
             .isEqualTo(HttpMethod.GET);
-        assertThat(provider.buildUrl(CTX, HonchoOperation.GET_SESSION, SESSION_PATH_VARS))
-            .isEqualTo("https://api.honcho.dev/v3/workspaces/ws-42/sessions/sess-abc");
+        String template = provider.pathTemplate(HonchoOperation.GET_SESSION);
+        String substituted = V3ProviderSupport.substitutePath(template, CTX, SESSION_PATH_VARS);
+        String url = V3ProviderSupport.buildUrl(CTX.baseUrl(), CTX.apiVersion().pathPrefix(), substituted, Map.of());
+        assertThat(url).isEqualTo("https://api.honcho.dev/v3/workspaces/ws-42/sessions/sess-abc");
     }
 
     @Test
@@ -106,11 +113,13 @@ class SessionsProviderV3Test {
         assertThat(provider.operations()).contains(HonchoOperation.DELETE_SESSION);
         assertThat(provider.supportedVersions()).containsExactly(HonchoApiVersion.V3);
         assertThat(provider.pathTemplate(HonchoOperation.DELETE_SESSION))
-            .isEqualTo("v3/workspaces/{ws}/sessions/{sessionId}");
+            .isEqualTo("workspaces/{ws}/sessions/{sessionId}");
         assertThat(provider.httpMethod(HonchoOperation.DELETE_SESSION))
             .isEqualTo(HttpMethod.DELETE);
-        assertThat(provider.buildUrl(CTX, HonchoOperation.DELETE_SESSION, SESSION_PATH_VARS))
-            .isEqualTo("https://api.honcho.dev/v3/workspaces/ws-42/sessions/sess-abc");
+        String template = provider.pathTemplate(HonchoOperation.DELETE_SESSION);
+        String substituted = V3ProviderSupport.substitutePath(template, CTX, SESSION_PATH_VARS);
+        String url = V3ProviderSupport.buildUrl(CTX.baseUrl(), CTX.apiVersion().pathPrefix(), substituted, Map.of());
+        assertThat(url).isEqualTo("https://api.honcho.dev/v3/workspaces/ws-42/sessions/sess-abc");
     }
 
     @Test
@@ -120,11 +129,13 @@ class SessionsProviderV3Test {
         assertThat(provider.operations()).contains(HonchoOperation.GET_SESSION_CONTEXT);
         assertThat(provider.supportedVersions()).containsExactly(HonchoApiVersion.V3);
         assertThat(provider.pathTemplate(HonchoOperation.GET_SESSION_CONTEXT))
-            .isEqualTo("v3/workspaces/{ws}/sessions/{sessionId}/context");
+            .isEqualTo("workspaces/{ws}/sessions/{sessionId}/context");
         assertThat(provider.httpMethod(HonchoOperation.GET_SESSION_CONTEXT))
             .isEqualTo(HttpMethod.GET);
-        assertThat(provider.buildUrl(CTX, HonchoOperation.GET_SESSION_CONTEXT, SESSION_PATH_VARS))
-            .isEqualTo("https://api.honcho.dev/v3/workspaces/ws-42/sessions/sess-abc/context");
+        String template = provider.pathTemplate(HonchoOperation.GET_SESSION_CONTEXT);
+        String substituted = V3ProviderSupport.substitutePath(template, CTX, SESSION_PATH_VARS);
+        String url = V3ProviderSupport.buildUrl(CTX.baseUrl(), CTX.apiVersion().pathPrefix(), substituted, Map.of());
+        assertThat(url).isEqualTo("https://api.honcho.dev/v3/workspaces/ws-42/sessions/sess-abc/context");
     }
 
     @Test
@@ -134,11 +145,13 @@ class SessionsProviderV3Test {
         assertThat(provider.operations()).contains(HonchoOperation.GET_SESSION_SUMMARIES);
         assertThat(provider.supportedVersions()).containsExactly(HonchoApiVersion.V3);
         assertThat(provider.pathTemplate(HonchoOperation.GET_SESSION_SUMMARIES))
-            .isEqualTo("v3/workspaces/{ws}/sessions/{sessionId}/summaries");
+            .isEqualTo("workspaces/{ws}/sessions/{sessionId}/summaries");
         assertThat(provider.httpMethod(HonchoOperation.GET_SESSION_SUMMARIES))
             .isEqualTo(HttpMethod.GET);
-        assertThat(provider.buildUrl(CTX, HonchoOperation.GET_SESSION_SUMMARIES, SESSION_PATH_VARS))
-            .isEqualTo("https://api.honcho.dev/v3/workspaces/ws-42/sessions/sess-abc/summaries");
+        String template = provider.pathTemplate(HonchoOperation.GET_SESSION_SUMMARIES);
+        String substituted = V3ProviderSupport.substitutePath(template, CTX, SESSION_PATH_VARS);
+        String url = V3ProviderSupport.buildUrl(CTX.baseUrl(), CTX.apiVersion().pathPrefix(), substituted, Map.of());
+        assertThat(url).isEqualTo("https://api.honcho.dev/v3/workspaces/ws-42/sessions/sess-abc/summaries");
     }
 
     @Test
@@ -148,17 +161,19 @@ class SessionsProviderV3Test {
         assertThat(provider.operations()).contains(HonchoOperation.GET_SESSION_PEERS);
         assertThat(provider.supportedVersions()).containsExactly(HonchoApiVersion.V3);
         assertThat(provider.pathTemplate(HonchoOperation.GET_SESSION_PEERS))
-            .isEqualTo("v3/workspaces/{ws}/sessions/{sessionId}/peers");
+            .isEqualTo("workspaces/{ws}/sessions/{sessionId}/peers");
         assertThat(provider.httpMethod(HonchoOperation.GET_SESSION_PEERS))
             .isEqualTo(HttpMethod.GET);
-        assertThat(provider.buildUrl(CTX, HonchoOperation.GET_SESSION_PEERS, SESSION_PATH_VARS))
-            .isEqualTo("https://api.honcho.dev/v3/workspaces/ws-42/sessions/sess-abc/peers");
+        String template = provider.pathTemplate(HonchoOperation.GET_SESSION_PEERS);
+        String substituted = V3ProviderSupport.substitutePath(template, CTX, SESSION_PATH_VARS);
+        String url = V3ProviderSupport.buildUrl(CTX.baseUrl(), CTX.apiVersion().pathPrefix(), substituted, Map.of());
+        assertThat(url).isEqualTo("https://api.honcho.dev/v3/workspaces/ws-42/sessions/sess-abc/peers");
     }
 
     @Test
     void execute_callsRestClientWithCorrectUrlAndMethod() {
         // One full integration test: drive execute() through a mocked
-        // RestClient chain and verify the URI captured by the mock.
+        // RestClient chain and verify the URL captured by the mock.
         // The RestClient.Builder pattern is exercised by constructing
         // the provider with a mocked client; this confirms the wiring
         // between pathTemplate, httpMethod, and the actual HTTP call.
@@ -167,7 +182,7 @@ class SessionsProviderV3Test {
         RestClient.ResponseSpec mockResponseSpec = mock(RestClient.ResponseSpec.class);
 
         when(mockClient.method(any(HttpMethod.class))).thenReturn(mockUriSpec);
-        when(mockUriSpec.uri((java.net.URI) any())).thenReturn(mockUriSpec);
+        when(mockUriSpec.uri((String) any())).thenReturn(mockUriSpec);
         when(mockUriSpec.headers(any())).thenReturn(mockUriSpec);
         when(mockUriSpec.contentType(any())).thenReturn(mockUriSpec);
         when(mockUriSpec.retrieve()).thenReturn(mockResponseSpec);
@@ -189,15 +204,15 @@ class SessionsProviderV3Test {
         String expectedUrl = "https://api.honcho.dev/v3/workspaces/ws-42/sessions/sess-abc";
         verify(mockClient, atLeastOnce()).method(argThat(m -> m == HttpMethod.GET));
         verify(mockUriSpec, atLeastOnce()).uri(
-            argThat((java.net.URI uri) -> uri != null && uri.toString().equals(expectedUrl))
+            argThat((String url) -> url != null && url.equals(expectedUrl))
         );
     }
 
     /**
      * Build a provider whose {@code RestClient} is a Mockito mock with a
      * fully stubbed chain — sufficient to satisfy the per-test URL/method
-     * assertions against the package-private {@code buildUrl(...)} helper
-     * without hitting the network.
+     * assertions against {@link V3ProviderSupport} without hitting the
+     * network.
      */
     private static SessionsProviderV3 providerWithMockedClient() {
         RestClient mockClient = mock(RestClient.class);

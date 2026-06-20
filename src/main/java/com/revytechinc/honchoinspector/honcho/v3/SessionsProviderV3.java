@@ -6,7 +6,6 @@ import com.revytechinc.honchoinspector.honcho.HonchoClient;
 import com.revytechinc.honchoinspector.honcho.HonchoOperation;
 import com.revytechinc.honchoinspector.honcho.HonchoProvider;
 import com.revytechinc.honchoinspector.model.HonchoContext;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -14,9 +13,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestClient;
 
-import java.net.URI;
 import java.util.EnumSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -64,11 +61,11 @@ public class SessionsProviderV3 implements HonchoProvider {
     @Override
     public String pathTemplate(HonchoOperation op) {
         return switch (op) {
-            case LIST_SESSIONS, CREATE_SESSION -> "v3/workspaces/{ws}/sessions";
-            case GET_SESSION, DELETE_SESSION -> "v3/workspaces/{ws}/sessions/{sessionId}";
-            case GET_SESSION_CONTEXT -> "v3/workspaces/{ws}/sessions/{sessionId}/context";
-            case GET_SESSION_SUMMARIES -> "v3/workspaces/{ws}/sessions/{sessionId}/summaries";
-            case GET_SESSION_PEERS -> "v3/workspaces/{ws}/sessions/{sessionId}/peers";
+            case LIST_SESSIONS, CREATE_SESSION -> "workspaces/{ws}/sessions";
+            case GET_SESSION, DELETE_SESSION -> "workspaces/{ws}/sessions/{sessionId}";
+            case GET_SESSION_CONTEXT -> "workspaces/{ws}/sessions/{sessionId}/context";
+            case GET_SESSION_SUMMARIES -> "workspaces/{ws}/sessions/{sessionId}/summaries";
+            case GET_SESSION_PEERS -> "workspaces/{ws}/sessions/{sessionId}/peers";
             default -> throw new UnsupportedOperationException(
                 "SessionsProviderV3 has no path template for " + op);
         };
@@ -98,22 +95,13 @@ public class SessionsProviderV3 implements HonchoProvider {
         Map<String, String> pathVars,
         Map<String, ?> queryParams
     ) throws HonchoCallException {
-        String url = buildUrl(ctx, op, pathVars);
-        HttpMethod method = httpMethod(op);
+        String substituted = V3ProviderSupport.substitutePath(pathTemplate(op), ctx, pathVars);
+        String url = V3ProviderSupport.buildUrl(ctx.baseUrl(), ctx.apiVersion().pathPrefix(), substituted, queryParams);
         try {
-            var spec = http.method(method)
-                .uri(URI.create(url))
-                .headers(h -> applyAuth(h, ctx))
+            var spec = http.method(httpMethod(op))
+                .uri(url)
+                .headers(h -> V3ProviderSupport.applyAuth(h, ctx))
                 .contentType(MediaType.APPLICATION_JSON);
-
-            if (queryParams != null && !queryParams.isEmpty()) {
-                url = url + (url.contains("?") ? "&" : "?") + encodeQuery(queryParams);
-                spec = http.method(method)
-                    .uri(URI.create(url))
-                    .headers(h -> applyAuth(h, ctx))
-                    .contentType(MediaType.APPLICATION_JSON);
-            }
-
             ResponseEntity<Object> response;
             if (requestBody != null) {
                 response = spec.body(requestBody).retrieve().toEntity(Object.class);
@@ -122,73 +110,9 @@ public class SessionsProviderV3 implements HonchoProvider {
             }
             return response.getBody();
         } catch (HttpStatusCodeException e) {
-            throw new HonchoCallException(
-                "Honcho returned " + e.getStatusCode() + ": " + safeBody(e),
-                e.getStatusCode().value(),
-                safeBody(e)
-            );
-        } catch (HonchoCallException e) {
-            throw e;
+            throw V3ProviderSupport.toHonchoCallException(e);
         } catch (Exception e) {
-            throw new HonchoCallException(
-                "Cannot reach Honcho at " + ctx.baseUrl() + ": " + e.getMessage(),
-                502,
-                null
-            );
+            throw V3ProviderSupport.transportFailure(ctx.baseUrl(), e);
         }
-    }
-
-    /**
-     * Build the fully-resolved upstream URL for a given operation. Package
-     * private so the unit test can verify URL construction directly without
-     * needing to mock the entire {@code RestClient} chain.
-     *
-     * @param ctx      the per-request Honcho context
-     * @param op       the operation whose template drives the URL shape
-     * @param pathVars map of path-variable placeholders ({@code ws},
-     *                 {@code sessionId}); when a key is missing the value
-     *                 falls back to {@code ctx.workspaceId()} for {@code ws}
-     *                 and to the empty string for {@code sessionId}
-     * @return the absolute URL with placeholders substituted
-     */
-    String buildUrl(HonchoContext ctx, HonchoOperation op, Map<String, String> pathVars) {
-        String base = sanitizeBase(ctx.baseUrl());
-        String template = pathTemplate(op);
-        String ws = pathVars != null && pathVars.get("ws") != null
-            ? pathVars.get("ws")
-            : ctx.workspaceId();
-        String sessionId = pathVars != null ? pathVars.get("sessionId") : null;
-        String path = template
-            .replace("{ws}", ws)
-            .replace("{sessionId}", sessionId == null ? "" : sessionId);
-        return base + "/" + path;
-    }
-
-    private void applyAuth(HttpHeaders headers, HonchoContext ctx) {
-        headers.setBearerAuth(ctx.apiKey());
-        headers.set("X-Honcho-User-Name", ctx.userName());
-        headers.setAccept(List.of(MediaType.APPLICATION_JSON));
-    }
-
-    private static String sanitizeBase(String base) {
-        var b = base.trim();
-        while (b.endsWith("/")) b = b.substring(0, b.length() - 1);
-        if (b.endsWith("/mcp")) b = b.substring(0, b.length() - 4);
-        return b;
-    }
-
-    private static String encodeQuery(Map<String, ?> query) {
-        return query.entrySet().stream()
-            .filter(e -> e.getValue() != null)
-            .map(e -> e.getKey() + "=" + java.net.URLEncoder.encode(
-                e.getValue().toString(), java.nio.charset.StandardCharsets.UTF_8))
-            .reduce((a, b) -> a + "&" + b)
-            .orElse("");
-    }
-
-    private static String safeBody(HttpStatusCodeException e) {
-        var body = e.getResponseBodyAsString();
-        if (body == null) return "";
-        return body.length() > 500 ? body.substring(0, 500) + "..." : body;
     }
 }
