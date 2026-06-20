@@ -3,6 +3,7 @@ package com.revytechinc.honchoinspector.honcho;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.EnumMap;
+import java.util.EnumSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -186,5 +187,27 @@ public class HonchoProviderRegistry {
      */
     public HonchoApiVersion version() {
         return version;
+    }
+
+    /**
+     * Verify that every {@link HonchoOperation} known to this registry's
+     * API version has at least one provider. Production wiring
+     * ({@code HonchoV3Client}) calls this immediately after construction
+     * so a misconfigured deployment fails fast at boot rather than
+     * surfacing as a 500 on the first request for an uncovered op.
+     *
+     * @throws IllegalStateException if any operation is uncovered.
+     */
+    public void validateFullCoverage() {
+        Set<HonchoOperation> uncovered = EnumSet.noneOf(HonchoOperation.class);
+        for (HonchoOperation op : HonchoOperation.values()) {
+            if (!providersByOperation.containsKey(op)) {
+                uncovered.add(op);
+            }
+        }
+        if (!uncovered.isEmpty()) {
+            throw new IllegalStateException(
+                "HonchoProviderRegistry(version=" + version + ") is missing providers for operations: " + uncovered);
+        }
     }
 }

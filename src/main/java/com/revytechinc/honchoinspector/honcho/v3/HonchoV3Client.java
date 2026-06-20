@@ -79,6 +79,7 @@ public class HonchoV3Client implements HonchoClient {
      */
     public HonchoV3Client(List<HonchoProvider> allProviders) {
         this.registry = new HonchoProviderRegistry(HonchoApiVersion.V3, allProviders);
+        this.registry.validateFullCoverage();
     }
 
     @Override
