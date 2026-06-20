@@ -1,6 +1,5 @@
 package com.revytechinc.honchoinspector.honcho.v3;
 
-import java.net.URI;
 import java.util.Map;
 
 import org.junit.jupiter.api.Test;
@@ -17,8 +16,9 @@ import static org.mockito.Mockito.mock;
 /**
  * Contract test for {@link PeersProviderV3}. Five tests, one per operation
  * the provider owns. Each test verifies the four things the registry will
- * rely on for that op, plus the absolute URL that the package-private
- * {@code substitutePath} + {@code buildUri} helpers produce:
+ * rely on for that op, plus the absolute URL that
+ * {@link V3ProviderSupport#substitutePath} +
+ * {@link V3ProviderSupport#buildUrl} produce:
  * <ol>
  *   <li>{@code operations()} advertises the op under test.</li>
  *   <li>{@code supportedVersions()} returns exactly {@code {V3}}.</li>
@@ -51,13 +51,13 @@ class PeersProviderV3Test {
             .containsExactly(HonchoApiVersion.V3);
         assertThat(provider.pathTemplate(HonchoOperation.LIST_PEERS))
             .as("LIST_PEERS is the workspace peers collection; v3 promoted it to POST /peers/list")
-            .isEqualTo("v3/workspaces/{ws}/peers/list");
+            .isEqualTo("workspaces/{ws}/peers/list");
         assertThat(provider.httpMethod(HonchoOperation.LIST_PEERS))
             .as("LIST_PEERS is POST in v3 (was GET in v2)")
             .isEqualTo(HttpMethod.POST);
         assertThat(urlFor(HonchoOperation.LIST_PEERS, Map.of()))
             .as("URL must include the ws placeholder and the /peers/list suffix")
-            .hasToString("https://api.honcho.dev/v3/workspaces/ws-42/peers/list");
+            .isEqualTo("https://api.honcho.dev/v3/workspaces/ws-42/peers/list");
     }
 
     @Test
@@ -69,12 +69,12 @@ class PeersProviderV3Test {
         assertThat(provider.supportedVersions())
             .containsExactly(HonchoApiVersion.V3);
         assertThat(provider.pathTemplate(HonchoOperation.CREATE_PEER))
-            .isEqualTo("v3/workspaces/{ws}/peers");
+            .isEqualTo("workspaces/{ws}/peers");
         assertThat(provider.httpMethod(HonchoOperation.CREATE_PEER))
             .isEqualTo(HttpMethod.POST);
         assertThat(urlFor(HonchoOperation.CREATE_PEER, Map.of()))
             .as("URL must include the ws placeholder; no /list suffix on create")
-            .hasToString("https://api.honcho.dev/v3/workspaces/ws-42/peers");
+            .isEqualTo("https://api.honcho.dev/v3/workspaces/ws-42/peers");
     }
 
     @Test
@@ -86,12 +86,12 @@ class PeersProviderV3Test {
         assertThat(provider.supportedVersions())
             .containsExactly(HonchoApiVersion.V3);
         assertThat(provider.pathTemplate(HonchoOperation.GET_PEER_CARD))
-            .isEqualTo("v3/workspaces/{ws}/peers/{peerId}/card");
+            .isEqualTo("workspaces/{ws}/peers/{peerId}/card");
         assertThat(provider.httpMethod(HonchoOperation.GET_PEER_CARD))
             .isEqualTo(HttpMethod.GET);
         assertThat(urlFor(HonchoOperation.GET_PEER_CARD, PEER_PATH_VARS))
             .as("URL must include both {ws} and {peerId} placeholders")
-            .hasToString("https://api.honcho.dev/v3/workspaces/ws-42/peers/p-99/card");
+            .isEqualTo("https://api.honcho.dev/v3/workspaces/ws-42/peers/p-99/card");
     }
 
     @Test
@@ -103,12 +103,12 @@ class PeersProviderV3Test {
         assertThat(provider.supportedVersions())
             .containsExactly(HonchoApiVersion.V3);
         assertThat(provider.pathTemplate(HonchoOperation.UPDATE_PEER_CARD))
-            .isEqualTo("v3/workspaces/{ws}/peers/{peerId}/card");
+            .isEqualTo("workspaces/{ws}/peers/{peerId}/card");
         assertThat(provider.httpMethod(HonchoOperation.UPDATE_PEER_CARD))
             .isEqualTo(HttpMethod.POST);
         assertThat(urlFor(HonchoOperation.UPDATE_PEER_CARD, PEER_PATH_VARS))
             .as("URL must include both {ws} and {peerId} placeholders")
-            .hasToString("https://api.honcho.dev/v3/workspaces/ws-42/peers/p-99/card");
+            .isEqualTo("https://api.honcho.dev/v3/workspaces/ws-42/peers/p-99/card");
     }
 
     @Test
@@ -120,12 +120,12 @@ class PeersProviderV3Test {
         assertThat(provider.supportedVersions())
             .containsExactly(HonchoApiVersion.V3);
         assertThat(provider.pathTemplate(HonchoOperation.GET_REPRESENTATION))
-            .isEqualTo("v3/workspaces/{ws}/peers/{peerId}/representation");
+            .isEqualTo("workspaces/{ws}/peers/{peerId}/representation");
         assertThat(provider.httpMethod(HonchoOperation.GET_REPRESENTATION))
             .isEqualTo(HttpMethod.GET);
         assertThat(urlFor(HonchoOperation.GET_REPRESENTATION, PEER_PATH_VARS))
             .as("URL must include the {peerId} placeholder and the /representation suffix")
-            .hasToString("https://api.honcho.dev/v3/workspaces/ws-42/peers/p-99/representation");
+            .isEqualTo("https://api.honcho.dev/v3/workspaces/ws-42/peers/p-99/representation");
     }
 
     private static PeersProviderV3 newProvider() {
@@ -133,10 +133,10 @@ class PeersProviderV3Test {
         return new PeersProviderV3(mockClient);
     }
 
-    private static URI urlFor(HonchoOperation op, Map<String, String> pathVars) {
+    private static String urlFor(HonchoOperation op, Map<String, String> pathVars) {
         PeersProviderV3 provider = newProvider();
         String template = provider.pathTemplate(op);
-        String substituted = PeersProviderV3.substitutePath(template, CTX, pathVars);
-        return PeersProviderV3.buildUri(CTX, substituted, Map.of());
+        String substituted = V3ProviderSupport.substitutePath(template, CTX, pathVars);
+        return V3ProviderSupport.buildUrl(CTX.baseUrl(), CTX.apiVersion().pathPrefix(), substituted, Map.of());
     }
 }
