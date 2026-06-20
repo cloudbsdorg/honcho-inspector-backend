@@ -139,7 +139,7 @@ class MdcEnrichmentTest extends IntegrationTestBase {
     @DisplayName("HonchoV3Client sets peer_id in MDC when pathVars contains peerId")
     void v3Client_setsPeerIdMdc() throws Exception {
         HonchoProvider provider = mock(HonchoProvider.class);
-        when(provider.operations()).thenReturn(EnumSet.of(HonchoOperation.GET_PEER_CARD));
+        when(provider.operations()).thenReturn(EnumSet.allOf(HonchoOperation.class));
         when(provider.supportedVersions()).thenReturn(EnumSet.of(HonchoApiVersion.V3));
         AtomicReference<Map<String, String>> mdcAtCall = new AtomicReference<>();
         doAnswer(inv -> {

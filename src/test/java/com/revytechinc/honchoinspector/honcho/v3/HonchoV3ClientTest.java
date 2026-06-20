@@ -491,7 +491,7 @@ class HonchoV3ClientTest {
 
     @Test
     void supportedVersionsIsV3() {
-        HonchoV3Client client = new HonchoV3Client(List.of());
+        HonchoV3Client client = new HonchoV3Client(List.of(new CapturingProvider()));
 
         assertThat(client.supportedVersions())
             .containsExactly(HonchoApiVersion.V3);
@@ -501,7 +501,7 @@ class HonchoV3ClientTest {
     void honchoClientFactoryIndexesThisClientForV3() {
         // Spring normally discovers HonchoV3Client via @Component + constructor injection of List<HonchoProvider>.
         // The factory test emulates that by passing the client directly, which is what HonchoClientFactory(List<HonchoClient>) does.
-        HonchoV3Client v3 = new HonchoV3Client(List.of());
+        HonchoV3Client v3 = new HonchoV3Client(List.of(new CapturingProvider()));
         HonchoClientFactory factory = new HonchoClientFactory(List.of(v3));
 
         assertThat(factory.clientFor(HonchoApiVersion.V3)).isSameAs(v3);
@@ -522,7 +522,7 @@ class HonchoV3ClientTest {
         when(throwing.execute(eq(HonchoOperation.LIST_PEERS), any(), any(), any(), any(), any()))
             .thenThrow(toThrow);
 
-        HonchoV3Client client = new HonchoV3Client(List.of(throwing));
+        HonchoV3Client client = new HonchoV3Client(List.of(new CapturingProvider(), throwing));
 
         assertThatThrownBy(() -> client.listPeers(CTX, null))
             .isSameAs(toThrow);
@@ -530,13 +530,9 @@ class HonchoV3ClientTest {
 
     @Test
     void missingProviderThrowsIllegalState() {
-        // Wire the client with NO providers. Every dispatch should fail with the
-        // registry's "no HonchoProvider registered" IllegalStateException.
-        HonchoV3Client client = new HonchoV3Client(List.of());
-
-        assertThatThrownBy(() -> client.listPeers(CTX, null))
+        assertThatThrownBy(() -> new HonchoV3Client(List.of()))
             .isInstanceOf(IllegalStateException.class)
-            .hasMessageContaining("LIST_PEERS")
+            .hasMessageContaining("missing providers for operations")
             .hasMessageContaining("V3");
     }
 
@@ -560,21 +556,20 @@ class HonchoV3ClientTest {
         when(v2Only.supportedVersions()).thenReturn(EnumSet.of(HonchoApiVersion.V2));
         when(v2Only.operations()).thenReturn(EnumSet.allOf(HonchoOperation.class));
 
-        HonchoV3Client client = new HonchoV3Client(List.of(v2Only));
+        HonchoV3Client client = new HonchoV3Client(List.of(new CapturingProvider(), v2Only));
 
-        assertThatThrownBy(() -> client.listPeers(CTX, null))
-            .isInstanceOf(IllegalStateException.class)
-            .hasMessageContaining("V3");
+        Object result = client.listPeers(CTX, null);
+        assertThat(result).isNotNull();
 
         // The V2-only provider must not have been called.
         verify(v2Only, org.mockito.Mockito.never()).execute(
             any(), any(), any(), any(), any(), any());
     }
 
-    @Test
+@Test
     void usesHonchoProviderRegistry() {
         // The HonchoV3Client constructor must build a HonchoProviderRegistry for V3
-        // from the supplied providers \u2014 not a different dispatch table. We can't
+        // from the supplied providers — not a different dispatch table. We can't
         // reach the private field directly, but we can confirm the behaviour by
         // confirming the registry's "first wins" semantics apply: pass two providers
         // that both claim the same op and verify the one that sorted first wins.
@@ -582,8 +577,8 @@ class HonchoV3ClientTest {
         HonchoProvider beta = mock(HonchoProvider.class);
         when(alpha.supportedVersions()).thenReturn(EnumSet.of(HonchoApiVersion.V3));
         when(beta.supportedVersions()).thenReturn(EnumSet.of(HonchoApiVersion.V3));
-        when(alpha.operations()).thenReturn(EnumSet.of(HonchoOperation.LIST_PEERS));
-        when(beta.operations()).thenReturn(EnumSet.of(HonchoOperation.LIST_PEERS));
+        when(alpha.operations()).thenReturn(EnumSet.allOf(HonchoOperation.class));
+        when(beta.operations()).thenReturn(EnumSet.allOf(HonchoOperation.class));
         Object alphaMarker = new Object();
         Object betaMarker = new Object();
         when(alpha.execute(any(), any(), any(), any(), any(), any())).thenReturn(alphaMarker);
