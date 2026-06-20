@@ -1,6 +1,5 @@
 package com.revytechinc.honchoinspector.honcho.v3;
 
-import java.net.URI;
 import java.util.Map;
 
 import org.junit.jupiter.api.Test;
@@ -17,9 +16,9 @@ import static org.mockito.Mockito.mock;
 /**
  * Contract test for {@link PeerQueryProviderV3}. Five tests, one per
  * operation the provider owns. Each test verifies the four things the
- * registry will rely on for that op, plus the absolute URL that the
- * package-private {@code substitutePath} + {@code buildUri} helpers
- * produce:
+ * registry will rely on for that op, plus the absolute URL that
+ * {@link V3ProviderSupport#substitutePath} +
+ * {@link V3ProviderSupport#buildUrl} produce:
  * <ol>
  *   <li>{@code operations()} advertises the op under test.</li>
  *   <li>{@code supportedVersions()} returns exactly {@code {V3}}.</li>
@@ -52,12 +51,12 @@ class PeerQueryProviderV3Test {
             .as("PeerQueryProviderV3 is v3-only")
             .containsExactly(HonchoApiVersion.V3);
         assertThat(provider.pathTemplate(HonchoOperation.PEER_CHAT))
-            .isEqualTo("v3/workspaces/{ws}/peers/{peerId}/chat");
+            .isEqualTo("workspaces/{ws}/peers/{peerId}/chat");
         assertThat(provider.httpMethod(HonchoOperation.PEER_CHAT))
             .isEqualTo(HttpMethod.POST);
         assertThat(urlFor(HonchoOperation.PEER_CHAT, PEER_PATH_VARS))
             .as("URL must include both {ws} and {peerId} placeholders and the /chat suffix")
-            .hasToString("https://api.honcho.dev/v3/workspaces/ws-42/peers/p-99/chat");
+            .isEqualTo("https://api.honcho.dev/v3/workspaces/ws-42/peers/p-99/chat");
     }
 
     @Test
@@ -69,12 +68,12 @@ class PeerQueryProviderV3Test {
         assertThat(provider.supportedVersions())
             .containsExactly(HonchoApiVersion.V3);
         assertThat(provider.pathTemplate(HonchoOperation.SEARCH_PEERS))
-            .isEqualTo("v3/workspaces/{ws}/peers/{peerId}/search");
+            .isEqualTo("workspaces/{ws}/peers/{peerId}/search");
         assertThat(provider.httpMethod(HonchoOperation.SEARCH_PEERS))
             .isEqualTo(HttpMethod.POST);
         assertThat(urlFor(HonchoOperation.SEARCH_PEERS, PEER_PATH_VARS))
             .as("URL must include both {ws} and {peerId} placeholders and the /search suffix")
-            .hasToString("https://api.honcho.dev/v3/workspaces/ws-42/peers/p-99/search");
+            .isEqualTo("https://api.honcho.dev/v3/workspaces/ws-42/peers/p-99/search");
     }
 
     @Test
@@ -86,12 +85,12 @@ class PeerQueryProviderV3Test {
         assertThat(provider.supportedVersions())
             .containsExactly(HonchoApiVersion.V3);
         assertThat(provider.pathTemplate(HonchoOperation.LIST_PEER_CONCLUSIONS))
-            .isEqualTo("v3/workspaces/{ws}/peers/{peerId}/conclusions");
+            .isEqualTo("workspaces/{ws}/peers/{peerId}/conclusions");
         assertThat(provider.httpMethod(HonchoOperation.LIST_PEER_CONCLUSIONS))
             .isEqualTo(HttpMethod.GET);
         assertThat(urlFor(HonchoOperation.LIST_PEER_CONCLUSIONS, PEER_PATH_VARS))
             .as("URL must include both {ws} and {peerId} placeholders and the /conclusions suffix")
-            .hasToString("https://api.honcho.dev/v3/workspaces/ws-42/peers/p-99/conclusions");
+            .isEqualTo("https://api.honcho.dev/v3/workspaces/ws-42/peers/p-99/conclusions");
     }
 
     @Test
@@ -103,12 +102,12 @@ class PeerQueryProviderV3Test {
         assertThat(provider.supportedVersions())
             .containsExactly(HonchoApiVersion.V3);
         assertThat(provider.pathTemplate(HonchoOperation.LIST_PEER_SESSIONS))
-            .isEqualTo("v3/workspaces/{ws}/peers/{peerId}/sessions");
+            .isEqualTo("workspaces/{ws}/peers/{peerId}/sessions");
         assertThat(provider.httpMethod(HonchoOperation.LIST_PEER_SESSIONS))
             .isEqualTo(HttpMethod.GET);
         assertThat(urlFor(HonchoOperation.LIST_PEER_SESSIONS, PEER_PATH_VARS))
             .as("URL must include both {ws} and {peerId} placeholders and the /sessions suffix")
-            .hasToString("https://api.honcho.dev/v3/workspaces/ws-42/peers/p-99/sessions");
+            .isEqualTo("https://api.honcho.dev/v3/workspaces/ws-42/peers/p-99/sessions");
     }
 
     @Test
@@ -120,12 +119,12 @@ class PeerQueryProviderV3Test {
         assertThat(provider.supportedVersions())
             .containsExactly(HonchoApiVersion.V3);
         assertThat(provider.pathTemplate(HonchoOperation.QUERY_PEER_CONCLUSIONS))
-            .isEqualTo("v3/workspaces/{ws}/peers/{peerId}/conclusions/query");
+            .isEqualTo("workspaces/{ws}/peers/{peerId}/conclusions/query");
         assertThat(provider.httpMethod(HonchoOperation.QUERY_PEER_CONCLUSIONS))
             .isEqualTo(HttpMethod.POST);
         assertThat(urlFor(HonchoOperation.QUERY_PEER_CONCLUSIONS, PEER_PATH_VARS))
             .as("URL must include both {ws} and {peerId} placeholders and the /conclusions/query suffix")
-            .hasToString("https://api.honcho.dev/v3/workspaces/ws-42/peers/p-99/conclusions/query");
+            .isEqualTo("https://api.honcho.dev/v3/workspaces/ws-42/peers/p-99/conclusions/query");
     }
 
     private static PeerQueryProviderV3 newProvider() {
@@ -133,10 +132,10 @@ class PeerQueryProviderV3Test {
         return new PeerQueryProviderV3(mockClient);
     }
 
-    private static URI urlFor(HonchoOperation op, Map<String, String> pathVars) {
+    private static String urlFor(HonchoOperation op, Map<String, String> pathVars) {
         PeerQueryProviderV3 provider = newProvider();
         String template = provider.pathTemplate(op);
-        String substituted = PeerQueryProviderV3.substitutePath(template, CTX, pathVars);
-        return PeerQueryProviderV3.buildUri(CTX, substituted, Map.of());
+        String substituted = V3ProviderSupport.substitutePath(template, CTX, pathVars);
+        return V3ProviderSupport.buildUrl(CTX.baseUrl(), CTX.apiVersion().pathPrefix(), substituted, Map.of());
     }
 }
