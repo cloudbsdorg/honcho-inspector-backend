@@ -62,7 +62,7 @@ class PeersProviderV3UnitTest {
             .as("PeersProviderV3 is v3-only — no other version should be claimed")
             .isEqualTo(Set.of(HonchoApiVersion.V3));
         assertThat(provider.pathTemplate(HonchoOperation.LIST_PEERS))
-            .isEqualTo("v3/workspaces/{ws}/peers/list");
+            .isEqualTo("workspaces/{ws}/peers/list");
         assertThat(provider.httpMethod(HonchoOperation.LIST_PEERS))
             .as("v2→v3 contract change: LIST_PEERS is now POST")
             .isEqualTo(HttpMethod.POST);
@@ -76,7 +76,7 @@ class PeersProviderV3UnitTest {
         assertThat(provider.supportedVersions())
             .isEqualTo(Set.of(HonchoApiVersion.V3));
         assertThat(provider.pathTemplate(HonchoOperation.CREATE_PEER))
-            .isEqualTo("v3/workspaces/{ws}/peers");
+            .isEqualTo("workspaces/{ws}/peers");
         assertThat(provider.httpMethod(HonchoOperation.CREATE_PEER))
             .isEqualTo(HttpMethod.POST);
     }
@@ -89,7 +89,7 @@ class PeersProviderV3UnitTest {
         assertThat(provider.supportedVersions())
             .isEqualTo(Set.of(HonchoApiVersion.V3));
         assertThat(provider.pathTemplate(HonchoOperation.GET_PEER_CARD))
-            .isEqualTo("v3/workspaces/{ws}/peers/{peerId}/card");
+            .isEqualTo("workspaces/{ws}/peers/{peerId}/card");
         assertThat(provider.httpMethod(HonchoOperation.GET_PEER_CARD))
             .isEqualTo(HttpMethod.GET);
     }
@@ -102,7 +102,7 @@ class PeersProviderV3UnitTest {
         assertThat(provider.supportedVersions())
             .isEqualTo(Set.of(HonchoApiVersion.V3));
         assertThat(provider.pathTemplate(HonchoOperation.UPDATE_PEER_CARD))
-            .isEqualTo("v3/workspaces/{ws}/peers/{peerId}/card");
+            .isEqualTo("workspaces/{ws}/peers/{peerId}/card");
         assertThat(provider.httpMethod(HonchoOperation.UPDATE_PEER_CARD))
             .isEqualTo(HttpMethod.POST);
     }
@@ -115,7 +115,7 @@ class PeersProviderV3UnitTest {
         assertThat(provider.supportedVersions())
             .isEqualTo(Set.of(HonchoApiVersion.V3));
         assertThat(provider.pathTemplate(HonchoOperation.GET_REPRESENTATION))
-            .isEqualTo("v3/workspaces/{ws}/peers/{peerId}/representation");
+            .isEqualTo("workspaces/{ws}/peers/{peerId}/representation");
         assertThat(provider.httpMethod(HonchoOperation.GET_REPRESENTATION))
             .isEqualTo(HttpMethod.GET);
     }
@@ -128,7 +128,7 @@ class PeersProviderV3UnitTest {
         assertThat(provider.supportedVersions())
             .isEqualTo(Set.of(HonchoApiVersion.V3));
         assertThat(provider.pathTemplate(HonchoOperation.PEER_CHAT))
-            .isEqualTo("v3/workspaces/{ws}/peers/{peerId}/chat");
+            .isEqualTo("workspaces/{ws}/peers/{peerId}/chat");
         assertThat(provider.httpMethod(HonchoOperation.PEER_CHAT))
             .isEqualTo(HttpMethod.POST);
     }
@@ -141,7 +141,7 @@ class PeersProviderV3UnitTest {
         assertThat(provider.supportedVersions())
             .isEqualTo(Set.of(HonchoApiVersion.V3));
         assertThat(provider.pathTemplate(HonchoOperation.SEARCH_PEERS))
-            .isEqualTo("v3/workspaces/{ws}/peers/{peerId}/search");
+            .isEqualTo("workspaces/{ws}/peers/{peerId}/search");
         assertThat(provider.httpMethod(HonchoOperation.SEARCH_PEERS))
             .isEqualTo(HttpMethod.POST);
     }
@@ -154,7 +154,7 @@ class PeersProviderV3UnitTest {
         assertThat(provider.supportedVersions())
             .isEqualTo(Set.of(HonchoApiVersion.V3));
         assertThat(provider.pathTemplate(HonchoOperation.LIST_PEER_CONCLUSIONS))
-            .isEqualTo("v3/workspaces/{ws}/peers/{peerId}/conclusions");
+            .isEqualTo("workspaces/{ws}/peers/{peerId}/conclusions");
         assertThat(provider.httpMethod(HonchoOperation.LIST_PEER_CONCLUSIONS))
             .isEqualTo(HttpMethod.GET);
     }
@@ -167,7 +167,7 @@ class PeersProviderV3UnitTest {
         assertThat(provider.supportedVersions())
             .isEqualTo(Set.of(HonchoApiVersion.V3));
         assertThat(provider.pathTemplate(HonchoOperation.LIST_PEER_SESSIONS))
-            .isEqualTo("v3/workspaces/{ws}/peers/{peerId}/sessions");
+            .isEqualTo("workspaces/{ws}/peers/{peerId}/sessions");
         assertThat(provider.httpMethod(HonchoOperation.LIST_PEER_SESSIONS))
             .isEqualTo(HttpMethod.GET);
     }
@@ -180,7 +180,7 @@ class PeersProviderV3UnitTest {
         assertThat(provider.supportedVersions())
             .isEqualTo(Set.of(HonchoApiVersion.V3));
         assertThat(provider.pathTemplate(HonchoOperation.QUERY_PEER_CONCLUSIONS))
-            .isEqualTo("v3/workspaces/{ws}/peers/{peerId}/conclusions/query");
+            .isEqualTo("workspaces/{ws}/peers/{peerId}/conclusions/query");
         assertThat(provider.httpMethod(HonchoOperation.QUERY_PEER_CONCLUSIONS))
             .isEqualTo(HttpMethod.POST);
     }
