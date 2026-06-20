@@ -270,8 +270,8 @@ start. Keep the ephemeral mode for `dev`/`test` only.
 underlying `JdbcTemplate` will accept any length.
 
 **Why it matters.** A malicious or buggy UI can submit a 10MB `apiKey` and
-bloat the SQLite row. Spring's `server.tomcat.max-http-form-post-size`
-default is 2MB which is a coarse safety net, but a per-field cap is
+bloat the SQLite row. Spring's `server.jetty.max-http-form-post-size`
+provides a container-level safety net, but a per-field cap is
 cheaper and clearer.
 
 **Remediation.** Add `@Size(max = 4096)` (or whatever the largest plausible

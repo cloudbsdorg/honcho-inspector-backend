@@ -743,7 +743,7 @@ deployment is on `https://inspector.example.com/`.
       shows the strict CSP from §2.2.
 - [ ] `curl -sI https://inspector.example.com/ | grep -i server` shows
       the proxy's own banner (`nginx`, `Apache`, `Caddy`) — **not**
-      Spring, Tomcat, or a framework version.
+      Spring, Jetty, or a framework version.
 - [ ] `curl -sI https://inspector.example.com/api/health` returns
       `200 {"ok":true,...}` with the security headers still attached.
 - [ ] The backend port (8080) is **not** reachable from outside the
