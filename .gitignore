@@ -15,6 +15,11 @@ HELP.md
 *.db
 *.db-journal
 
+# Per-checkout runtime state for the shared IntelliJ dev run config
+# (HONCHO_CONFIG_DIR=.run-data in .run/DashboardApplication (dev).run.xml).
+# Wipable via `git clean -xdf`; never shared across team members.
+.run-data/
+
 # Sisyphus orchestrator working state (keep env.sh, evidence/, notepads/ in repo)
 logs/
 .sisyphus/boulder.json
