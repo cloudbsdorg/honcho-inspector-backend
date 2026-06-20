@@ -29,11 +29,11 @@ import static org.mockito.Mockito.mock;
  */
 class MessagesProviderV3Test {
 
-    private static final String MESSAGES_PATH = "sessions/{sessionId}/messages";
-    private static final String SEARCH_PATH   = "sessions/{sessionId}/search";
+    private static final String MESSAGES_PATH = "workspaces/{ws}/sessions/{sessionId}/messages";
+    private static final String SEARCH_PATH   = "workspaces/{ws}/sessions/{sessionId}/search";
 
     private static MessagesProviderV3 newProvider() {
-        return new MessagesProviderV3(mock(RestClient.Builder.class));
+        return new MessagesProviderV3(mock(RestClient.class));
     }
 
     @Test

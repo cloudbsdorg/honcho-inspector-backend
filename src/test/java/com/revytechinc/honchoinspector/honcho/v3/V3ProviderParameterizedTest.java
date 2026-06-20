@@ -48,7 +48,7 @@ class V3ProviderParameterizedTest {
             new PeersProviderV3(client),
             new PeerQueryProviderV3(client),
             new SessionsProviderV3(client),
-            new MessagesProviderV3(builder),
+            new MessagesProviderV3(client),
             new WorkspaceProviderV3(builder),
             new QueueStatusProviderV3(builder),
             new SearchProviderV3(builder),

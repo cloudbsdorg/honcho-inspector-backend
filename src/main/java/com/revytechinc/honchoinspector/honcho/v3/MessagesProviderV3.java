@@ -6,7 +6,6 @@ import com.revytechinc.honchoinspector.honcho.HonchoClient;
 import com.revytechinc.honchoinspector.honcho.HonchoOperation;
 import com.revytechinc.honchoinspector.honcho.HonchoProvider;
 import com.revytechinc.honchoinspector.model.HonchoContext;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -14,11 +13,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestClient;
 
-import java.net.URI;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.util.EnumSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -68,10 +63,10 @@ import java.util.Set;
 @Component
 public class MessagesProviderV3 implements HonchoProvider {
 
-    private final RestClient.Builder clientBuilder;
+    private final RestClient http;
 
-    public MessagesProviderV3(RestClient.Builder clientBuilder) {
-        this.clientBuilder = clientBuilder;
+    public MessagesProviderV3(RestClient honchoRestClient) {
+        this.http = honchoRestClient;
     }
 
     @Override
@@ -91,8 +86,8 @@ public class MessagesProviderV3 implements HonchoProvider {
     @Override
     public String pathTemplate(HonchoOperation op) {
         return switch (op) {
-            case LIST_SESSION_MESSAGES, ADD_MESSAGE -> "sessions/{sessionId}/messages";
-            case SEARCH_SESSION_MESSAGES -> "sessions/{sessionId}/search";
+            case LIST_SESSION_MESSAGES, ADD_MESSAGE -> "workspaces/{ws}/sessions/{sessionId}/messages";
+            case SEARCH_SESSION_MESSAGES -> "workspaces/{ws}/sessions/{sessionId}/search";
             default -> throw new UnsupportedOperationException(
                 "MessagesProviderV3 has no path template for " + op);
         };
@@ -118,115 +113,24 @@ public class MessagesProviderV3 implements HonchoProvider {
         Map<String, String> pathVars,
         Map<String, ?> queryParams
     ) throws HonchoCallException {
-        String sessionId = pathVars == null ? "" : pathVars.getOrDefault("sessionId", "");
-        String path = buildWorkspacePath(ctx, pathTemplate(op), Map.of("sessionId", sessionId));
-        return switch (op) {
-            case LIST_SESSION_MESSAGES ->
-                exchange(ctx, HttpMethod.GET, path, queryParams, null);
-            case ADD_MESSAGE ->
-                exchange(ctx, HttpMethod.POST, path, null, requestBody);
-            case SEARCH_SESSION_MESSAGES ->
-                exchange(ctx, HttpMethod.POST, path, null, requestBody);
-            default -> throw new HonchoCallException(
-                "MessagesProviderV3 does not handle " + op, 501, null);
-        };
-    }
-
-    private String buildWorkspacePath(HonchoContext ctx, String template, Map<String, String> pathVars) {
-        String ws = ctx.workspaceId();
-        StringBuilder out = new StringBuilder();
-        out.append(ctx.apiVersion().pathPrefix())
-           .append("/workspaces/").append(ws).append('/');
-        int i = 0;
-        while (i < template.length()) {
-            char c = template.charAt(i);
-            if (c == '{') {
-                int end = template.indexOf('}', i + 1);
-                if (end < 0) {
-                    throw new IllegalArgumentException("Unterminated '{' in path template: " + template);
-                }
-                String key = template.substring(i + 1, end);
-                String value = pathVars == null ? "" : pathVars.getOrDefault(key, "");
-                out.append(value);
-                i = end + 1;
-            } else {
-                out.append(c);
-                i++;
-            }
-        }
-        return out.toString();
-    }
-
-    private Object exchange(
-        HonchoContext ctx,
-        HttpMethod method,
-        String path,
-        Map<String, ?> query,
-        Object body
-    ) {
+        String substituted = V3ProviderSupport.substitutePath(pathTemplate(op), ctx, pathVars);
+        String url = V3ProviderSupport.buildUrl(ctx.baseUrl(), ctx.apiVersion().pathPrefix(), substituted, queryParams);
         try {
-            RestClient http = clientBuilder.baseUrl(sanitizeBase(ctx.baseUrl())).build();
-            var spec = http.method(method)
-                .uri(uri(ctx, path, query))
-                .headers(h -> applyAuth(h, ctx))
+            var spec = http.method(httpMethod(op))
+                .uri(url)
+                .headers(h -> V3ProviderSupport.applyAuth(h, ctx))
                 .contentType(MediaType.APPLICATION_JSON);
-
             ResponseEntity<Object> response;
-            if (body != null) {
-                response = spec.body(body).retrieve().toEntity(Object.class);
+            if (requestBody != null) {
+                response = spec.body(requestBody).retrieve().toEntity(Object.class);
             } else {
                 response = spec.retrieve().toEntity(Object.class);
             }
             return response.getBody();
         } catch (HttpStatusCodeException e) {
-            throw new HonchoCallException(
-                "Honcho returned " + e.getStatusCode() + ": " + safeBody(e),
-                e.getStatusCode().value(),
-                safeBody(e)
-            );
+            throw V3ProviderSupport.toHonchoCallException(e);
         } catch (Exception e) {
-            throw new HonchoCallException(
-                "Cannot reach Honcho at " + ctx.baseUrl() + ": " + e.getMessage(),
-                502,
-                null
-            );
+            throw V3ProviderSupport.transportFailure(ctx.baseUrl(), e);
         }
-    }
-
-    private URI uri(HonchoContext ctx, String path, Map<String, ?> query) {
-        if (query == null || query.isEmpty()) {
-            return URI.create(ctx.baseUrl() + "/" + path);
-        }
-        StringBuilder sb = new StringBuilder(ctx.baseUrl()).append('/').append(path);
-        sb.append('?');
-        boolean first = true;
-        for (Map.Entry<String, ?> e : query.entrySet()) {
-            if (e.getValue() == null) continue;
-            if (!first) sb.append('&');
-            sb.append(URLEncoder.encode(e.getKey(), StandardCharsets.UTF_8))
-              .append('=')
-              .append(URLEncoder.encode(e.getValue().toString(), StandardCharsets.UTF_8));
-            first = false;
-        }
-        return URI.create(sb.toString());
-    }
-
-    private void applyAuth(HttpHeaders headers, HonchoContext ctx) {
-        headers.setBearerAuth(ctx.apiKey());
-        headers.set("X-Honcho-User-Name", ctx.userName());
-        headers.setAccept(List.of(MediaType.APPLICATION_JSON));
-    }
-
-    private String sanitizeBase(String base) {
-        var b = base.trim();
-        while (b.endsWith("/")) b = b.substring(0, b.length() - 1);
-        if (b.endsWith("/mcp")) b = b.substring(0, b.length() - 4);
-        return b;
-    }
-
-    private String safeBody(HttpStatusCodeException e) {
-        var body = e.getResponseBodyAsString();
-        if (body == null) return "";
-        return body.length() > 500 ? body.substring(0, 500) + "..." : body;
     }
 }
