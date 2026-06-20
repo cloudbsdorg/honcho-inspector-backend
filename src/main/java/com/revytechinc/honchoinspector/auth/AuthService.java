@@ -1,5 +1,6 @@
 package com.revytechinc.honchoinspector.auth;
 
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
 import java.security.SecureRandom;
@@ -42,7 +43,11 @@ public class AuthService {
             users.count() == 0,
             Instant.now()
         );
-        users.insert(user);
+        try {
+            users.insert(user);
+        } catch (DataIntegrityViolationException e) {
+            throw new UserExistsException(username);
+        }
         return user;
     }
 
