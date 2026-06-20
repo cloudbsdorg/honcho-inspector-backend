@@ -36,18 +36,21 @@ final class V3ProviderSupport {
      *
      * <p>Two substitution sources are recognised:
      * <ul>
-     *   <li>{@code {ws}} — always replaced from {@code ctx.workspaceId()};
-     *       the workspace id is mandatory on every Honcho v3 endpoint.</li>
+     *   <li>{@code {ws}} — resolved from {@code pathVars} when present,
+     *       falling back to {@code ctx.workspaceId()}.</li>
      *   <li>Any other {@code {name}} — replaced from the
      *       {@code pathVars} map (e.g. {@code peerId} for
      *       {@code /v3/workspaces/{ws}/peers/{peerId}/dreams}).</li>
      * </ul>
      */
     static String substitutePath(String template, HonchoContext ctx, Map<String, String> pathVars) {
-        String result = template.replace("{ws}", ctx.workspaceId());
+        String ws = (pathVars != null && pathVars.get("ws") != null)
+            ? pathVars.get("ws")
+            : ctx.workspaceId();
+        String result = template.replace("{ws}", ws);
         if (pathVars != null) {
             for (Map.Entry<String, String> e : pathVars.entrySet()) {
-                if (e.getKey() == null || e.getValue() == null) continue;
+                if (e.getKey() == null || "ws".equals(e.getKey()) || e.getValue() == null) continue;
                 result = result.replace("{" + e.getKey() + "}", e.getValue());
             }
         }
