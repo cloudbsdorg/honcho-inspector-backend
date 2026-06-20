@@ -1,0 +1,27 @@
+<component name="ProjectRunConfigurationManager">
+  <!--
+    Dev run config for honcho-inspector-backend.
+
+    Mirrors what `make start` does, but runs the main class directly so
+    spring-boot-devtools (runtime scope) is active and you get hot reload
+    on class/resource changes. State lands in ./.run-data/ (gitignored),
+    so each checkout has its own SQLite DB and log file.
+    Wipe with `git clean -xdf .run-data` to reset.
+
+    No SPRING_PROFILES_ACTIVE is set: Spring uses the default profile,
+    which is the dev path (devtools on). The launcher forces `prod` for
+    prod-shaped runs; use the `make start` run config if you want that.
+  -->
+  <configuration default="false" name="DashboardApplication (dev)" type="SpringBootApplicationConfigurationType" factoryName="Spring Boot">
+    <module name="honcho-inspector-backend" />
+    <option name="SPRING_BOOT_MAIN_CLASS" value="com.revytechinc.honchoinspector.DashboardApplication" />
+    <option name="VM_PARAMETERS" value="-Xms64m -Xmx256m" />
+    <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+    <envs>
+      <env name="HONCHO_CONFIG_DIR" value=".run-data" />
+    </envs>
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>
