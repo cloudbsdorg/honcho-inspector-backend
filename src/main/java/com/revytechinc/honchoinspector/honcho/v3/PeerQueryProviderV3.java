@@ -1,15 +1,9 @@
 package com.revytechinc.honchoinspector.honcho.v3;
 
-import java.net.URI;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.util.EnumSet;
 import java.util.Map;
 import java.util.Set;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -47,11 +41,12 @@ import com.revytechinc.honchoinspector.model.HonchoContext;
  * <p>Peer <em>CRUD</em> operations (list, create, card, representation) live
  * in {@link PeersProviderV3}. The split keeps the v3 provider set to two
  * files per the "one builder per logical operation, ~7-9 files" directive.
+ *
+ * <p>All plumbing (path-variable substitution, URL building, auth headers,
+ * error translation) is delegated to {@link V3ProviderSupport}.
  */
 @Component
 public class PeerQueryProviderV3 implements HonchoProvider {
-
-    private static final Logger log = LoggerFactory.getLogger(PeerQueryProviderV3.class);
 
     private static final Set<HonchoOperation> OPS = EnumSet.of(
         HonchoOperation.PEER_CHAT,
@@ -80,11 +75,11 @@ public class PeerQueryProviderV3 implements HonchoProvider {
     @Override
     public String pathTemplate(HonchoOperation op) {
         return switch (op) {
-            case PEER_CHAT              -> "v3/workspaces/{ws}/peers/{peerId}/chat";
-            case SEARCH_PEERS           -> "v3/workspaces/{ws}/peers/{peerId}/search";
-            case LIST_PEER_CONCLUSIONS  -> "v3/workspaces/{ws}/peers/{peerId}/conclusions";
-            case LIST_PEER_SESSIONS     -> "v3/workspaces/{ws}/peers/{peerId}/sessions";
-            case QUERY_PEER_CONCLUSIONS -> "v3/workspaces/{ws}/peers/{peerId}/conclusions/query";
+            case PEER_CHAT              -> "workspaces/{ws}/peers/{peerId}/chat";
+            case SEARCH_PEERS           -> "workspaces/{ws}/peers/{peerId}/search";
+            case LIST_PEER_CONCLUSIONS  -> "workspaces/{ws}/peers/{peerId}/conclusions";
+            case LIST_PEER_SESSIONS     -> "workspaces/{ws}/peers/{peerId}/sessions";
+            case QUERY_PEER_CONCLUSIONS -> "workspaces/{ws}/peers/{peerId}/conclusions/query";
             default -> throw new UnsupportedOperationException(
                 "PeerQueryProviderV3 has no path template for " + op);
         };
@@ -113,107 +108,21 @@ public class PeerQueryProviderV3 implements HonchoProvider {
             throw new HonchoCallException(
                 "PeerQueryProviderV3 does not handle " + op, 501, null);
         }
-        String template = pathTemplate(op);
-        String path = substitutePath(template, ctx, pathVars);
-        URI uri = buildUri(ctx, path, queryParams);
-        return exchange(httpMethod(op), uri, requestBody, ctx);
-    }
-
-    /** Package-private for tests. */
-    static String substitutePath(String template, HonchoContext ctx, Map<String, String> pathVars) {
-        String result = template.replace("{ws}", ctx.workspaceId());
-        if (pathVars != null) {
-            for (Map.Entry<String, String> e : pathVars.entrySet()) {
-                String key = e.getKey();
-                String value = e.getValue() == null ? "" : e.getValue();
-                result = result.replace("{" + key + "}", value);
-            }
-        }
-        return result;
-    }
-
-    /** Package-private for tests. */
-    static URI buildUri(HonchoContext ctx, String path, Map<String, ?> query) {
-        String base = sanitizeBase(ctx.baseUrl());
-        String fullPath = path.startsWith("/") ? path : "/" + path;
-        String suffix = buildQuerySuffix(fullPath, query);
-        return URI.create(base + fullPath + suffix);
-    }
-
-    private static String buildQuerySuffix(String fullPath, Map<String, ?> query) {
-        if (query == null || query.isEmpty()) {
-            return "";
-        }
-        StringBuilder qs = new StringBuilder();
-        boolean first = true;
-        for (Map.Entry<String, ?> e : query.entrySet()) {
-            if (e.getValue() == null) continue;
-            if (first) {
-                qs.append(fullPath.contains("?") ? '&' : '?');
-                first = false;
-            } else {
-                qs.append('&');
-            }
-            qs.append(URLEncoder.encode(e.getKey(), StandardCharsets.UTF_8));
-            qs.append('=');
-            qs.append(URLEncoder.encode(e.getValue().toString(), StandardCharsets.UTF_8));
-        }
-        return qs.toString();
-    }
-
-    private static String sanitizeBase(String base) {
-        String b = base == null ? "" : base.trim();
-        while (b.endsWith("/")) {
-            b = b.substring(0, b.length() - 1);
-        }
-        if (b.endsWith("/mcp")) {
-            b = b.substring(0, b.length() - 4);
-        }
-        return b;
-    }
-
-    private Object exchange(HttpMethod method, URI uri, Object body, HonchoContext ctx) {
+        String substituted = V3ProviderSupport.substitutePath(pathTemplate(op), ctx, pathVars);
+        String url = V3ProviderSupport.buildUrl(ctx.baseUrl(), ctx.apiVersion().pathPrefix(), substituted, queryParams);
         try {
-            var spec = http.method(method)
-                .uri(uri)
-                .headers(h -> applyAuth(h, ctx))
+            var spec = http.method(httpMethod(op))
+                .uri(url)
+                .headers(h -> V3ProviderSupport.applyAuth(h, ctx))
                 .contentType(MediaType.APPLICATION_JSON);
-
-            ResponseEntity<Object> response;
-            if (body != null) {
-                response = spec.body(body).retrieve().toEntity(Object.class);
-            } else {
-                response = spec.retrieve().toEntity(Object.class);
-            }
+            ResponseEntity<Object> response = (requestBody != null)
+                ? spec.body(requestBody).retrieve().toEntity(Object.class)
+                : spec.retrieve().toEntity(Object.class);
             return response.getBody();
         } catch (HttpStatusCodeException e) {
-            log.debug("Honcho returned non-2xx for {} {}: {}", method, uri, e.getStatusCode());
-            throw new HonchoCallException(
-                "Honcho returned " + e.getStatusCode() + ": " + safeBody(e),
-                e.getStatusCode().value(),
-                safeBody(e)
-            );
-        } catch (HonchoCallException e) {
-            throw e;
+            throw V3ProviderSupport.toHonchoCallException(e);
         } catch (Exception e) {
-            log.debug("Transport failure calling Honcho {} {}: {}", method, uri, e.toString());
-            throw new HonchoCallException(
-                "Cannot reach Honcho at " + ctx.baseUrl() + ": " + e.getMessage(),
-                502,
-                null
-            );
+            throw V3ProviderSupport.transportFailure(ctx.baseUrl(), e);
         }
-    }
-
-    private static void applyAuth(HttpHeaders headers, HonchoContext ctx) {
-        headers.setBearerAuth(ctx.apiKey());
-        headers.set("X-Honcho-User-Name", ctx.userName());
-        headers.setAccept(java.util.List.of(MediaType.APPLICATION_JSON));
-    }
-
-    private static String safeBody(HttpStatusCodeException e) {
-        String body = e.getResponseBodyAsString();
-        if (body == null) return "";
-        return body.length() > 500 ? body.substring(0, 500) + "..." : body;
     }
 }
