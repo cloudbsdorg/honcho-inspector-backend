@@ -45,7 +45,7 @@ class SessionsProviderV3UnitTest {
             .as("SessionsProviderV3 is v3-only")
             .isEqualTo(Set.of(HonchoApiVersion.V3));
         assertThat(provider.pathTemplate(HonchoOperation.LIST_SESSIONS))
-            .isEqualTo("v3/workspaces/{ws}/sessions");
+            .isEqualTo("workspaces/{ws}/sessions");
         assertThat(provider.httpMethod(HonchoOperation.LIST_SESSIONS))
             .as("v2→v3 contract change: LIST_SESSIONS is now POST")
             .isEqualTo(HttpMethod.POST);
@@ -59,7 +59,7 @@ class SessionsProviderV3UnitTest {
         assertThat(provider.supportedVersions())
             .isEqualTo(Set.of(HonchoApiVersion.V3));
         assertThat(provider.pathTemplate(HonchoOperation.CREATE_SESSION))
-            .isEqualTo("v3/workspaces/{ws}/sessions");
+            .isEqualTo("workspaces/{ws}/sessions");
         assertThat(provider.httpMethod(HonchoOperation.CREATE_SESSION))
             .isEqualTo(HttpMethod.POST);
     }
@@ -72,7 +72,7 @@ class SessionsProviderV3UnitTest {
         assertThat(provider.supportedVersions())
             .isEqualTo(Set.of(HonchoApiVersion.V3));
         assertThat(provider.pathTemplate(HonchoOperation.GET_SESSION))
-            .isEqualTo("v3/workspaces/{ws}/sessions/{sessionId}");
+            .isEqualTo("workspaces/{ws}/sessions/{sessionId}");
         assertThat(provider.httpMethod(HonchoOperation.GET_SESSION))
             .isEqualTo(HttpMethod.GET);
     }
@@ -85,7 +85,7 @@ class SessionsProviderV3UnitTest {
         assertThat(provider.supportedVersions())
             .isEqualTo(Set.of(HonchoApiVersion.V3));
         assertThat(provider.pathTemplate(HonchoOperation.DELETE_SESSION))
-            .isEqualTo("v3/workspaces/{ws}/sessions/{sessionId}");
+            .isEqualTo("workspaces/{ws}/sessions/{sessionId}");
         assertThat(provider.httpMethod(HonchoOperation.DELETE_SESSION))
             .isEqualTo(HttpMethod.DELETE);
     }
@@ -98,7 +98,7 @@ class SessionsProviderV3UnitTest {
         assertThat(provider.supportedVersions())
             .isEqualTo(Set.of(HonchoApiVersion.V3));
         assertThat(provider.pathTemplate(HonchoOperation.GET_SESSION_CONTEXT))
-            .isEqualTo("v3/workspaces/{ws}/sessions/{sessionId}/context");
+            .isEqualTo("workspaces/{ws}/sessions/{sessionId}/context");
         assertThat(provider.httpMethod(HonchoOperation.GET_SESSION_CONTEXT))
             .isEqualTo(HttpMethod.GET);
     }
@@ -111,7 +111,7 @@ class SessionsProviderV3UnitTest {
         assertThat(provider.supportedVersions())
             .isEqualTo(Set.of(HonchoApiVersion.V3));
         assertThat(provider.pathTemplate(HonchoOperation.GET_SESSION_SUMMARIES))
-            .isEqualTo("v3/workspaces/{ws}/sessions/{sessionId}/summaries");
+            .isEqualTo("workspaces/{ws}/sessions/{sessionId}/summaries");
         assertThat(provider.httpMethod(HonchoOperation.GET_SESSION_SUMMARIES))
             .isEqualTo(HttpMethod.GET);
     }
@@ -124,7 +124,7 @@ class SessionsProviderV3UnitTest {
         assertThat(provider.supportedVersions())
             .isEqualTo(Set.of(HonchoApiVersion.V3));
         assertThat(provider.pathTemplate(HonchoOperation.GET_SESSION_PEERS))
-            .isEqualTo("v3/workspaces/{ws}/sessions/{sessionId}/peers");
+            .isEqualTo("workspaces/{ws}/sessions/{sessionId}/peers");
         assertThat(provider.httpMethod(HonchoOperation.GET_SESSION_PEERS))
             .isEqualTo(HttpMethod.GET);
     }
