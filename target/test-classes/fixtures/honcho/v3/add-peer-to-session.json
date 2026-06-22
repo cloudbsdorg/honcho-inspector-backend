@@ -1,0 +1,15 @@
+{
+  "_meta": {
+    "captured_at": "2026-06-18T07:14:43Z",
+    "honcho_version": "3.0.7",
+    "endpoint": "POST /v3/workspaces/{ws}/sessions/{sessionId}/peers",
+    "method": "POST",
+    "synthetic": true,
+    "synthetic_reason": "real call failed"
+  },
+  "data": {
+    "status": "added",
+    "peer_id": "fixture-peer-001",
+    "session_id": "fixture-session-001"
+  }
+}
