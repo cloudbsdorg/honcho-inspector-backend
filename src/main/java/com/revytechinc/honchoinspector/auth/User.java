@@ -6,6 +6,9 @@ public record User(
     String id,
     String username,
     String passwordHash,
+    String firstname,
+    String lastname,
+    String email,
     boolean isAdmin,
     Instant createdAt
 ) {

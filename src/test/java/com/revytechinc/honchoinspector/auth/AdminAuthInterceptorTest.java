@@ -149,7 +149,7 @@ class AdminAuthInterceptorTest {
     }
 
     private static User newUser(String id, boolean isAdmin) {
-        return new User(id, "user-" + id, "hash", isAdmin, Instant.now());
+        return new User(id, "user-" + id, "hash", null, null, null, isAdmin, Instant.now());
     }
 
     private static AuthSession fakeSession(String userId) {

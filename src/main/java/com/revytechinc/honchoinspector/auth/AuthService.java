@@ -27,6 +27,17 @@ public class AuthService {
     }
 
     public User register(String username, String password) {
+        return adminCreate(username, password, null, null, null, isFirstUser());
+    }
+
+    public User adminCreate(
+        String username,
+        String password,
+        String firstname,
+        String lastname,
+        String email,
+        boolean isAdmin
+    ) {
         if (username == null || username.isBlank()) {
             throw new IllegalArgumentException("username is required");
         }
@@ -40,7 +51,10 @@ public class AuthService {
             newId(),
             username.trim(),
             hasher.hash(password),
-            users.count() == 0,
+            blankToNull(firstname),
+            blankToNull(lastname),
+            blankToNull(email),
+            isAdmin,
             Instant.now()
         );
         try {
@@ -49,6 +63,10 @@ public class AuthService {
             throw new UserExistsException(username);
         }
         return user;
+    }
+
+    private static String blankToNull(String s) {
+        return s == null || s.isBlank() ? null : s.trim();
     }
 
     public LoginResult login(String username, String password) {

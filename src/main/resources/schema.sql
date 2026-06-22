@@ -7,9 +7,14 @@ CREATE TABLE IF NOT EXISTS users (
     id            TEXT    PRIMARY KEY,
     username      TEXT    UNIQUE NOT NULL,
     password_hash TEXT    NOT NULL,
+    firstname     TEXT,
+    lastname      TEXT,
+    email         TEXT,
     is_admin      INTEGER NOT NULL DEFAULT 0,
     created_at    TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
+
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email) WHERE email IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS honcho_profiles (
     id                TEXT    PRIMARY KEY,
@@ -41,3 +46,22 @@ CREATE TABLE IF NOT EXISTS auth_sessions (
 CREATE INDEX IF NOT EXISTS idx_profiles_user  ON honcho_profiles(user_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_user  ON auth_sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON auth_sessions(expires_at);
+
+CREATE TABLE IF NOT EXISTS audit_log (
+    id              TEXT    PRIMARY KEY,
+    actor_user_id   TEXT,
+    action          TEXT    NOT NULL,
+    target_user_id  TEXT,
+    target_resource TEXT,
+    ip              TEXT,
+    session_id      TEXT,
+    metadata        TEXT,
+    created_at      TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    FOREIGN KEY (actor_user_id)  REFERENCES users(id) ON DELETE SET NULL,
+    FOREIGN KEY (target_user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_actor   ON audit_log(actor_user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_target  ON audit_log(target_user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_action  ON audit_log(action);
+CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at);
