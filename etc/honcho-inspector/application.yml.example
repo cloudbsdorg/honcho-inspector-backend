@@ -21,6 +21,12 @@
 # 3. CORS must list the *exact* public origin of the UI (https://...). No
 #    wildcards; no http://localhost in prod.
 # 4. Set session.ttl-minutes to a non-zero value so idle sessions expire.
+# 5. On a fresh deploy, decide whether to use the bootstrap admin below
+#    (honcho.bootstrap.*) or create the first admin by running the bundled
+#    jar once, authenticating as the bootstrap user, and then using
+#    POST /api/admin/users to mint the real first admin. Remove the
+#    bootstrap credentials from this file once that user exists — leaving
+#    them in is a credential-on-disk leak. See docs/SECURITY.md §6.
 
 server:
   # port: 8080
@@ -60,6 +66,36 @@ honcho:
   # Per-profile api_version override: edit a profile row in the honcho_profiles table
   # (column api_version TEXT). NULL inherits honcho.api-version above. This is how two
   # profiles can talk to different Honcho versions simultaneously. See docs/honcho-providers.md.
+
+  # ---- First-startup bootstrap admin --------------------------------------
+  # When the users table is empty AND both admin-username AND admin-password
+  # are set, AdminBootstrap (an ApplicationReadyEvent listener) creates a
+  # single admin user with isAdmin=true. The bundled application.yml ships
+  # this block blank; the jar cannot accidentally create an admin. The
+  # operator opts in by populating this section on a fresh deploy.
+  #
+  # The corresponding AuditLog entry is action='user.bootstrap' with
+  # actor_user_id=NULL (the bootstrap runs without a session).
+  #
+  # After the first admin exists, REMOVE these credentials from this file
+  # and rotate the password via POST /api/admin/users/{id}/password. Leaving
+  # them in is a credential-on-disk leak.
+  # bootstrap:
+  #   admin-username: honcho-admin
+  #   admin-password: "set-via-secret-manager-not-here"
+  #   admin-firstname: Honcho
+  #   admin-lastname: Admin
+  #   admin-email: admin@example.com
+  #
+  # ---- Audit log retention ------------------------------------------------
+  # AuditLogDao entries are purged by age OR by table size, whichever fires
+  # first. The retention job runs daily at purge-cron (default 03:00 local).
+  # The job records its own audit.purge entry with the deleted counts.
+  # Manual triggers: POST /api/admin/maintenance/audit/purge.
+  # audit:
+  #   retention-days: 90       # delete rows older than this
+  #   max-rows: 1000000        # cap total row count; oldest are deleted
+  #   purge-cron: "0 0 3 * * *"  # 3:00 AM local, every day
 
 # Session config. ttl-minutes=0 means sessions never expire. In prod,
 # set this to a real value (e.g. 60) so abandoned sessions are
