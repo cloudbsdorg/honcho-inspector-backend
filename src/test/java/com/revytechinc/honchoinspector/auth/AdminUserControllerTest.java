@@ -70,7 +70,9 @@ class AdminUserControllerTest {
                 .header("X-Session-Id", sid))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.total").value(2))
-            .andExpect(jsonPath("$.items").isArray());
+            .andExpect(jsonPath("$.items").isArray())
+            .andExpect(jsonPath("$.items[0].passwordHash").doesNotExist())
+            .andExpect(jsonPath("$.items[1].passwordHash").doesNotExist());
     }
 
     @Test
@@ -92,7 +94,8 @@ class AdminUserControllerTest {
         mvc.perform(get("/api/admin/users/search?q=alice@example")
                 .header("X-Session-Id", sid))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.items[0].username").value("alice"));
+            .andExpect(jsonPath("$.items[0].username").value("alice"))
+            .andExpect(jsonPath("$.items[0].passwordHash").doesNotExist());
     }
 
     @Test
