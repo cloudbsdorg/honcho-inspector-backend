@@ -164,15 +164,19 @@ class AuthControllerTest {
     }
 
     @Test
-    void health_returns_counts_and_needs_register() throws Exception {
+    void health_returns_needs_register_no_counts() throws Exception {
         mvc.perform(get("/api/health"))
             .andExpect(status().isOk())
+            .andExpect(jsonPath("$.ok").value(true))
             .andExpect(jsonPath("$.needs_register").value(true))
-            .andExpect(jsonPath("$.users").value(0));
+            .andExpect(jsonPath("$.users").doesNotExist())
+            .andExpect(jsonPath("$.sessions").doesNotExist())
+            .andExpect(jsonPath("$.profiles").doesNotExist());
         registerAndLogin("alice", "passw0rd1");
         mvc.perform(get("/api/health"))
+            .andExpect(status().isOk())
             .andExpect(jsonPath("$.needs_register").value(false))
-            .andExpect(jsonPath("$.users").value(1));
+            .andExpect(jsonPath("$.users").doesNotExist());
     }
 
     @Test

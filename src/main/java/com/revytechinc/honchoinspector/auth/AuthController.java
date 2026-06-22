@@ -137,16 +137,13 @@ public class AuthController {
     @GetMapping("/health")
     @Operation(
         summary = "Liveness / readiness probe",
-        description = "Public unauthenticated health endpoint. Returns counts of users, sessions, and profiles, plus a `needsRegister` boolean the UI uses to decide whether to show the registration form on first run."
+        description = "Public unauthenticated health endpoint. Returns only the service status and a `needs_register` boolean the UI uses to decide whether to show the bootstrap form on first run. The previous version leaked user/session/profile counts to unauthenticated callers; those have been moved to the admin-only dashboard overview."
     )
     @ApiResponse(responseCode = "200", description = "Service is up",
-        content = @Content(schema = @Schema(example = "{\"ok\":true,\"users\":1,\"sessions\":2,\"profiles\":3,\"needs_register\":false}")))
+        content = @Content(schema = @Schema(example = "{\"ok\":true,\"needs_register\":false}")))
     public ResponseEntity<?> health() {
         return ResponseEntity.ok(Map.of(
             "ok", true,
-            "users", users.count(),
-            "sessions", sessions.count(),
-            "profiles", profiles.count(),
             "needs_register", auth.isFirstUser()
         ));
     }

@@ -89,7 +89,7 @@ public class OpenApiConfig {
                     .description("Pass-through proxy to the Honcho v3 REST API. Every endpoint requires `X-Session-Id` AND `X-Honcho-Profile-Id`. Requests are forwarded with the profile's decrypted API key attached as `Authorization: Bearer …`."),
                 new Tag()
                     .name(TAG_ADMIN)
-                    .description("Reserved for future admin-only endpoints (user management, audit log, etc.). Currently empty — kept here so the OpenAPI tag catalogue is stable across releases.")
+                    .description("Admin-only endpoints. Enforced by the @RequireAdmin annotation + AdminAuthInterceptor: every request must carry a session id for a user with isAdmin=true. Sub-resources: /api/admin/users (CRUD + sessions + password reset), /api/admin/audit (query the audit log), /api/admin/dashboard (aggregates + parallel Honcho fan-out), /api/admin/maintenance (manual purge + status).")
             ))
             .components(new Components());
     }
