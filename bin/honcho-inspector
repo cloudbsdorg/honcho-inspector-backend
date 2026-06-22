@@ -37,6 +37,40 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# Subcommand dispatch. We only intercept the launcher's own help here.
+# The Java-side CliRunner handles list-users, reset-admin-password,
+# promote-to-admin, revoke-all-sessions, and help; those args are
+# passed through to the jar by the java exec at the bottom of the file.
+case "${1:-}" in
+    --help|-h)
+        cat <<'USAGE' >&2
+honcho-inspector - Spring Boot launcher for the Honcho Inspector backend
+
+Usage:
+  honcho-inspector                                Start the backend (default)
+  honcho-inspector --help                         Show this help
+  honcho-inspector help                           Emergency CLI usage
+  honcho-inspector list-users                     Emergency CLI: list every user
+  honcho-inspector reset-admin-password [flags]   Emergency CLI: reset a user's password
+  honcho-inspector promote-to-admin [flags]       Emergency CLI: promote a user to admin
+  honcho-inspector revoke-all-sessions            Emergency CLI: wipe all auth sessions
+
+The launcher detects the OS (Linux, FreeBSD, macOS) and resolves the
+config dir, then execs java on the bundled jar. For a system install
+(runs as www-data / www / _www, with a service file), use the
+install script:
+
+  sudo bin/install-honcho-inspector
+
+First-run configuration is UI-driven: GET /api/health returns
+`first_run: true` when the database is empty; the UI then calls
+POST /api/setup/first-admin to create the initial admin. See the
+man page honcho-inspector(1) and docs/SECURITY.md.
+USAGE
+        exit 0
+        ;;
+esac
+
 # Probe the jar in this order:
 #   1. $HONCHO_JAR_DIR (operator override)
 #   2. $HOMEBREW_PREFIX/opt/honcho-inspector/libexec (Homebrew tap)
@@ -89,6 +123,52 @@ resolve_config_dir() {
             ;;
     esac
 }
+
+# Source the per-OS env file so the jar sees HONCHO_CONFIG_DIR,
+# HONCHO_DB_PATH, HONCHO_CRYPTO_KEY, and JAVA_HOME. Without this,
+# an operator running `honcho-inspector list-users` from a shell
+# would hit a CWD-relative empty database (because the default
+# application.yml:19 has a nested fallback to HONCHO_DB_FILE resolved
+# against the working directory). The env file is what the system
+# service uses (systemd's EnvironmentFile=, rc.d's . $env_file, or
+# the FreeBSD port's $ETCDIR/honcho-inspector.env), so sourcing it
+# here puts the launcher's process on the same footing as the
+# long-running service.
+#
+# Existing operator-set vars WIN. The `set -a` only exports new
+# keys; already-set values are not overwritten. Missing files are
+# silent so dev runs (no install) still work.
+source_env_file() {
+    local os
+    os="$(uname -s 2>/dev/null || echo unknown)"
+    local env_file=""
+    case "$os" in
+        Linux)
+            for f in /etc/default/honcho-inspector /etc/sysconfig/honcho-inspector; do
+                if [ -f "$f" ]; then env_file="$f"; break; fi
+            done
+            ;;
+        FreeBSD|OpenBSD|NetBSD|DragonFly)
+            for f in /etc/default/honcho-inspector \
+                     "${HOMEBREW_PREFIX:-/usr/local}/etc/honcho-inspector/honcho-inspector.env"; do
+                if [ -f "$f" ]; then env_file="$f"; break; fi
+            done
+            ;;
+        Darwin)
+            for f in /etc/defaults/honcho-inspector \
+                     "${HOME:-}/Library/Application Support/honcho-inspector/env"; do
+                if [ -f "$f" ]; then env_file="$f"; break; fi
+            done
+            ;;
+    esac
+    if [ -n "$env_file" ]; then
+        set -a
+        . "$env_file" 2>/dev/null || true
+        set +a
+    fi
+}
+
+source_env_file
 
 CONFIG_DIR="$(resolve_config_dir)"
 CONFIG_DIR_STATUS="exists"

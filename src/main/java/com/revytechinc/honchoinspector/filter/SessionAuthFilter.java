@@ -23,7 +23,12 @@ public class SessionAuthFilter extends OncePerRequestFilter {
 
     private static final Set<String> PUBLIC_PATHS = Set.of(
         "/api/auth/login",
-        "/api/health"
+        "/api/health",
+        "/api/setup/first-admin",
+        "/v3/api-docs",
+        "/v3/api-docs/swagger-config",
+        "/swagger-ui",
+        "/swagger-ui/"
     );
 
     private final AuthService auth;

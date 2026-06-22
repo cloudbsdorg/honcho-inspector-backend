@@ -53,7 +53,8 @@ JAR          = target/$(PROJECT_NAME)-0.1.0-SNAPSHOT.jar
         run start run-jar \
         db-shell db-vacuum db-reset \
         lint format outdated \
-        install-linux install-freebsd install-macos install-launcher \
+        install install-linux install-freebsd install-macos \
+        install-launcher install-config-only \
         clean distclean
 
 # === Default goal ===
@@ -156,47 +157,70 @@ outdated: ## Show dependency updates available
 	mvn -B -ntp versions:display-dependency-updates
 
 # === Install (system-level; see README) ===
-# These targets place the drop-in application.yml at the OS-appropriate
-# config dir. They do NOT install the launcher binary -- that is a
-# separate, explicit step (see install-launcher). The split keeps
-# sudo minimal and explicit.
+# `make install` is the canonical, OS-agnostic install target. It
+# invokes bin/install-honcho-inspector which auto-detects the OS
+# (Linux, FreeBSD, macOS) and dispatches to the right per-OS
+# service file (systemd unit, rc.d script, or launchd plist). The
+# install-linux, install-freebsd, and install-macos targets are
+# explicit-OS aliases of `install` (the script does the same work
+# regardless); they exist for documentation and CI-matrix
+# invocation.
+#
+# `install-launcher` installs only the bin/honcho-inspector wrapper
+# to /usr/local/bin/ — useful in dev when you want manual launcher
+# access without installing the full service.
+#
+# `install-config-only` is a legacy target that drops just the
+# application.yml at the OS-appropriate config dir without touching
+# the service, the jar, or the launcher. Retained for operators
+# who want to seed a config dir first and run the full install
+# later.
 
-install-linux: ## Install config to /etc/honcho-inspector/ (Linux; run as root)
-	@case "$$(uname -s)" in \
-		Linux) ;; \
-		*) printf "this target is for Linux only (current: %s)\n" "$$(uname -s)" >&2; exit 1 ;; \
-	esac
-	@install -d -m 0755 /etc/honcho-inspector
-	@install -m 0644 etc/honcho-inspector/application.yml.example /etc/honcho-inspector/application.yml
-	@printf "installed config to /etc/honcho-inspector\n"
-	@printf "next:  sudo install -m 0755 bin/honcho-inspector /usr/local/bin/\n"
+INSTALL_SCRIPT = bin/install-honcho-inspector
+LAUNCHER_BIN   = bin/honcho-inspector
 
-install-freebsd: ## Install config to /usr/local/etc/honcho-inspector/ (FreeBSD; run as root)
-	@case "$$(uname -s)" in \
-		FreeBSD) ;; \
-		*) printf "this target is for FreeBSD only (current: %s)\n" "$$(uname -s)" >&2; exit 1 ;; \
-	esac
-	@install -d -m 0755 /usr/local/etc/honcho-inspector
-	@install -m 0644 etc/honcho-inspector/application.yml.example /usr/local/etc/honcho-inspector/application.yml
-	@printf "installed config to /usr/local/etc/honcho-inspector\n"
-	@printf "next:  sudo install -m 0755 bin/honcho-inspector /usr/local/bin/\n"
+.PHONY: install install-linux install-freebsd install-macos \
+        install-launcher install-config-only
 
-install-macos: ## Install config to ~/Library/Application Support/honcho-inspector/ (macOS)
-	@case "$$(uname -s)" in \
-		Darwin) ;; \
-		*) printf "this target is for macOS only (current: %s)\n" "$$(uname -s)" >&2; exit 1 ;; \
-	esac
-	@dest="$$HOME/Library/Application Support/honcho-inspector"; \
-	mkdir -p "$$dest"; \
-	install -m 0644 etc/honcho-inspector/application.yml.example "$$dest/application.yml"; \
-	printf "installed config to %s\n" "$$dest"
+install: build ## Full install: jar + launcher + service + man + config (auto-detect OS, requires sudo)
+	@if [ -z "$$(command -v sudo)" ]; then \
+		printf "sudo not found in PATH\n" >&2; exit 1; \
+	fi
+	@if [ ! -f "$(JAR)" ]; then \
+		printf "jar not found: %s (run 'make build' first)\n" "$(JAR)" >&2; exit 1; \
+	fi
+	sudo "$(INSTALL_SCRIPT)"
 
-install-launcher: ## Install the launcher to /usr/local/bin/ (run as root)
+install-linux: install ## Alias of install; OS is auto-detected by the install script
+
+install-freebsd: install ## Alias of install; OS is auto-detected by the install script
+
+install-macos: install ## Alias of install; OS is auto-detected by the install script
+
+install-launcher: ## Install only the bin/honcho-inspector wrapper to /usr/local/bin/ (requires sudo)
 	@if [ ! -w /usr/local/bin ]; then \
 		printf "cannot write to /usr/local/bin -- re-run with sudo\n" >&2; exit 1; \
 	fi
-	@install -m 0755 bin/honcho-inspector /usr/local/bin/honcho-inspector
+	@install -m 0755 "$(LAUNCHER_BIN)" /usr/local/bin/honcho-inspector
 	@printf "installed launcher to /usr/local/bin/honcho-inspector\n"
+
+install-config-only: ## Drop the application.yml at the OS-appropriate config dir (no service, no jar)
+	@case "$$(uname -s)" in \
+		Linux) \
+			install -d -m 0755 /etc/honcho-inspector; \
+			install -m 0644 etc/honcho-inspector/application.yml.example /etc/honcho-inspector/application.yml; \
+			printf "installed config to /etc/honcho-inspector\n" ;; \
+		FreeBSD) \
+			install -d -m 0755 /usr/local/etc/honcho-inspector; \
+			install -m 0644 etc/honcho-inspector/application.yml.example /usr/local/etc/honcho-inspector/application.yml; \
+			printf "installed config to /usr/local/etc/honcho-inspector\n" ;; \
+		Darwin) \
+			dest="$$HOME/Library/Application Support/honcho-inspector"; \
+			mkdir -p "$$dest"; \
+			install -m 0644 etc/honcho-inspector/application.yml.example "$$dest/application.yml"; \
+			printf "installed config to %s\n" "$$dest" ;; \
+		*) printf "unsupported OS: %s\n" "$$(uname -s)" >&2; exit 1 ;; \
+	esac
 
 # === Cleanup ===
 clean: ## Remove build artifacts
