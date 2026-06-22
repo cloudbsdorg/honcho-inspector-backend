@@ -13,15 +13,18 @@ import java.time.Duration;
 public class HttpClientConfig {
 
     @Bean
-    public RestClient honchoRestClient(
-        @Value("${honcho.api-version:v3}") String apiVersion,
+    public RestClient.Builder restClientBuilder(
         @Value("${honcho.request-timeout-ms:30000}") long timeoutMs
     ) {
         return RestClient.builder()
             .requestFactory(new org.springframework.http.client.SimpleClientHttpRequestFactory() {{
                 setConnectTimeout((int) Duration.ofMillis(timeoutMs).toMillis());
                 setReadTimeout((int) Duration.ofMillis(timeoutMs).toMillis());
-            }})
-            .build();
+            }});
+    }
+
+    @Bean
+    public RestClient honchoRestClient(RestClient.Builder builder) {
+        return builder.build();
     }
 }

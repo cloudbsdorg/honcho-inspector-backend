@@ -1,7 +1,7 @@
 package com.revytechinc.honchoinspector.auth;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 import com.revytechinc.honchoinspector.config.OpenApiConfig;
 import com.revytechinc.honchoinspector.model.ErrorResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -85,7 +85,7 @@ public class AdminAuditController {
         if (e.metadata() != null && !e.metadata().isBlank()) {
             try {
                 metadata = json.readTree(e.metadata());
-            } catch (JsonProcessingException ex) {
+            } catch (JacksonException ex) {
                 metadata = e.metadata();
             }
         }

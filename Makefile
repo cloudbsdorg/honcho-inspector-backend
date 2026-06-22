@@ -53,7 +53,7 @@ JAR          = target/$(PROJECT_NAME)-0.1.0-SNAPSHOT.jar
         run start run-jar \
         db-shell db-vacuum db-reset \
         lint format outdated \
-        install install-linux install-freebsd install-macos \
+        install install-only install-linux install-freebsd install-macos \
         install-launcher install-config-only \
         clean distclean
 
@@ -188,6 +188,15 @@ LAUNCHER_BIN   = bin/honcho-inspector
         install-launcher install-config-only
 
 install: build ## Full install: jar + launcher + service + man + config (auto-detect OS, requires sudo)
+	@if [ -z "$$(command -v sudo)" ]; then \
+		printf "sudo not found in PATH\n" >&2; exit 1; \
+	fi
+	@if [ ! -f "$(JAR)" ]; then \
+		printf "jar not found: %s (run 'make build' first)\n" "$(JAR)" >&2; exit 1; \
+	fi
+	sudo "$(INSTALL_SCRIPT)"
+
+install-only: ## Install only (no rebuild) — assumes the jar is already built; requires sudo
 	@if [ -z "$$(command -v sudo)" ]; then \
 		printf "sudo not found in PATH\n" >&2; exit 1; \
 	fi

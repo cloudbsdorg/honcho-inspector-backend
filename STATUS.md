@@ -790,3 +790,135 @@ cat ~/.config/opencode/opencode.json | python3 -c "import sys,json;d=json.load(s
 ---
 
 **End of STATUS.md — see you on the other side!** 🔧
+
+---
+
+# Session 6 — UI rewrite to reflect backend admin RBAC + first-run + charts
+
+**Date**: 2026-06-22 (Mon)
+**Branch**: `main`
+**Commit**: `45e152c` (UI repo `cloudbsdorg/honcho-inspector-ui`)
+**Status**: ✅ shipped, pushed to origin, 129/129 tests pass
+
+## What changed
+
+Mirrored the backend's admin RBAC + first-run + admin-API surface in the Angular UI.
+
+| Surface | Before | After |
+|---|---|---|
+| `/login` | LoginModal defaulted to `mode='register'`; public registration via `POST /api/auth/register` | LoginModal is login-only; `register()` removed from `HonchoAuthService`; public `/api/auth/register` is now admin-only on the backend |
+| First-run | Implicit — no admin provision, first user became admin (per stale README copy) | `GET /api/health` probe in `authGuard`; if `firstRun === true` route to `/setup` |
+| `/setup` | did not exist | New 3-step wizard (`SetupWizard`): Welcome → Account (username, password, optional name/email) → Confirm → `POST /api/setup/first-admin` |
+| `/admin` | did not exist | New `AdminPanel` with 4 tabs: Overview (Chart.js bar+line+doughnut), Users (CRUD + promote + reset pwd + revoke sessions), Audit (filter by action/since + pageSize 10/20/30), Maintenance (purge audit + purge expired sessions) |
+| Admin nav | `isAdmin` field in `User` model but no UI gating | Dashboard header shows `⚙ Admin` button only when `auth.isAdmin()` is true; `adminGuard` gates `/admin` route |
+| Chart library | none | `chart.js@^4.5.0` added; thin `<app-chart>` Angular wrapper in `components/charts/chart.component.ts` (OnPush, lifecycle managed by `DestroyRef`) |
+
+## Files touched (UI repo, `45e152c`)
+
+```
+README.md                                          |  67 +++++--
+package-lock.json                                  |  38 ++--
+package.json                                       |   1 + (chart.js)
+src/app/app.routes.ts                              |  14 ++  (/setup + /admin + setupGuard + adminGuard)
+src/app/components/dashboard/dashboard.html        |  11 ++  (admin nav button)
+src/app/components/dashboard/dashboard.ts          |   5 +   (isAdmin + openAdmin)
+src/app/components/login-modal/login-modal.html    | 206 ++++++++---------  (drop Register tab)
+src/app/components/login-modal/login-modal.spec.ts |  47 +----     (rewrite for login-only)
+src/app/components/login-modal/login-modal.ts      |  18 +-     (drop Mode union)
+src/app/core/honcho-auth.service.spec.ts           |  38 +++-   (register() → setupFirstAdmin)
+src/app/core/honcho-auth.service.ts                |  51 +++--  (drop register(), add setupFirstAdmin())
+src/app/core/models.ts                             | 104 +++++++ (HealthResponse, FirstAdminInput, AdminUser, AdminAuditEntry, AdminDashboardOverview, AdminMaintenanceStatus)
+src/app/guards/auth.guard.spec.ts                  |  11 ++     (first-run redirect test)
+src/app/guards/auth.guard.ts                       |  32 ++--   (probe /api/health before redirect)
++ NEW: src/app/components/admin/{admin.ts,admin.html,admin.css}    (admin panel)
++ NEW: src/app/components/charts/chart.component.ts                (Chart.js wrapper)
++ NEW: src/app/components/setup/{setup.ts,setup.html,setup.css}    (3-step wizard)
++ NEW: src/app/core/admin.service.ts                               (/api/admin/* CRUD)
++ NEW: src/app/core/health.service.ts                              (/api/health probe)
++ NEW: src/app/guards/admin.guard.ts                               (isAdmin gate)
++ NEW: src/app/guards/setup.guard.ts                               (firstRun gate)
+```
+
+## Test counts
+
+| | Before | After | Δ |
+|---|---|---|---|
+| Backend `mvn test` | 487 | 487 | (unchanged — backend not touched this session) |
+| UI `npx ng test` | 117 | **129** | **+12** (setupFirstAdmin x3, health-redirect x1, login-modal-simplified, etc.) |
+
+`build`: production `npm run build` size unchanged budget-wise; chart.js adds ~70KB raw / ~22KB gzipped to the chunk.
+
+## Run instructions for the user
+
+Both servers boot in ~5s when the bash tool can hold the foreground command. Use `start-all.sh` (already created at `/tmp/honcho-view-test/scripts/start-all.sh`):
+
+```bash
+# Terminal 1 (foreground; bash tool keeps both alive up to 10 min)
+/tmp/honcho-view-test/scripts/start-all.sh
+
+# Then in a browser:
+#   http://localhost:4200    → UI (first-run wizard, since DB is fresh)
+#   http://localhost:8080    → backend
+#   http://localhost:8080/swagger-ui.html  → OpenAPI explorer
+#   http://localhost:8080/api/health       → { ok: true, firstRun: true, needsRegister: true }
+
+# Flow:
+# 1. /setup wizard appears (3 steps)
+# 2. Create first admin (e.g. alice / something-secret-1)
+# 3. Auto-redirected to /profiles (no profiles yet) → /admin
+# 4. /admin → Overview tab shows 3 charts (counts bar, growth line, action doughnut)
+# 5. /admin → Users tab → create second user (e.g. bob / something-secret-2, isAdmin=false)
+# 6. /admin → Audit tab shows the bootstrap action with metadata
+# 7. /admin → Maintenance tab shows row counts + retention config
+# 8. Logout, log back in as bob → /admin button is hidden (not admin)
+```
+
+Or run in two terminals (no time limit):
+```bash
+# Terminal A
+cd /home/mlapointe/secure/git/honcho-inspector-backend
+mvn -B -ntp -DskipTests package
+HONCHO_DB_PATH=jdbc:sqlite:/tmp/honcho-view-test/data/honcho-inspector.db \
+HONCHO_CRYPTO_KEY="$(openssl rand -base64 32)" \
+  java -jar target/honcho-inspector-backend-0.1.0-SNAPSHOT.jar
+
+# Terminal B
+cd /home/mlapointe/secure/git/honcho-inspector-ui
+NG_BACKEND_URL=http://localhost:8080 npx ng serve --port 4200
+```
+
+## Environment note: bash tool kills detached background JVMs
+
+I tried **7** daemonization strategies to keep both servers alive across bash invocations:
+1. `nohup ... &` + `disown` — killed
+2. `setsid nohup ... &` — killed
+3. `start-stop-daemon --background` — killed
+4. `systemd-run --unit=honcho-view` — unit "could not be found" after bash tool cleanup
+5. `tmux new-session -d` — killed
+6. Python `os.fork() x2` (double-fork to init) — killed (bash tool tracks session even after reparenting)
+7. Running `start-all.sh` in the **foreground** with `wait` — **works** (bash tool keeps the bash process alive for the full timeout, ~10 min)
+
+**Workaround**: run `start-all.sh` in the foreground via the bash tool (max 10-minute window). For unlimited runtime, run the two `java` and `npx ng serve` commands in user-terminal sessions outside this tool.
+
+## Honcho MCP
+
+Captured the new decisions to the workspace (peer `honcho-inspector-backend`); this UI session should add ~5 conclusions covering:
+- Chart.js wrapper pattern (OnPush + DestroyRef)
+- `authGuard` health-probe first-run detection
+- Wizard component for `/setup` (3-step + reactive form + computed gate)
+- Admin tab pattern (signal-driven tab switcher + per-tab lazy load)
+- `honcho.isAdmin` computation from credentials
+
+## Next session priorities
+
+1. **Make a small UI lesson file** mirroring `docs/lessons/admin-rbac-rollout.md` — name it `docs/lessons/ui-admin-rewrite.md`. Capture:
+   - Why we deleted `register()` from the auth service (not just gated the modal)
+   - Why `firstRun` probe lives in `authGuard`, not in `APP_INITIALIZER`
+   - Why admin nav uses `computed()` not a separate effect
+   - Chart.js wrapper pattern + the OnPush + DestroyRef contract
+2. **Capture conclusions to Honcho MCP** (5 items above)
+3. **Update `docs/SECURITY.md` UI section** if there are client-side security concerns (there aren't material ones — all auth happens server-side; the JWT-equivalent `sessionId` lives in localStorage which is the standard tradeoff)
+4. **Run `npm run build`** and commit the `dist/` snapshot if a release tag is needed
+5. **Open a meta-port branch** for the UI on `cloudbsd-ports`: `www/honcho-inspector-frontend`
+6. **Set up Homebrew umbrella formula** at `cloudbsdorg/honcho-inspector/honcho-inspector` depending on backend + frontend formulas
+

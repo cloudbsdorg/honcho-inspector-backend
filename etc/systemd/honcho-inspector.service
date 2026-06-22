@@ -16,8 +16,6 @@ Description=Honcho Inspector Backend (multi-user admin surface for Honcho)
 Documentation=https://github.com/cloudbsdorg/honcho-inspector-backend
 After=network-online.target
 Wants=network-online.target
-StartLimitIntervalSec=300
-StartLimitBurst=10
 
 [Service]
 Type=simple
@@ -35,6 +33,7 @@ EnvironmentFile=-/etc/default/honcho-inspector
 # file. The default is an absolute path under /var/lib so it works
 # regardless of the working directory systemd runs in.
 Environment=HONCHO_DB_PATH=jdbc:sqlite:/var/lib/honcho-inspector/honcho-inspector.db
+Environment=HONCHO_CONFIG_DIR=/etc/honcho-inspector
 
 ExecStart=/usr/bin/java \
     -Xms64m -Xmx256m \
@@ -42,9 +41,13 @@ ExecStart=/usr/bin/java \
     -Dlogging.file.name=/var/log/honcho-inspector/honcho-inspector-backend.log \
     -jar /usr/local/lib/honcho-inspector/honcho-inspector-backend.jar
 
-# Restart policy: only on failure (not on clean exit) and back off.
-Restart=on-failure
+# Restart policy: always restart (whether clean exit or failure) so the
+# service stays up across dependency hiccups, OOM, or any other transient
+# stop. Back off, cap the start burst, give the JVM time to stop cleanly.
+Restart=always
 RestartSec=5
+StartLimitIntervalSec=300
+StartLimitBurst=10
 TimeoutStopSec=30
 
 # Hardening: see systemd.exec(5). The service cannot acquire new
