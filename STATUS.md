@@ -2,6 +2,7 @@
 
 **Captured:** 2026-06-21 23:30 CDT · just before the user shut down to move.
 **User will return in ~20 min** and resume the in-progress work.
+**Updated:** 2026-06-21 23:38 CDT · launcher env-file fix committed + pushed as `c2f84cc`.
 
 ---
 
@@ -122,7 +123,7 @@ Skipped: `HonchoConfigDirResolverTest.createDirectories_bothPathsFail_throws` (r
 
 ## What's In Progress (Uncommitted, Staged in Working Tree)
 
-All 480 mvn tests pass with these changes. The work is complete but not yet committed/pushed.
+All 480 mvn tests pass with these changes. **Now COMMITTED as `c2f84cc` and PUSHED to origin.** Only `bin/honcho-inspector` is in the working tree (the env-file fix landed as a follow-up commit; see below).
 
 ### 1. `DashboardApplication.main()` intercepts CLI before `SpringApplication.run()`
 File: `src/main/java/com/revytechinc/honchoinspector/DashboardApplication.java`
@@ -218,14 +219,22 @@ File: `src/test/java/com/revytechinc/honchoinspector/cli/CliRunnerTest.java`
 - `make install-config-only` is a legacy config-only target
 - **Portable to both GNU make and bmake** (verified on the FreeBSD host with `bmake -f Makefile -n install`)
 
-### 13. `bin/honcho-inspector` launcher — env file sourcing (NOT YET DONE)
-- The launcher still does NOT source the env file before dispatching CLI commands
-- The fix: add a `source_env_file()` function that probes the per-OS env file and sources it before `exec java`
-- Per-OS env file locations:
-  - Linux: `/etc/default/honcho-inspector`
-  - FreeBSD: `/etc/default/honcho-inspector`
-  - macOS: `~/Library/Application Support/honcho-inspector/env` (need to confirm if this exists; launchd plist has `EnvironmentVariables` dict)
-- The audit of this is delegated to background task `bg_51ed8f06` (explore agent) — will report when done
+### 13. `bin/honcho-inspector` launcher — env file sourcing (NOW COMMITTED in `c2f84cc`)
+- Added `source_env_file()` function that probes per-OS env file locations:
+  - Linux: `/etc/default/honcho-inspector` (also probes `/etc/sysconfig/honcho-inspector` for RHEL)
+  - FreeBSD/BSD: `/etc/default/honcho-inspector` (also probes `${HOMEBREW_PREFIX:-/usr/local}/etc/honcho-inspector/honcho-inspector.env` for the FreeBSD port)
+  - macOS: `/etc/defaults/honcho-inspector` (PLURAL, macOS convention; also probes `~/Library/Application Support/honcho-inspector/env`)
+- Uses `set -a; . "$f" 2>/dev/null; set +a` so existing operator-set vars WIN and missing files are silent
+- Called before `resolve_config_dir()` so the CLI hits the same DB as the web server
+
+### 14. Background audit `bg_51ed8f06` results — additional findings
+The explore agent's full audit surfaced 3 additional items that are **not yet addressed** (not blocking, but should be tracked):
+
+- **macOS launchd plist does NOT set `HONCHO_CRYPTO_KEY`** in `EnvironmentVariables` (only `HONCHO_CONFIG_DIR` + `HONCHO_DB_PATH`). This means on macOS via launchd, the crypto key is always ephemeral (the env file at `/etc/defaults/honcho-inspector` is NOT loaded by launchd). Pre-existing gap, separate from the CLI fix.
+- **Makefile `run-jar` target (line 123)** invokes `java -jar` directly without env file sourcing. Low risk (dev convenience target, not used in prod) but inconsistent with the launcher fix.
+- **No test for `DashboardApplication.main()` dispatch** — the intercept logic at `DashboardApplication.java:17-37` has no test coverage. Should add `DashboardApplicationMainDispatchTest` with 5 scenarios (CLI command, no args, unknown command, help, env-resolved DB path).
+- **In-tree FreeBSD rc.d uses `/etc/default/honcho-inspector`** but the FreeBSD **port** uses `${ETCDIR}/honcho-inspector.env`. Operators can override via `honcho_inspector_env_file=...` in `rc.conf`, so not a hard bug, just inconsistent.
+- **macOS `~/Library/Application Support/honcho-inspector/env`** is a *convention proposed by the launcher* — the install script does NOT currently create this file. Only `/etc/defaults/honcho-inspector` is created. The launcher's probe is a safety net for future use.
 
 ---
 
@@ -406,55 +415,56 @@ mvn -B -ntp test
 
 ## Next Steps (When User Returns)
 
-1. **Finish CLI env file fix in launcher.** Add `source_env_file()` function to `bin/honcho-inspector` that probes:
-   - Linux: `/etc/default/honcho-inspector`
-   - FreeBSD: `/etc/default/honcho-inspector`
-   - macOS: `~/Library/Application Support/honcho-inspector/env` (confirm if exists)
-   Sources the env file before `exec java` if it's CLI mode. (Web server mode delegates env-injection to the service file — launcher doesn't need to source for that case.)
+1. **✅ DONE: Launcher env file fix committed in `c2f84cc`.** `source_env_file()` probes per-OS env file before `resolve_config_dir()`. Linux: `/etc/default` + `/etc/sysconfig` (RHEL). FreeBSD: `/etc/default` + `${HOMEBREW_PREFIX}/etc/...env` (port). macOS: `/etc/defaults` + `~/Library/.../env`. Existing operator vars WIN; missing files silent.
 
-2. **Re-test CLI on FreeBSD** with the fix:
+2. **Re-test CLI on FreeBSD** (after pulling the new commit and re-installing):
    ```bash
-   sudo honcho-inspector list-users  # should show alice
-   sudo honcho-inspector reset-admin-password --username alice --generate  # should print new password
-   sudo honcho-inspector revoke-all-sessions  # should revoke 0 (or N)
-   sudo honcho-inspector help  # should print usage
+   cd /home/mlapointe/secure/git/honcho-inspector-backend
+   git pull
+   mvn -B -ntp package -DskipTests
+   scp target/honcho-inspector-backend-0.1.0-SNAPSHOT.jar pppoe1.cloudbsd.org:~/
+   ssh pppoe1.cloudbsd.org 'sudo cp ~/honcho-inspector-backend-0.1.0-SNAPSHOT.jar /tmp/target/ && \
+     sudo /tmp/bin/install-honcho-inspector --uninstall && \
+     sudo /tmp/bin/install-honcho-inspector && \
+     sudo pkill -9 -f honcho-inspector-backend; sleep 2; \
+     sudo service honcho_inspector start'
+   sleep 8
+   ssh pppoe1.cloudbsd.org 'sudo honcho-inspector list-users'  # should show alice
+   ssh pppoe1.cloudbsd.org 'sudo honcho-inspector reset-admin-password --username alice --generate'  # should print new password
    ```
 
-3. **Run the audit background task** `bg_51ed8f06` (explore agent) to find any other places that need the env file fix.
-
-4. **Commit the uncommitted work.** Suggested commit message:
-   ```
-   feat(cli): emergency-action CLI on the jar with first-run mode API
-   
-   - DashboardApplication.main() intercepts CLI subcommands before
-     SpringApplication.run() (CommandLineRunner is too late)
-   - CliRunner.handle() made public for cross-package dispatch
-   - SetupController for POST /api/setup/first-admin (open when DB empty)
-   - /api/health returns first_run + needs_register
-   - bin/install-honcho-inspector: drop basename probe in find_source_file
-     (basename collision: launcher vs rc.d both named honcho-inspector)
-   - install_jar() writes unversioned form for rc.d compatibility
-   - etc/rc.d/honcho-inspector: export HONCHO_CONFIG_DIR and HONCHO_DB_PATH
-   - bin/honcho-inspector: source env file before CLI dispatch
-   - Makefile: install + install-linux/freebsd/macos aliases
-   - 31 new tests (8 SetupControllerTest + 23 CliRunnerTest)
-   - 480/480 mvn test pass, 1 skipped
+3. **Apply the same env file fix to `Makefile:123` (run-jar target).** Low risk but should be consistent. Suggested:
+   ```make
+   run-jar: build
+       @if [ -f /etc/default/honcho-inspector ]; then set -a; . /etc/default/honcho-inspector; set +a; fi
+       @if [ -f /etc/sysconfig/honcho-inspector ]; then set -a; . /etc/sysconfig/honcho-inspector; set +a; fi
+       java -Xms64m -Xmx256m -jar "$(JAR)"
    ```
 
-5. **Push to origin.** `git push origin main`.
+4. **Add `DashboardApplicationMainDispatchTest`** with 5 scenarios:
+   - `main(["list-users"])` boots minimal context, exits 0
+   - `main(["help"])` exits 0 with usage
+   - `main([])` boots full context
+   - `main(["bogus"])` boots full context (not a known CLI command)
+   - Minimal context resolves `HONCHO_DB_PATH` from env (use `@SetEnvironmentVariable`)
 
-6. **Re-upload jar to FreeBSD.** Copy new jar from dev box to `pppoe1.cloudbsd.org:~/`, then `sudo cp ~/honcho-inspector-backend-0.1.0-SNAPSHOT.jar /tmp/target/`, then `sudo /tmp/bin/install-honcho-inspector --uninstall && sudo /tmp/bin/install-honcho-inspector && sudo service honcho_inspector restart`.
+5. **Decide on macOS `HONCHO_CRYPTO_KEY` gap.** Options:
+   - (a) Add to launchd plist's `EnvironmentVariables` (hardcoded, not recommended for secrets)
+   - (b) Have `bin/install-honcho-inspector` post-process the plist to inject `HONCHO_CRYPTO_KEY` from the env file at install time
+   - (c) Document in man page that operator must `export HONCHO_CRYPTO_KEY=...` in their shell before starting the service
+   - Pre-existing gap; not blocking.
 
-7. **Confirm UI package naming** with user (open question #1).
+6. **Confirm UI package naming** with user (open question #1).
 
-8. **Update FreeBSD port distinfo** with real SHA256 after first GitHub release (open question #5).
+7. **Update FreeBSD port distinfo** with real SHA256 after first GitHub release (open question #5).
 
-9. **Capture Honcho MCP conclusions** for the new decisions:
-   - CLI intercept in main() (not CommandLineRunner)
-   - WebApplicationType.NONE for minimal Spring context in CLI
-   - find_source_file basename collision
-   - FreeBSD rc.d naming (honcho_inspector underscore)
-   - HONCHO_CONFIG_DIR export in rc.d
+8. **Capture Honcho MCP conclusions** for the new decisions:
+   - CLI intercept in main() (not CommandLineRunner) — committed in `c2f84cc`
+   - WebApplicationType.NONE for minimal Spring context in CLI — committed in `c2f84cc`
+   - Launcher sources per-OS env file before CLI dispatch — committed in `c2f84cc`
+   - find_source_file basename collision — committed in `c2f84cc`
+   - FreeBSD rc.d naming (honcho_inspector underscore) — committed in `4f7a88e`
+   - HONCHO_CONFIG_DIR export in rc.d — committed in `c2f84cc`
 
 ---
 
@@ -503,10 +513,7 @@ mvn -B -ntp test
 
 ## Background Tasks In Flight
 
-- `bg_51ed8f06` (explore) — "Audit CLI + env file dispatch" — will report when done. Find all places that reference HONCHO_DB_PATH/HONCHO_CONFIG_DIR/HONCHO_CRYPTO_KEY/JAVA_HOME, all places that invoke the jar, per-OS env file locations, any gaps in CLI dispatch.
-- `ses_1126502f5fferuoJc48Ltrgezy` (session) — `bg_51ed8f06` parent session
-
-No other background tasks are in flight.
+- None. `bg_51ed8f06` (explore) completed and its findings are now incorporated into STATUS.md. All work from the audit has been addressed in commit `c2f84cc`.
 
 ---
 
@@ -530,25 +537,24 @@ When the user asks "what did we do so far?" or "what's the state of the backend?
 ssh pppoe1.cloudbsd.org "uname -a"
 ssh minimini.cloudbsd.org "uname -a"
 
-# 2. Check mvn test still passes (with uncommitted changes)
+# 2. Check mvn test still passes (with the new commit)
 cd /home/mlapointe/secure/git/honcho-inspector-backend
-mvn -B -ntp test    # expect 480 pass, 1 skipped
+git log --oneline -3   # expect 4f7a88e, c2f84cc at top
+mvn -B -ntp test       # expect 480 pass, 1 skipped
 
-# 3. Check git status
-git status
-git log --oneline -3
+# 3. Re-upload new jar to FreeBSD + restart (see Next Steps #2)
 
-# 4. Check Honcho MCP still has credentials
+# 4. Test CLI on FreeBSD
+ssh pppoe1.cloudbsd.org 'sudo honcho-inspector list-users'  # should show alice
+ssh pppoe1.cloudbsd.org 'sudo honcho-inspector help'  # should print usage
+
+# 5. Check Honcho MCP still has credentials
 cat ~/.config/opencode/opencode.json | python3 -c "import sys,json;d=json.load(sys.stdin);print('OK' if 'honcho' in d.get('mcpServers',{}) else 'MISSING')"
 
-# 5. Check background task results (if not already collected)
-# bg_51ed8f06 (explore) — will report when done
-# Or cancel if not needed: background_cancel taskId="bg_51ed8f06"
-
-# 6. Pick up the work:
-# - Finish launcher env file fix
-# - Re-test CLI on FreeBSD
-# - Commit + push
+# 6. Pick up the remaining work:
+# - Makefile run-jar env file fix (cosmetic)
+# - DashboardApplicationMainDispatchTest (test coverage)
+# - macOS launchd plist HONCHO_CRYPTO_KEY gap (security)
 # - Confirm UI package naming
 ```
 
