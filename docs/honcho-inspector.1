@@ -301,6 +301,136 @@ TLS in front of the service.
 .B docs/lessons/
 Engineer's notes on what was learned during the rollout of each
 major surface.
+.SH INSTALLATION
+The recommended install path is the platform's package manager.
+A manual installer is also shipped for operators who do not want a
+package.
+.SS Package manager install (recommended)
+.TP
+.B macOS / Linux
+.RB \(em " Homebrew / Linuxbrew"
+.PP
+.RS 4
+.B brew install cloudbsdorg/honcho-inspector/honcho-inspector
+.RE
+.PP
+Then enable the service:
+.PP
+.RS 4
+.B brew services start honcho-inspector
+.RE
+.TP
+.B FreeBSD
+.RB \(em " ports tree"
+.PP
+.RS 4
+.B cd /usr/ports/net/honcho-inspector \\
+.br
+.B   make install clean
+.RE
+.PP
+Then enable the service by adding the line below to
+.BR /etc/rc.conf :
+.PP
+.RS 4
+.B honcho_inspector_enable="YES"
+.RE
+.PP
+and start it:
+.PP
+.RS 4
+.B service honcho_inspector start
+.RE
+.SS Manual install (POSIX)
+For operators who do not use a package manager, the project ships
+.BR bin/install-honcho-inspector .
+The script:
+.IP \(bu 2
+Detects the OS and the Java binary.
+.IP \(bu
+Creates the service user
+.RB ( www-data / www / _www )
+if missing.
+.IP \(bu
+Creates the data, log, and config directories with the right
+ownership and mode.
+.IP \(bu
+Copies the jar to
+.BR /usr/local/lib/honcho-inspector/ .
+.IP \(bu
+Installs the per-OS service file
+.RB ( /etc/systemd/system/honcho-inspector.service ,
+.BR /usr/local/etc/rc.d/honcho_inspector ,
+or
+.BR /Library/LaunchDaemons/com.honcho.inspector.plist ).
+.IP \(bu
+Installs the man page to
+.BR /usr/local/share/man/man1/ .
+.IP \(bu
+Drops a placeholder
+.B /etc/default/honcho-inspector
+env file (mode 0640
+.RB root: www-data / www / _www ).
+.IP \(bu
+Enables and starts the service.
+.PP
+The script is idempotent: re-running after an upgrade re-installs
+the jar and the service file. It does NOT overwrite an existing
+.B application.yml
+or the env file unless
+.B --recreate-config
+is passed.
+.PP
+The install runs as the dedicated unprivileged service user
+.RB ( www-data / www / _www ).
+A compromise of the backend process therefore cannot read
+.BR /root ,
+.BR /home ,
+or other users' files, and cannot bind to privileged ports.
+The systemd unit is hardened with
+.BR "NoNewPrivileges=true" ,
+.BR "ProtectSystem=strict" ,
+.BR "PrivateTmp=true" ,
+and similar directives (see
+.BR etc/systemd/honcho-inspector.service
+in the source tree).
+.PP
+The install script writes the database and the config dir but
+does NOT generate the
+.B HONCHO_CRYPTO_KEY
+\(em the operator must set it in
+.B /etc/default/honcho-inspector
+with
+.RB \(lq "openssl rand -base64 32" \(rq
+after the install completes, then restart the service.
+.SS Updating an existing install
+.TP
+.B Package manager
+Run the package manager's upgrade command. On macOS:
+.PP
+.RS 4
+.B brew upgrade honcho-inspector
+.RE
+.PP
+On FreeBSD with pkg(8):
+.PP
+.RS 4
+.B pkg upgrade honcho-inspector
+.RE
+.PP
+On FreeBSD from source:
+.PP
+.RS 4
+.B portmaster net/honcho-inspector
+.RE
+.TP
+.B Manual
+Re-run the install script. The data, log, config, and env dirs
+are left untouched; only the jar and the service file are updated:
+.PP
+.RS 4
+.B sudo bin/install-honcho-inspector
+.RE
 .SH FIRST STARTUP
 On a fresh install:
 .IP 1. 4
@@ -578,10 +708,17 @@ changes.
 .SH SEE ALSO
 .BR honcho (1)
 (upstream product; not a separate man page),
+.BR install-honcho-inspector (8)
+(manual install script shipped with the project),
 .BR sqlite3 (1),
 .BR nginx (8),
 .BR caddy (8),
-.BR openssl (1)
+.BR openssl (1),
+.BR systemctl (1),
+.BR service (8)
+(FreeBSD),
+.BR launchctl (1)
+(macOS)
 .PP
 Project documentation:
 .IP \(bu 2

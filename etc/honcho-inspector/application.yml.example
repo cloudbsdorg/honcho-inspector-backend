@@ -27,6 +27,27 @@
 #    POST /api/admin/users to mint the real first admin. Remove the
 #    bootstrap credentials from this file once that user exists — leaving
 #    them in is a credential-on-disk leak. See docs/SECURITY.md §6.
+# 6. File ownership after install (set by the package manager or
+#    `bin/install-honcho-inspector`):
+#
+#      Linux:    /etc/honcho-inspector/                       root:www-data  0750
+#                /var/lib/honcho-inspector/ (sqlite db)        www-data:www-data 0750
+#                /var/log/honcho-inspector/  (jsonl log)       www-data:www-data 0750
+#                /etc/default/honcho-inspector  (HONCHO_CRYPTO_KEY env)  root:www-data 0640
+#
+#      FreeBSD:  /usr/local/etc/honcho-inspector/             root:www       0750
+#                /var/db/honcho-inspector/                     www:www        0750
+#                /var/log/honcho-inspector/                    www:www        0750
+#                /etc/default/honcho-inspector                 root:www       0640
+#
+#      macOS:    /usr/local/etc/honcho-inspector/             root:_www      0750
+#                /var/lib/honcho-inspector/                    _www:_www      0750
+#                /var/log/honcho-inspector/                    _www:_www      0750
+#                /etc/defaults/honcho-inspector                root:_www      0640
+#
+#    Do NOT loosen these modes to "fix" a permissions error — the error
+#    is a configuration problem (the service user is wrong, the group
+#    is missing, or the user is not the owner of the dir).
 
 server:
   # port: 8080
@@ -35,10 +56,13 @@ server:
   address: 127.0.0.1
   # Trim what Spring's error envelope leaks. The default is
   # `include-message: always` (set in the bundled yaml for dev clarity);
-  # in prod, prefer `when_authorized` or `never` so unmapped exceptions
-  # don't echo upstream error text to the browser.
+  # in prod, prefer `never` so unmapped exceptions don't echo upstream
+  # error text to the browser. Valid Spring Boot 3.5 values are
+  # ALWAYS, NEVER, ON_PARAM. (We previously suggested `when_authorized`
+  # which is not a valid Spring Boot 3.5 enum value and causes
+  # ApplicationContext startup failure.)
   error:
-    include-message: when_authorized
+    include-message: never
     include-binding-errors: never
     include-stacktrace: never
     include-exception: false

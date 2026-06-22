@@ -308,3 +308,160 @@ them eventually.
   — the operator-facing drop-in template.
 - `docs/honcho-inspector.1`
   — the operator-facing groff man page.
+- `packaging/homebrew/honcho-inspector.rb`
+  — the Homebrew tap formula (macOS + Linuxbrew).
+- `packaging/linux/README.md`
+  — Linux packaging notes (Homebrew/Linuxbrew + .deb/.rpm recipes).
+
+## 12. macOS installer live-test findings (2026-06-21)
+
+Live-tested on `minimini.cloudbsd.org` (macOS 26.5 Tahoe, arm64, JDK
+25+36, sudo unlocked). The POSIX install script, launchd plist, and
+launcher all worked end-to-end. Seven new lessons from the run:
+
+### 12.1 `when_authorized` is not a valid Spring Boot 3.5 enum value
+
+The `etc/honcho-inspector/application.yml.example` template had
+`server.error.include-message: when_authorized`, which I had taken
+from a doc snippet. Spring Boot 3.5's `ErrorProperties.IncludeAttribute`
+enum accepts only `ALWAYS`, `NEVER`, `ON_PARAM`. Anything else causes
+the `ApplicationContext` to fail to start with
+`failed to convert java.lang.String to ... IncludeAttribute
+(caused by IllegalArgumentException: No enum constant ...
+when_authorized)`. The fix is `include-message: never` — the only
+safe value for prod. The launcher still comes up enough to write the
+JSONL log of the failure, which is what made the bug diagnosable from
+the log directory alone. **Lesson:** when writing a config template
+that references framework enums, validate the values against the
+actual framework version, not a doc snippet.
+
+### 12.2 The launchd plist must set `HONCHO_DB_PATH` to an absolute path
+
+On macOS, the launchd working directory is `/` (a SIP-protected
+read-only filesystem). The bundled `application.yml` has
+`url: ${HONCHO_DB_PATH:jdbc:sqlite:${HONCHO_DB_FILE:honcho-inspector.db}}`
+— a relative path. The first run failed with
+`opening db: 'honcho-inspector.db': Read-only file system`. The fix
+is to set `HONCHO_DB_PATH` to an absolute path in the plist's
+`EnvironmentVariables`:
+
+```xml
+<key>EnvironmentVariables</key>
+<dict>
+    <key>HONCHO_CONFIG_DIR</key>
+    <string>/usr/local/etc/honcho-inspector</string>
+    <key>HONCHO_DB_PATH</key>
+    <string>jdbc:sqlite:/var/lib/honcho-inspector/honcho-inspector.db</string>
+</dict>
+```
+
+The same fix is needed in the systemd unit (`Environment=HONCHO_DB_PATH=...`)
+and the rc.d script (set the env var before `command` is invoked).
+**Lesson:** the framework's "default to a relative path" is a dev-mode
+convenience. In any daemon-managed context, the working directory is
+untrusted and may be read-only or wiped; always set the data path
+absolutely via the init system's env-file mechanism.
+
+### 12.3 The launchd plist should call the launcher, not `java` directly
+
+The first version of the plist hardcoded `/usr/local/opt/openjdk/bin/java`
+because that's the Homebrew install path for OpenJDK. But the operator
+may have JDK 25 installed via the macOS installer (`/Library/Java/JavaVirtualMachines/jdk-25.jdk/...`)
+or a manual tarball — neither of which puts java at that exact path.
+The fix is to have the plist call the launcher script, which uses
+`java` from the PATH (or `JAVA_HOME` if set):
+
+```xml
+<key>ProgramArguments</key>
+<array>
+    <string>/usr/local/bin/honcho-inspector</string>
+</array>
+```
+
+The launcher handles the variable Java install. **Lesson:** the plist
+is the wrong place to encode a Java path. Keep the init file's
+`ProgramArguments` to a thin shim that delegates to a launcher.
+
+### 12.4 `RollingFileAppender` does NOT auto-create parent directories
+
+The logback config writes JSONL logs to `${HONCHO_CONFIG_DIR}/logs/honcho-inspector.jsonl`.
+On a fresh install, that `logs/` subdir doesn't exist. Logback's
+`RollingFileAppender` does not create parent dirs automatically; the
+install must. The fix is a single line in `create_dirs()`:
+
+```bash
+install -d -m 0750 -o "$SERVICE_USER" -g "$SERVICE_GROUP" "$CONFIG_DIR/logs"
+```
+
+**Lesson:** any directory the framework writes to as a side-effect
+must be enumerated in the install script. Don't trust the framework
+to mkdir for you.
+
+### 12.5 The launcher must probe `/usr/local/lib/` for the manual-install jar
+
+The launcher's first version only probed `$PROJECT_DIR/target` and
+`$HOMEBREW_PREFIX/opt/honcho-inspector/libexec`. But the POSIX install
+script copies the jar to `/usr/local/lib/honcho-inspector/`. The fix
+is a three-tier probe in the launcher:
+
+```bash
+JAR_DIR="${HONCHO_JAR_DIR:-}"
+if [ -z "$JAR_DIR" ] && [ -n "${HOMEBREW_PREFIX:-}" ] \
+    && [ -d "${HOMEBREW_PREFIX}/opt/honcho-inspector/libexec" ]; then
+    JAR_DIR="${HOMEBREW_PREFIX}/opt/honcho-inspector/libexec"
+fi
+if [ -z "$JAR_DIR" ] && [ -d /usr/local/lib/honcho-inspector ]; then
+    JAR_DIR=/usr/local/lib/honcho-inspector
+fi
+if [ -z "$JAR_DIR" ]; then
+    JAR_DIR="$PROJECT_DIR/target"  # dev mode
+fi
+```
+
+**Lesson:** the same launcher must serve three install paths (Homebrew,
+manual, dev). Probe them in order of specificity, fallback to the
+dev path last.
+
+### 12.6 The install script needs a `find_source_file` helper
+
+The install script needs to find source files (the jar, the plist,
+the man page, the application.yml template) in a few possible
+locations depending on how the operator runs it. The first version
+hardcoded `$PROJECT_DIR/etc/...` and `$PROJECT_DIR/docs/...`, which
+broke when the script was copied to `/tmp/install-honcho-inspector`
+and run from there. The fix is a small helper that probes four
+locations and also falls back to a flat layout (basename only):
+
+```bash
+find_source_file() {
+    local relpath="$1"
+    local base="$(basename "$relpath")"
+    for DIR in "$SCRIPT_DIR/.." "$SCRIPT_DIR" "/tmp" "$PWD"; do
+        [ -z "$DIR" ] && continue
+        if [ -f "$DIR/$relpath" ]; then echo "$DIR/$relpath"; return 0; fi
+        if [ "$base" != "$relpath" ] && [ -f "$DIR/$base" ]; then
+            echo "$DIR/$base"; return 0
+        fi
+    done
+    return 1
+}
+```
+
+**Lesson:** any installer that supports both "run from the source
+tree" and "copy to /tmp/ and run" needs a source-file probe, not a
+hardcoded relative path.
+
+### 12.7 macOS `/tmp` is a symlink to `/private/tmp` with TCC restrictions
+
+On macOS, `/tmp` is a symlink to `/private/tmp`, which is gated by
+macOS's TCC (Transparency, Consent, and Control) subsystem. The
+unprivileged user cannot write to `/tmp` from a remote SSH session
+even with `sudo` from the same context — the kernel-level
+sandboxing blocks the file create. The workaround for the install
+test was to use `sudo tee` with the target path being a system path
+(`/usr/local/etc/honcho-inspector/application.yml`), or to use
+`sudo cat | sudo tee` for content, but not `cp /tmp/foo /etc/bar`
+even with `sudo` on the `cp`. **Lesson:** when scripting macOS
+remotely, do all writes via `sudo tee` directly to the target path;
+do not stage files in `/tmp/`. The `/private/tmp` TCC rule is not
+documented clearly and is easy to hit.

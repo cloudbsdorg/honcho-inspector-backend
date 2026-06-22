@@ -1,0 +1,92 @@
+# systemd unit for the honcho-inspector backend (Linux).
+#
+# Install (typically by bin/install-honcho-inspector):
+#   install -m 0644 etc/systemd/honcho-inspector.service \
+#       /etc/systemd/system/honcho-inspector.service
+#   systemctl daemon-reload
+#   systemctl enable --now honcho-inspector
+#
+# Operating as a dedicated unprivileged service user (www-data by default)
+# is a defense-in-depth measure: a compromised backend process cannot
+# read /root, /home, or other users' files, and cannot bind to
+# privileged ports or load kernel modules. See docs/SECURITY.md.
+
+[Unit]
+Description=Honcho Inspector Backend (multi-user admin surface for Honcho)
+Documentation=https://github.com/cloudbsdorg/honcho-inspector-backend
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/lib/honcho-inspector
+
+# Environment file. Secrets (HONCHO_CRYPTO_KEY, optional bootstrap
+# credentials) live here, NOT in /etc/honcho-inspector/application.yml.
+# Mode 0640 root:www-data so the service user can read but other users
+# cannot. The installer creates this file if missing.
+EnvironmentFile=-/etc/default/honcho-inspector
+
+# Default DB path; operators can override HONCHO_DB_PATH in the env
+# file. The default is an absolute path under /var/lib so it works
+# regardless of the working directory systemd runs in.
+Environment=HONCHO_DB_PATH=jdbc:sqlite:/var/lib/honcho-inspector/honcho-inspector.db
+
+ExecStart=/usr/bin/java \
+    -Xms64m -Xmx256m \
+    -Dhoncho.config.dir=/etc/honcho-inspector \
+    -Dlogging.file.name=/var/log/honcho-inspector/honcho-inspector-backend.log \
+    -jar /usr/local/lib/honcho-inspector/honcho-inspector-backend.jar
+
+# Restart policy: only on failure (not on clean exit) and back off.
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+
+# Hardening: see systemd.exec(5). The service cannot acquire new
+# privileges, has a private /tmp, cannot touch the host filesystem
+# outside the explicit ReadWritePaths, and is denied access to kernel
+# tunables and control groups.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
+
+# Writable paths. The config dir is read-only at runtime; the data
+# dir holds the SQLite DB and the log dir holds the JSONL log.
+ReadWritePaths=/var/lib/honcho-inspector /var/log/honcho-inspector
+
+# Network: bind to loopback only. The reverse proxy (nginx / Apache /
+# Caddy) is the public listener.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+# Capabilities: drop everything. We bind to 127.0.0.1:8080 which is
+# unprivileged, so we need no caps. (If you change the bind port to
+# <1024 you must add CapabilityBoundingSet=CAP_NET_BIND_SERVICE.)
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+# Logging: hand off to journald. The JSONL log on disk is the
+# application-level stream; journald is the kernel/process stream.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=honcho-inspector
+
+[Install]
+WantedBy=multi-user.target

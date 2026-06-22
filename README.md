@@ -212,11 +212,49 @@ All paths under `/api/admin/**` are gated by `@RequireAdmin` + the `AdminAuthInt
 
 ## Deployment
 
-The backend listens on plain HTTP and **must** sit behind a TLS-terminating
-reverse proxy in any internet-reachable environment. The proxy is
-responsible for HTTPS, HSTS, security headers, and rate limiting. The
-backend itself should bind to `127.0.0.1` so it is not reachable except
-from the proxy.
+### Install via package manager (recommended)
+
+| OS | Command | Service file |
+|---|---|---|
+| macOS | `brew install cloudbsdorg/honcho-inspector/honcho-inspector` | `~/Library/LaunchDaemons/com.honcho.inspector.plist` |
+| Linux (Homebrew/Linuxbrew) | `brew install cloudbsdorg/honcho-inspector/honcho-inspector` | `/etc/systemd/system/honcho-inspector.service` |
+| FreeBSD (ports) | `cd /usr/ports/net/honcho-inspector && make install clean` | `/usr/local/etc/rc.d/honcho_inspector` |
+| FreeBSD (pkg) | `pkg install honcho-inspector` | `/usr/local/etc/rc.d/honcho_inspector` |
+
+The package-manager install creates the dedicated service user
+(`www-data` on Linux, `www` on FreeBSD, `_www` on macOS), the
+directories, the man page, and the service file. The operator only
+needs to set `HONCHO_CRYPTO_KEY` (and optionally the bootstrap
+admin credentials) in `/etc/default/honcho-inspector` and start the
+service.
+
+### Install manually (POSIX)
+
+For operators who do not use a package manager, the project ships
+[`bin/install-honcho-inspector`](bin/install-honcho-inspector). Run
+it as root after `mvn package`:
+
+```bash
+mvn -B -ntp package -DskipTests
+sudo bin/install-honcho-inspector
+sudo $EDITOR /etc/default/honcho-inspector   # set HONCHO_CRYPTO_KEY
+sudo systemctl restart honcho-inspector      # Linux
+# or:  sudo service honcho_inspector restart # FreeBSD
+# or:  sudo launchctl kickstart -k system/com.honcho.inspector  # macOS
+```
+
+The script is idempotent: re-running after an upgrade re-installs
+the jar and the service file. It does NOT overwrite the database,
+the operator-edited `application.yml`, or `/etc/default/honcho-inspector`
+unless `--recreate-config` is passed.
+
+### Reverse proxy
+
+The backend listens on plain HTTP and **must** sit behind a
+TLS-terminating reverse proxy in any internet-reachable environment.
+The proxy is responsible for HTTPS, HSTS, security headers, and rate
+limiting. The backend itself should bind to `127.0.0.1` so it is not
+reachable except from the proxy.
 
 Ready-to-use example configs for **nginx** (primary, certs managed by
 nginx via certbot), **Apache** (certbot-managed), and **Caddy**
@@ -296,8 +334,20 @@ src/main/resources/
   schema.sql
 bin/
   honcho-inspector                 — POSIX launcher; detects OS and sets HONCHO_CONFIG_DIR
+  install-honcho-inspector         — POSIX install script (creates user, dirs, service file, man page)
 etc/honcho-inspector/
   application.yml.example          — drop-in config template (bootstrap + audit blocks)
+etc/systemd/
+  honcho-inspector.service         — Linux systemd unit (User=www-data, hardened)
+etc/rc.d/
+  honcho-inspector                 — FreeBSD rc.d script (honcho_inspector_user=www)
+etc/launchd/
+  com.honcho.inspector.plist       — macOS launchd plist (UserName=_www)
+packaging/
+  homebrew/
+    honcho-inspector.rb            — Homebrew formula (macOS + Linuxbrew)
+  linux/
+    README.md                      — Linux packaging notes (.deb / .rpm / Linuxbrew)
 docs/
   SECURITY.md                      — threat model, audit findings, hardening checklists
   reverse-proxy.md                 — nginx (primary), Apache, Caddy configs + requirements

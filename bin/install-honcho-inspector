@@ -1,0 +1,458 @@
+#!/bin/sh
+#
+# install-honcho-inspector - install the Honcho Inspector backend as a
+# system service running as an unprivileged user.
+#
+# Idempotent: re-running this script after an upgrade re-installs the
+# jar, the service file, the man page, and the data/log dirs. It does
+# NOT overwrite an existing application.yml, the SQLite database, or
+# the /etc/default/honcho-inspector env file. The operator can re-run
+# `bin/install-honcho-inspector --recreate-config` to overwrite the
+# application.yml (the database is never touched by this script).
+#
+# Usage:
+#   sudo bin/install-honcho-inspector
+#   sudo bin/install-honcho-inspector --recreate-config
+#   sudo bin/install-honcho-inspector --uninstall
+#
+# What it does:
+#   1. Detects the OS (Linux / FreeBSD / Darwin) and the Java binary.
+#   2. Creates the service user (www-data / www / _www) if missing.
+#   3. Creates the data, log, and config directories with the right
+#      ownership and mode.
+#   4. Copies the jar to /usr/local/lib/honcho-inspector/.
+#   5. Installs the service file:
+#        - Linux:  /etc/systemd/system/honcho-inspector.service
+#        - FreeBSD:/usr/local/etc/rc.d/honcho-inspector
+#        - macOS:  /Library/LaunchDaemons/com.honcho.inspector.plist
+#   6. Installs the man page to /usr/local/share/man/man1/.
+#   7. Drops a default /etc/default/honcho-inspector env file if one
+#      is not already present.
+#   8. Enables and starts the service.
+#
+# Secrets handling:
+#   This script NEVER writes the crypto key or bootstrap credentials
+#   to any file. It does create /etc/default/honcho-inspector with a
+#   placeholder if one does not exist; the operator MUST set
+#   HONCHO_CRYPTO_KEY in that file with the output of
+#   `openssl rand -base64 32` before the service can keep data across
+#   restarts. The script will WARN loud if the file is missing the
+#   key.
+
+set -eu
+
+INSTALL_PREFIX="${HONCHO_INSTALL_PREFIX:-/usr/local}"
+SERVICE_USER=""
+SERVICE_GROUP=""
+SERVICE_NAME="honcho-inspector"
+
+usage() {
+    cat >&2 <<EOF
+Usage: $0 [--recreate-config] [--uninstall] [--prefix DIR]
+EOF
+    exit 2
+}
+
+RECREATE_CONFIG=0
+UNINSTALL=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --recreate-config) RECREATE_CONFIG=1; shift ;;
+        --uninstall)       UNINSTALL=1; shift ;;
+        --prefix)          INSTALL_PREFIX="$2"; shift 2 ;;
+        -h|--help)         usage ;;
+        *)                 echo "unknown flag: $1" >&2; usage ;;
+    esac
+done
+
+require_root() {
+    if [ "$(id -u)" -ne 0 ]; then
+        echo "FATAL: $0 must be run as root (or with sudo)" >&2
+        echo "  the install script writes to /etc, /usr/local, and /var" >&2
+        exit 1
+    fi
+}
+
+detect_os() {
+    uname_s="$(uname -s)"
+    case "$uname_s" in
+        Linux)   OS=linux ;;
+        FreeBSD) OS=freebsd ;;
+        Darwin)  OS=macos ;;
+        *)
+            echo "FATAL: unsupported OS: $uname_s" >&2
+            echo "  supported: Linux, FreeBSD, macOS" >&2
+            exit 1
+            ;;
+    esac
+}
+
+detect_user() {
+    case "$OS" in
+        linux)   SERVICE_USER=www-data; SERVICE_GROUP=www-data ;;
+        freebsd) SERVICE_USER=www;     SERVICE_GROUP=www ;;
+        macos)   SERVICE_USER=_www;    SERVICE_GROUP=_www ;;
+    esac
+}
+
+# Returns 0 if the user exists in this OS's user database.
+user_exists() {
+    case "$OS" in
+        linux)   id -u "$1" >/dev/null 2>&1 ;;
+        freebsd) pw usershow "$1" >/dev/null 2>&1 ;;
+        macos)   dscl . -read "/Users/$1" UniqueID >/dev/null 2>&1 ;;
+    esac
+}
+
+# Create the service user as a system account (no password, no shell,
+# no home directory beyond the default). Idempotent.
+create_user() {
+    if user_exists "$SERVICE_USER"; then
+        return 0
+    fi
+    echo "creating system user $SERVICE_USER ($SERVICE_GROUP)"
+    case "$OS" in
+        linux)
+            if ! getent group "$SERVICE_GROUP" >/dev/null; then
+                groupadd --system "$SERVICE_GROUP"
+            fi
+            useradd --system \
+                --home-dir "/var/lib/$SERVICE_NAME" \
+                --no-create-home \
+                --shell /usr/sbin/nologin \
+                --gid "$SERVICE_GROUP" \
+                --comment "Honcho Inspector service account" \
+                "$SERVICE_USER"
+            ;;
+        freebsd)
+            if ! pw groupshow "$SERVICE_GROUP" >/dev/null 2>&1; then
+                pw groupadd "$SERVICE_GROUP"
+            fi
+            pw useradd -n "$SERVICE_USER" -g "$SERVICE_GROUP" \
+                -d "/var/db/$SERVICE_NAME" -s /usr/sbin/nologin \
+                -c "Honcho Inspector service account" -h -
+            ;;
+        macos)
+            # macOS ships _www by default. Skip creation; it must
+            # already exist or the install will fail later.
+            if ! dscl . -read "/Users/$SERVICE_USER" UniqueID >/dev/null 2>&1; then
+                echo "FATAL: macOS system user $SERVICE_USER does not exist" >&2
+                echo "  run 'sudo dscl . -create /Users/_www UniqueID 70' to create it" >&2
+                exit 1
+            fi
+            ;;
+    esac
+}
+
+# Set the per-OS runtime directory paths. Used by both the install
+# and uninstall paths so the uninstall function can echo them
+# without re-implementing the case statement.
+setup_dirs() {
+    case "$OS" in
+        linux)
+            DATA_DIR="/var/lib/$SERVICE_NAME"
+            LOG_DIR="/var/log/$SERVICE_NAME"
+            CONFIG_DIR="/etc/$SERVICE_NAME"
+            ENV_FILE="/etc/default/$SERVICE_NAME"
+            ;;
+        freebsd)
+            DATA_DIR="/var/db/$SERVICE_NAME"
+            LOG_DIR="/var/log/$SERVICE_NAME"
+            CONFIG_DIR="/usr/local/etc/$SERVICE_NAME"
+            ENV_FILE="/etc/default/$SERVICE_NAME"
+            ;;
+        macos)
+            DATA_DIR="/var/lib/$SERVICE_NAME"
+            LOG_DIR="/var/log/$SERVICE_NAME"
+            CONFIG_DIR="/usr/local/etc/$SERVICE_NAME"
+            ENV_FILE="/etc/defaults/$SERVICE_NAME"
+            ;;
+    esac
+}
+
+# Create the runtime directories with the right ownership and mode.
+create_dirs() {
+    setup_dirs
+    install -d -m 0750 -o "$SERVICE_USER" -g "$SERVICE_GROUP" "$DATA_DIR"
+    install -d -m 0750 -o "$SERVICE_USER" -g "$SERVICE_GROUP" "$LOG_DIR"
+    if [ ! -d "$CONFIG_DIR" ]; then
+        install -d -m 0750 -o root -g "$SERVICE_GROUP" "$CONFIG_DIR"
+    fi
+    # The logback JSONL appender writes to ${CONFIG_DIR}/logs/. The
+    # RollingFileAppender does NOT auto-create parent directories,
+    # so the install must create it. Owned by the service user so
+    # the running process can write to it.
+    install -d -m 0750 -o "$SERVICE_USER" -g "$SERVICE_GROUP" "$CONFIG_DIR/logs"
+}
+
+# Copy the jar to the install prefix. The jar is the only artifact
+# that is overwritten on every install (upgrades).
+install_jar() {
+    SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+    PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+    # Probe a few likely locations for the source jar. The first
+    # match wins. The list covers: source-tree mode (PROJECT_DIR/target),
+    # test/copy mode (/tmp or $PWD), and the override env var.
+    SRC_JAR=""
+    for DIR in "${HONCHO_JAR_DIR:-}" "$PROJECT_DIR/target" "/tmp" "$PWD"; do
+        [ -z "$DIR" ] && continue
+        CAND="$(ls -1 "$DIR"/honcho-inspector-backend-*.jar 2>/dev/null \
+            | grep -v '\.original$' | head -n1 || true)"
+        if [ -n "$CAND" ]; then
+            SRC_JAR="$CAND"
+            break
+        fi
+    done
+    if [ -z "$SRC_JAR" ]; then
+        echo "FATAL: no honcho-inspector-backend-*.jar found" >&2
+        echo "  tried: \$HONCHO_JAR_DIR, $PROJECT_DIR/target, /tmp, $PWD" >&2
+        echo "  build it first with: mvn -B -ntp package -DskipTests" >&2
+        exit 1
+    fi
+    DEST_LIB="$INSTALL_PREFIX/lib/$SERVICE_NAME"
+    install -d -m 0755 "$DEST_LIB"
+    install -m 0644 -o root -g "$SERVICE_GROUP" "$SRC_JAR" "$DEST_LIB/"
+    echo "installed jar: $DEST_LIB/$(basename "$SRC_JAR")"
+}
+
+# Copy the launcher script to /usr/local/bin/ on macOS so the
+# launchd plist (which calls /usr/local/bin/honcho-inspector) can
+# find it. On Linux, the systemd unit calls /usr/bin/java directly
+# and does not need the launcher, but we still install it for
+# operator convenience (manual `honcho-inspector` invocation from
+# any shell). On FreeBSD, the rc.d script invokes java directly
+# but the launcher is installed for the same reason.
+install_launcher() {
+    SRC="$(find_source_file "bin/honcho-inspector")" || {
+        echo "warning: bin/honcho-inspector not found; skipping launcher install" >&2
+        return 0
+    }
+    install -d -m 0755 "$INSTALL_PREFIX/bin"
+    install -m 0755 -o root -g "$SERVICE_GROUP" "$SRC" "$INSTALL_PREFIX/bin/honcho-inspector"
+    echo "installed launcher: $INSTALL_PREFIX/bin/honcho-inspector"
+}
+
+# Find a source-tree file by relative path. Probes a few likely
+# locations in this order:
+#   1. $SCRIPT_DIR/..   (script run from a source-tree bin/ dir)
+#   2. $SCRIPT_DIR      (script + source files co-located, e.g. /tmp/)
+#   3. /tmp             (test/copy scenario)
+#   4. $PWD             (operator cd'd to the source root)
+#   5. <basename> alone in each dir above (flat layout: the
+#      operator dropped a single file like /tmp/foo.plist next
+#      to the script and expects the helper to find it)
+# Prints the absolute path on stdout, returns 0 on success, 1 if
+# not found. Captures $SCRIPT_DIR and $PROJECT_DIR from the caller.
+find_source_file() {
+    local relpath="$1"
+    local base="$(basename "$relpath")"
+    for DIR in "$SCRIPT_DIR/.." "$SCRIPT_DIR" "/tmp" "$PWD"; do
+        [ -z "$DIR" ] && continue
+        if [ -f "$DIR/$relpath" ]; then
+            echo "$DIR/$relpath"
+            return 0
+        fi
+        if [ "$base" != "$relpath" ] && [ -f "$DIR/$base" ]; then
+            echo "$DIR/$base"
+            return 0
+        fi
+    done
+    return 1
+}
+
+# Copy the per-OS service file to its final location.
+install_service_file() {
+    case "$OS" in
+        linux)
+            install -d -m 0755 /etc/systemd/system
+            SRC="$(find_source_file "etc/systemd/$SERVICE_NAME.service")" || {
+                echo "FATAL: etc/systemd/$SERVICE_NAME.service not found" >&2
+                exit 1
+            }
+            install -m 0644 "$SRC" /etc/systemd/system/$SERVICE_NAME.service
+            systemctl daemon-reload
+            ;;
+        freebsd)
+            install -d -m 0755 /usr/local/etc/rc.d
+            SRC="$(find_source_file "etc/rc.d/$SERVICE_NAME")" || {
+                echo "FATAL: etc/rc.d/$SERVICE_NAME not found" >&2
+                exit 1
+            }
+            install -m 0755 "$SRC" /usr/local/etc/rc.d/$SERVICE_NAME
+            ;;
+        macos)
+            install -d -m 0755 /Library/LaunchDaemons
+            SRC="$(find_source_file "etc/launchd/com.honcho.inspector.plist")" || {
+                echo "FATAL: etc/launchd/com.honcho.inspector.plist not found" >&2
+                exit 1
+            }
+            install -m 0644 "$SRC" /Library/LaunchDaemons/com.honcho.inspector.plist
+            ;;
+    esac
+}
+
+# Copy the man page to /usr/local/share/man/man1/.
+install_man_page() {
+    MAN_SRC="$(find_source_file "docs/honcho-inspector.1")" || {
+        echo "warning: docs/honcho-inspector.1 not found; skipping man page install" >&2
+        return 0
+    }
+    MAN_DIR="$INSTALL_PREFIX/share/man/man1"
+    install -d -m 0755 "$MAN_DIR"
+    install -m 0644 "$MAN_SRC" "$MAN_DIR/"
+    # refresh the man-db index if mandb is available
+    command -v mandb >/dev/null 2>&1 && mandb -q 2>/dev/null || true
+}
+
+# Drop a default /etc/default/honcho-inspector env file if missing.
+# Does NOT overwrite an existing file. Does NOT generate a crypto key.
+install_env_file() {
+    if [ -f "$ENV_FILE" ]; then
+        return 0
+    fi
+    cat >"$ENV_FILE" <<'EOF'
+# Environment for the honcho-inspector service. Sourced by the rc.d
+# script on FreeBSD, read by EnvironmentFile= on systemd, and loaded
+# manually on macOS. Mode 0640 root:www-data / root:www / root:_www
+# is set by the installer so the service user can read it but other
+# users cannot.
+#
+# HONCHO_CRYPTO_KEY is REQUIRED for any data to survive a restart.
+# Generate with:
+#   openssl rand -base64 32
+# and paste the result below.
+# HONCHO_CRYPTO_KEY=
+EOF
+    chown root:"$SERVICE_GROUP" "$ENV_FILE"
+    chmod 0640 "$ENV_FILE"
+    echo "wrote placeholder env file: $ENV_FILE"
+    echo "  >>> SET HONCHO_CRYPTO_KEY BEFORE ENABLING THE SERVICE <<<" >&2
+}
+
+# Drop a starter application.yml if missing. Does NOT overwrite.
+install_default_config() {
+    TARGET="$CONFIG_DIR/application.yml"
+    if [ -f "$TARGET" ] && [ "$RECREATE_CONFIG" -ne 1 ]; then
+        return 0
+    fi
+    SRC="$(find_source_file "etc/honcho-inspector/application.yml.example")" || {
+        echo "FATAL: etc/honcho-inspector/application.yml.example not found" >&2
+        exit 1
+    }
+    install -m 0640 -o root -g "$SERVICE_GROUP" "$SRC" "$TARGET"
+    echo "wrote default config: $TARGET"
+}
+
+# Sanity-check the env file has HONCHO_CRYPTO_KEY. WARN loud if not.
+warn_if_no_crypto_key() {
+    if [ -f "$ENV_FILE" ] && grep -q '^HONCHO_CRYPTO_KEY=[A-Za-z0-9+/=]\{20,\}' "$ENV_FILE"; then
+        return 0
+    fi
+    cat >&2 <<EOF
+
+WARNING: HONCHO_CRYPTO_KEY is not set in $ENV_FILE.
+  The service will start, but any encrypted profile API keys it
+  writes will be UNREADABLE on the next restart (the jar logs
+  the issue at WARN and uses an ephemeral random key).
+  Set the key with:
+    echo 'HONCHO_CRYPTO_KEY='"\$(openssl rand -base64 32)" >> $ENV_FILE
+  then restart the service.
+
+EOF
+}
+
+# Enable + start the service.
+enable_service() {
+    case "$OS" in
+        linux)
+            systemctl enable "$SERVICE_NAME.service"
+            systemctl restart "$SERVICE_NAME.service"
+            systemctl --no-pager status "$SERVICE_NAME.service" || true
+            ;;
+        freebsd)
+            # On FreeBSD the operator must add the enable line to
+            # /etc/rc.conf. Print a reminder if it's not there.
+            if ! grep -q "^${SERVICE_NAME}_enable=\"YES\"" /etc/rc.conf 2>/dev/null; then
+                cat >&2 <<EOF
+
+Add the following line to /etc/rc.conf to enable the service:
+  ${SERVICE_NAME}_enable="YES"
+
+Then start it with:
+  service $SERVICE_NAME start
+
+EOF
+            else
+                service "$SERVICE_NAME" restart
+            fi
+            ;;
+        macos)
+            launchctl unload /Library/LaunchDaemons/com.honcho.inspector.plist 2>/dev/null || true
+            launchctl load -w /Library/LaunchDaemons/com.honcho.inspector.plist
+            launchctl list | grep com.honcho.inspector || true
+            ;;
+    esac
+}
+
+# Reverse of install: remove the service, leave data + config alone.
+do_uninstall() {
+    setup_dirs
+    case "$OS" in
+        linux)
+            systemctl disable --now "$SERVICE_NAME.service" 2>/dev/null || true
+            rm -f /etc/systemd/system/$SERVICE_NAME.service
+            systemctl daemon-reload
+            ;;
+        freebsd)
+            service "$SERVICE_NAME" stop 2>/dev/null || true
+            rm -f /usr/local/etc/rc.d/$SERVICE_NAME
+            ;;
+        macos)
+            launchctl unload /Library/LaunchDaemons/com.honcho.inspector.plist 2>/dev/null || true
+            rm -f /Library/LaunchDaemons/com.honcho.inspector.plist
+            ;;
+    esac
+    echo "service removed. data and config directories were NOT removed:" >&2
+    echo "  $DATA_DIR" >&2
+    echo "  $LOG_DIR" >&2
+    echo "  $CONFIG_DIR" >&2
+    echo "  $ENV_FILE" >&2
+}
+
+require_root
+detect_os
+detect_user
+
+if [ "$UNINSTALL" -eq 1 ]; then
+    do_uninstall
+    exit 0
+fi
+
+create_user
+create_dirs
+install_jar
+install_launcher
+install_service_file
+install_man_page
+install_env_file
+install_default_config
+warn_if_no_crypto_key
+enable_service
+
+cat <<EOF
+
+Honcho Inspector installed.
+  service user:    $SERVICE_USER:$SERVICE_GROUP
+  data dir:        $DATA_DIR
+  log dir:         $LOG_DIR
+  config dir:      $CONFIG_DIR
+  env file:        $ENV_FILE
+  jar:             $INSTALL_PREFIX/lib/$SERVICE_NAME/
+  man page:        $INSTALL_PREFIX/share/man/man1/honcho-inspector.1
+  OS service:      $OS
+
+Next: edit $ENV_FILE to set HONCHO_CRYPTO_KEY (and any bootstrap
+admin credentials), then restart the service. See the man page and
+docs/SECURITY.md for the operator hardening checklist.
+
+EOF
