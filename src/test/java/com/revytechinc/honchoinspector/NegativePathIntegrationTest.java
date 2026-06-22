@@ -37,6 +37,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 class NegativePathIntegrationTest extends IntegrationTestBase {
 
+    private static final String ADMIN = "admin";
+    private static final String ADMIN_PASS = "adminpass123";
     private static final String ALICE = "alice";
     private static final String ALICE_PASS = "alicepass123";
     private static final String BOB = "bob";
@@ -111,12 +113,10 @@ class NegativePathIntegrationTest extends IntegrationTestBase {
     @Test
     @DisplayName("Registering an existing username returns 409")
     void registerWithExistingUsernameReturns409() throws Exception {
+        createUserDirect(ALICE, ALICE_PASS, false);
+        String adminSid = adminLogin(ADMIN, ADMIN_PASS);
         mvc.perform(post("/api/auth/register")
-                .contentType(JSON)
-                .content(toJson(new AuthController.CredentialsDto(ALICE, ALICE_PASS))))
-            .andExpect(status().isCreated());
-
-        mvc.perform(post("/api/auth/register")
+                .header("X-Session-Id", adminSid)
                 .contentType(JSON)
                 .content(toJson(new AuthController.CredentialsDto(ALICE, "differentpassword123"))))
             .andExpect(status().isConflict())
@@ -126,7 +126,9 @@ class NegativePathIntegrationTest extends IntegrationTestBase {
     @Test
     @DisplayName("Registering with a 1-character password is rejected by @Size(min=8) (400)")
     void registerWithShortPasswordReturns400() throws Exception {
+        String adminSid = adminLogin(ADMIN, ADMIN_PASS);
         mvc.perform(post("/api/auth/register")
+                .header("X-Session-Id", adminSid)
                 .contentType(JSON)
                 .content(toJson(new AuthController.CredentialsDto(ALICE, "a"))))
             .andExpect(status().isBadRequest());
@@ -135,7 +137,9 @@ class NegativePathIntegrationTest extends IntegrationTestBase {
     @Test
     @DisplayName("Registering with an empty username is rejected by @NotBlank (400)")
     void registerWithEmptyUsernameReturns400() throws Exception {
+        String adminSid = adminLogin(ADMIN, ADMIN_PASS);
         mvc.perform(post("/api/auth/register")
+                .header("X-Session-Id", adminSid)
                 .contentType(JSON)
                 .content(toJson(new AuthController.CredentialsDto("", ALICE_PASS))))
             .andExpect(status().isBadRequest());
@@ -144,10 +148,7 @@ class NegativePathIntegrationTest extends IntegrationTestBase {
     @Test
     @DisplayName("Login with the wrong password returns 401")
     void loginWithWrongPasswordReturns401() throws Exception {
-        mvc.perform(post("/api/auth/register")
-                .contentType(JSON)
-                .content(toJson(new AuthController.CredentialsDto(ALICE, ALICE_PASS))))
-            .andExpect(status().isCreated());
+        createUserDirect(ALICE, ALICE_PASS, false);
 
         mvc.perform(post("/api/auth/login")
                 .contentType(JSON)

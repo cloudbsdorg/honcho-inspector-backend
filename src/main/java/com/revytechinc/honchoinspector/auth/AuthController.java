@@ -54,14 +54,17 @@ public class AuthController {
     ) {}
 
     @PostMapping("/auth/register")
+    @RequireAdmin
     @Operation(
-        summary = "Register a new user",
-        description = "Creates a new user account. The first user to register on a fresh database is automatically promoted to admin. Subsequent registrations are non-admin. Returns 409 if the username is taken and 400 for validation errors."
+        summary = "Register a new user (admin-only)",
+        description = "Creates a new user account. Admin-only. The first admin is created on a fresh database by the AdminBootstrap component from honcho.bootstrap.admin-username / admin-password in /etc/honcho-inspector/application.yml, NOT via this endpoint. Returns 409 if the username is taken and 400 for validation errors."
     )
     @ApiResponses({
         @ApiResponse(responseCode = "201", description = "User created",
             content = @Content(schema = @Schema(implementation = UserResponse.class))),
         @ApiResponse(responseCode = "400", description = "Validation error (e.g. password too short)",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "403", description = "Caller is not admin",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
         @ApiResponse(responseCode = "409", description = "Username already exists",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))

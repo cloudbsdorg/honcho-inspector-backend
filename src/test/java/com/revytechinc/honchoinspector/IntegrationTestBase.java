@@ -2,6 +2,7 @@ package com.revytechinc.honchoinspector;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.revytechinc.honchoinspector.auth.AuthController;
+import com.revytechinc.honchoinspector.auth.PasswordHasher;
 import com.revytechinc.honchoinspector.auth.Profile;
 import com.revytechinc.honchoinspector.auth.ProfileService;
 import com.revytechinc.honchoinspector.controller.HonchoController;
@@ -19,6 +20,10 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+
+import java.security.SecureRandom;
+import java.time.Instant;
+import java.util.HexFormat;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -83,6 +88,31 @@ public abstract class IntegrationTestBase {
     @Autowired protected JdbcTemplate jdbc;
     @Autowired protected HonchoClientFactory honchoFactory;
     @Autowired protected ProfileService profiles;
+    @Autowired protected PasswordHasher hasher;
+
+    private static final SecureRandom RNG = new SecureRandom();
+
+    /**
+     * Create a user directly in the DB (bypassing the now-admin-gated
+     * /api/auth/register endpoint) and return the user's id. This is the
+     * test-only path: production users are created by AdminBootstrap (first
+     * admin) or by an authenticated admin via POST /api/admin/users.
+     */
+    protected String createUserDirect(String username, String password, boolean isAdmin) {
+        var id = randomId();
+        jdbc.update(
+            "INSERT INTO users (id, username, password_hash, firstname, lastname, email, is_admin, created_at) "
+          + "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            id, username, hasher.hash(password), null, null, null,
+            isAdmin ? 1 : 0, Instant.now().toString());
+        return id;
+    }
+
+    private static String randomId() {
+        var b = new byte[24];
+        RNG.nextBytes(b);
+        return HexFormat.of().formatHex(b);
+    }
 
     @BeforeEach
     void resetDatabase() {
@@ -92,20 +122,35 @@ public abstract class IntegrationTestBase {
     }
 
     /**
-     * Register a user, then log in. Returns the {@code sessionId} hex
+     * Create a user directly in the DB (since /api/auth/register is now
+     * admin-gated) and log them in. Returns the {@code sessionId} hex
      * string suitable for the {@code X-Session-Id} header.
      */
     protected String registerAndLogin(String username, String password) throws Exception {
-        mvc.perform(post("/api/auth/register")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(json.writeValueAsBytes(new AuthController.CredentialsDto(username, password))))
-            .andExpect(status().isCreated());
+        createUserDirect(username, password, false);
+        return loginAs(username, password);
+    }
+
+    /**
+     * Log in as the given user. Assumes the user already exists in the DB
+     * (either pre-existing or created via {@link #createUserDirect}).
+     */
+    protected String loginAs(String username, String password) throws Exception {
         MvcResult res = mvc.perform(post("/api/auth/login")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(json.writeValueAsBytes(new AuthController.CredentialsDto(username, password))))
             .andExpect(status().isOk())
             .andReturn();
         return json.readTree(res.getResponse().getContentAsString()).get("sessionId").asText();
+    }
+
+    /**
+     * Create an admin user and return their session id. Convenience for
+     * tests that need to exercise admin-only endpoints.
+     */
+    protected String adminLogin(String username, String password) throws Exception {
+        createUserDirect(username, password, true);
+        return loginAs(username, password);
     }
 
     /**

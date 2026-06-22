@@ -30,6 +30,7 @@ class AuthControllerTest {
     @Autowired MockMvc mvc;
     @Autowired ObjectMapper json;
     @Autowired JdbcTemplate jdbc;
+    @Autowired PasswordHasher hasher;
 
     @BeforeEach
     void cleanDb() {
@@ -39,43 +40,74 @@ class AuthControllerTest {
     }
 
     private String registerAndLogin(String username, String password) throws Exception {
-        mvc.perform(post("/api/auth/register")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(json.writeValueAsBytes(new AuthController.CredentialsDto(username, password))))
-            .andExpect(status().isCreated());
+        createUserDirect(username, password, false);
+        return loginAs(username, password);
+    }
+
+    private String createUserDirect(String username, String password, boolean isAdmin) {
+        var id = randomId();
+        jdbc.update(
+            "INSERT INTO users (id, username, password_hash, is_admin, created_at) VALUES (?, ?, ?, ?, ?)",
+            id, username, hasher.hash(password), isAdmin ? 1 : 0, java.time.Instant.now().toString());
+        return id;
+    }
+
+    private String loginAs(String username, String password) throws Exception {
         MvcResult res = mvc.perform(post("/api/auth/login")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(json.writeValueAsBytes(new AuthController.CredentialsDto(username, password))))
             .andExpect(status().isOk())
             .andReturn();
-        var body = json.readTree(res.getResponse().getContentAsString());
-        return body.get("sessionId").asText();
+        return json.readTree(res.getResponse().getContentAsString()).get("sessionId").asText();
+    }
+
+    private String adminLogin(String username, String password) throws Exception {
+        createUserDirect(username, password, true);
+        return loginAs(username, password);
+    }
+
+    private static String randomId() {
+        var b = new byte[24];
+        new java.security.SecureRandom().nextBytes(b);
+        return java.util.HexFormat.of().formatHex(b);
     }
 
     @Test
-    void first_user_becomes_admin() throws Exception {
+    void register_returns401_when_unauthenticated() throws Exception {
         mvc.perform(post("/api/auth/register")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(json.writeValueAsBytes(new AuthController.CredentialsDto("alice", "passw0rd1"))))
-            .andExpect(status().isCreated())
-            .andExpect(jsonPath("$.isAdmin").value(true))
-            .andExpect(jsonPath("$.username").value("alice"));
+            .andExpect(status().isUnauthorized());
     }
 
     @Test
-    void second_user_is_not_admin() throws Exception {
+    void register_returns403_when_not_admin() throws Exception {
         registerAndLogin("alice", "passw0rd1");
         mvc.perform(post("/api/auth/register")
+                .header("X-Session-Id", loginAs("alice", "passw0rd1"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsBytes(new AuthController.CredentialsDto("bob", "passw0rd2"))))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void register_asAdmin_createsUserWithIsAdminFalse() throws Exception {
+        var adminSid = adminLogin("admin", "passw0rd1");
+        mvc.perform(post("/api/auth/register")
+                .header("X-Session-Id", adminSid)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(json.writeValueAsBytes(new AuthController.CredentialsDto("bob", "passw0rd2"))))
             .andExpect(status().isCreated())
-            .andExpect(jsonPath("$.isAdmin").value(false));
+            .andExpect(jsonPath("$.isAdmin").value(false))
+            .andExpect(jsonPath("$.username").value("bob"));
     }
 
     @Test
     void register_returns409_when_username_taken() throws Exception {
         registerAndLogin("alice", "passw0rd1");
+        var adminSid = adminLogin("admin", "passw0rd1");
         mvc.perform(post("/api/auth/register")
+                .header("X-Session-Id", adminSid)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(json.writeValueAsBytes(new AuthController.CredentialsDto("alice", "passw0rd2"))))
             .andExpect(status().isConflict());
@@ -83,7 +115,9 @@ class AuthControllerTest {
 
     @Test
     void register_returns400_when_password_too_short() throws Exception {
+        var adminSid = adminLogin("admin", "passw0rd1");
         mvc.perform(post("/api/auth/register")
+                .header("X-Session-Id", adminSid)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(json.writeValueAsBytes(new AuthController.CredentialsDto("alice", "short"))))
             .andExpect(status().isBadRequest());

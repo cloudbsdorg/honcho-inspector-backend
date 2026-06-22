@@ -2,6 +2,7 @@ package com.revytechinc.honchoinspector.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.revytechinc.honchoinspector.auth.AuthController;
+import com.revytechinc.honchoinspector.auth.PasswordHasher;
 import com.revytechinc.honchoinspector.auth.Profile;
 import com.revytechinc.honchoinspector.auth.ProfileService;
 import com.revytechinc.honchoinspector.honcho.HonchoApiVersion;
@@ -91,6 +92,7 @@ class HonchoControllerTest {
     @Autowired ObjectMapper json;
     @Autowired JdbcTemplate jdbc;
     @Autowired ProfileService profiles;
+    @Autowired PasswordHasher hasher;
     @MockitoBean HonchoProxyService honchoProxy;
 
     private String sessionId;
@@ -106,16 +108,31 @@ class HonchoControllerTest {
     }
 
     private String registerAndLogin(String username, String password) throws Exception {
-        mvc.perform(post("/api/auth/register")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(json.writeValueAsBytes(new AuthController.CredentialsDto(username, password))))
-            .andExpect(status().isCreated());
+        createUserDirect(username, password, false);
+        return loginAs(username, password);
+    }
+
+    private String loginAs(String username, String password) throws Exception {
         MvcResult res = mvc.perform(post("/api/auth/login")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(json.writeValueAsBytes(new AuthController.CredentialsDto(username, password))))
             .andExpect(status().isOk())
             .andReturn();
         return json.readTree(res.getResponse().getContentAsString()).get("sessionId").asText();
+    }
+
+    private String createUserDirect(String username, String password, boolean isAdmin) {
+        var id = randomId();
+        jdbc.update(
+            "INSERT INTO users (id, username, password_hash, is_admin, created_at) VALUES (?, ?, ?, ?, ?)",
+            id, username, hasher.hash(password), isAdmin ? 1 : 0, java.time.Instant.now().toString());
+        return id;
+    }
+
+    private static String randomId() {
+        var b = new byte[24];
+        new java.security.SecureRandom().nextBytes(b);
+        return java.util.HexFormat.of().formatHex(b);
     }
 
     private String createProfile(String label, String apiKey) {
