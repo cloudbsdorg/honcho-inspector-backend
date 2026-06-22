@@ -27,33 +27,47 @@ import static org.assertj.core.api.Assertions.assertThat;
 class LogScrubbingTest {
 
     private static final Logger LOG = LoggerFactory.getLogger(LogScrubbingTest.class);
-    private static final Path CONFIG_DIR =
+    private static final Path LOG_DIR =
         Path.of(System.getProperty("java.io.tmpdir"), "honcho-test-log-scrubbing");
     private static final Path JSONL_FILE =
-        CONFIG_DIR.resolve("logs").resolve("honcho-inspector.jsonl");
+        LOG_DIR.resolve("honcho-inspector.jsonl");
 
     private static final String SECRET_API_KEY = "secret-123";
     private static final String SECRET_BEARER = "abc.def.ghi";
 
+    // Captured at class load so @AfterAll can restore the surefire
+    // HONCHO_LOG_DIR. See the matching field in JsonlFormatTest for the
+    // full rationale.
+    private static String originalLogDir;
+
     @BeforeAll
     static void setup() throws IOException {
-        // Logback's logback-spring.xml resolves ${HONCHO_CONFIG_DIR} against
+        // Logback's logback-spring.xml resolves ${HONCHO_LOG_DIR} against
         // System properties, not the Spring Environment. Spring Boot's
         // LogbackLoggingSystem is a JVM-wide singleton; force-reload
         // the LoggerContext so the new path takes effect.
-        System.setProperty("HONCHO_CONFIG_DIR", CONFIG_DIR.toString());
+        originalLogDir = System.getProperty("HONCHO_LOG_DIR");
+        System.setProperty("HONCHO_LOG_DIR", LOG_DIR.toString());
         if (Files.exists(JSONL_FILE)) {
             Files.delete(JSONL_FILE);
         }
-        LogbackTestSupport.prepareLogsDir(CONFIG_DIR);
-        LogbackTestSupport.reloadConfig();
+        LogbackTestSupport.prepareLogDir(LOG_DIR);
+        // Use the heavy XML re-parse — see JsonlFormatTest for the
+        // rationale. The lightweight reloadConfig() re-point has no
+        // effect because Spring's LogbackLoggingSystem has already
+        // replaced the appender by the time @BeforeAll runs.
+        LogbackTestSupport.reloadConfigWithXmlReparse();
     }
 
     @AfterAll
     static void cleanup() throws IOException {
-        System.clearProperty("HONCHO_CONFIG_DIR");
-        if (Files.exists(CONFIG_DIR)) {
-            try (Stream<Path> walk = Files.walk(CONFIG_DIR)) {
+        if (originalLogDir != null) {
+            System.setProperty("HONCHO_LOG_DIR", originalLogDir);
+        } else {
+            System.clearProperty("HONCHO_LOG_DIR");
+        }
+        if (Files.exists(LOG_DIR)) {
+            try (Stream<Path> walk = Files.walk(LOG_DIR)) {
                 walk.sorted(Comparator.reverseOrder())
                     .forEach(p -> {
                         try {

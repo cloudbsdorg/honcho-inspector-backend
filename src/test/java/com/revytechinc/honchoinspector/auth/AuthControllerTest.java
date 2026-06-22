@@ -168,14 +168,14 @@ class AuthControllerTest {
         mvc.perform(get("/api/health"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.ok").value(true))
-            .andExpect(jsonPath("$.needs_register").value(true))
+            .andExpect(jsonPath("$.needsRegister").value(true))
             .andExpect(jsonPath("$.users").doesNotExist())
             .andExpect(jsonPath("$.sessions").doesNotExist())
             .andExpect(jsonPath("$.profiles").doesNotExist());
         registerAndLogin("alice", "passw0rd1");
         mvc.perform(get("/api/health"))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.needs_register").value(false))
+            .andExpect(jsonPath("$.needsRegister").value(false))
             .andExpect(jsonPath("$.users").doesNotExist());
     }
 

@@ -22,10 +22,20 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Verifies that log lines written by the {@code FILE_JSONL} appender are
  * valid JSONL and contain the documented event schema.
  *
- * <p>Uses a per-class {@code HONCHO_CONFIG_DIR} (set as a system property
+ * <p>Uses a per-class {@code HONCHO_LOG_DIR} (set as a system property
  * in a {@code static} initializer block, before Spring loads any context)
  * so the test runs in isolation from other logging tests and from the
- * production {@code ./logs/} directory.
+ * production {@code /var/log/honcho-inspector} directory.
+ *
+ * <p>The path is now flat — the JSONL file lives at
+ * {@code ${HONCHO_LOG_DIR}/honcho-inspector.jsonl}, not
+ * {@code ${HONCHO_LOG_DIR}/logs/honcho-inspector.jsonl}. The previous
+ * design appended {@code /logs/} which broke under systemd's
+ * {@code ProtectSystem=strict}: the log dir at
+ * {@code /var/log/honcho-inspector} is writable but a hypothetical
+ * {@code /var/log/honcho-inspector/logs/} subdir would not be
+ * auto-created by {@code RollingFileAppender}. See the rationale block
+ * in {@code logback-spring.xml} for the full context.
  */
 @SpringBootTest(properties = {
     "HONCHO_DB_PATH=jdbc:sqlite::memory:",
@@ -33,14 +43,21 @@ import static org.assertj.core.api.Assertions.assertThat;
 })
 class JsonlFormatTest {
 
-    private static final Path CONFIG_DIR =
+    private static final Path LOG_DIR =
         Path.of(System.getProperty("java.io.tmpdir"), "honcho-test-jsonl-format");
     private static final Path JSONL_FILE =
-        CONFIG_DIR.resolve("logs").resolve("honcho-inspector.jsonl");
+        LOG_DIR.resolve("honcho-inspector.jsonl");
     private static final Logger LOG = LoggerFactory.getLogger(JsonlFormatTest.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    // Logback's logback-spring.xml resolves ${HONCHO_CONFIG_DIR} against
+    // Captured at class load so @AfterAll can restore the surefire
+    // HONCHO_LOG_DIR. Without this, the next @SpringBootTest in the same
+    // JVM would re-resolve ${HONCHO_LOG_DIR:-/var/log/honcho-inspector}
+    // and crash the context load with the "ApplicationContext failure
+    // threshold (1) exceeded" cascade.
+    private static String originalLogDir;
+
+    // Logback's logback-spring.xml resolves ${HONCHO_LOG_DIR} against
     // System properties, not the Spring Environment. Spring Boot's
     // LogbackLoggingSystem is a JVM-wide singleton initialized by the
     // first @SpringBootTest to load a context; subsequent contexts share
@@ -48,7 +65,8 @@ class JsonlFormatTest {
     // the test must (a) set the system property, then (b) force-reload
     // the LoggerContext to pick up the new value.
     static {
-        System.setProperty("HONCHO_CONFIG_DIR", CONFIG_DIR.toString());
+        originalLogDir = System.getProperty("HONCHO_LOG_DIR");
+        System.setProperty("HONCHO_LOG_DIR", LOG_DIR.toString());
     }
 
     @BeforeAll
@@ -56,15 +74,26 @@ class JsonlFormatTest {
         if (Files.exists(JSONL_FILE)) {
             Files.delete(JSONL_FILE);
         }
-        LogbackTestSupport.prepareLogsDir(CONFIG_DIR);
-        LogbackTestSupport.reloadConfig();
+        LogbackTestSupport.prepareLogDir(LOG_DIR);
+        // Use the heavy XML re-parse so the FILE_JSONL appender's
+        // RollingFileAppender is fully re-initialized (the lightweight
+        // re-point in reloadConfig() does not work — Spring's
+        // LogbackLoggingSystem has already replaced the appender
+        // before the @BeforeAll hook runs, so re-pointing it has no
+        // effect on the appender that the LoggerContext actually
+        // uses for new log events).
+        LogbackTestSupport.reloadConfigWithXmlReparse();
     }
 
     @AfterAll
     static void cleanup() throws IOException {
-        System.clearProperty("HONCHO_CONFIG_DIR");
-        if (Files.exists(CONFIG_DIR)) {
-            try (Stream<Path> walk = Files.walk(CONFIG_DIR)) {
+        if (originalLogDir != null) {
+            System.setProperty("HONCHO_LOG_DIR", originalLogDir);
+        } else {
+            System.clearProperty("HONCHO_LOG_DIR");
+        }
+        if (Files.exists(LOG_DIR)) {
+            try (Stream<Path> walk = Files.walk(LOG_DIR)) {
                 walk.sorted(Comparator.reverseOrder())
                     .forEach(p -> {
                         try {
