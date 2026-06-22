@@ -1,13 +1,14 @@
 # Honcho Inspector Backend — Status Snapshot
 
-**Captured:** 2026-06-22 01:08 CDT · user returned from shutdown, all work resumed.
-**Last commit on `main`:** `da3ac6d` (DashboardApplicationMainDispatchTest, 7 tests, 487/487 mvn test pass).
+**Captured:** 2026-06-22 02:05 CDT · user returned from shutdown, all work resumed. **Doc update session complete.**
+**Last commit on `main`:** `d943b1d` (docs: emergency-action CLI + first-run mode + installer lessons — 4378 insertions across 8 files).
 **Meta-port:** `www/honcho-inspector` on branch `honcho_inspector_meta` in `/home/mlapointe/git/cloudbsd-ports` — pushed to origin.
 
 ---
 
 ## TL;DR
 
+- **Doc update session shipped as `d943b1d`** — 4378 insertions across 8 files. New `docs/lessons/installer-and-packaging.md` (18 lessons); man page `EMERGENCY ACTIONS` + `FIRST-RUN API` sections; README first-run mode + emergency-action CLI; OpenAPI spec `first_run` field + `/api/setup/first-admin` endpoint; SECURITY.md F-17 (CLI access); application.yml.example three-bootstrap-path safety checklist. OpenApiDriftCheckTest passes; mvn test 487/487.
 - **macOS live test: PASS** on `minimini.cloudbsd.org`. Bootstrap admin `alice` exists, all admin endpoints respond 200.
 - **FreeBSD live test: PASS** on `pppoe1.cloudbsd.org`. Install + service + first-run mode + **all CLI commands** verified end-to-end (list-users, reset-admin-password, promote-to-admin, revoke-all-sessions, help).
 - **Launcher env-file fix shipped** as `1eb39b7` — `source_env_file()` probes per-OS env file + sets OS-appropriate `HONCHO_DATA_DIR`/`HONCHO_DB_PATH`/`HONCHO_CONFIG_DIR` defaults if env file doesn't have them.
@@ -16,7 +17,7 @@
 - **All CLI commands verified on FreeBSD** after the launcher fix: list-users shows alice, promote-to-admin alice → "already admin", reset-admin-password --generate resets, reset-admin-password --password short → "validation" (exit 4), revoke-all-sessions → "revoked 4 sessions; 0 remain".
 - **UI package name confirmed:** `honcho-inspector-frontend` (user picked this over `honcho-inspector-u`/`honcho-inspector-ui`).
 - **FreeBSD meta-port implemented** as `www/honcho-inspector/` on branch `honcho_inspector_meta` — pushed to origin. NO_BUILD/NO_INSTALL/NO_ARCH/NO_MTREE, USES=metaport, RUN_DEPENDS on both component ports.
-- **Honcho MCP:** 27 new conclusions on `honcho-inspector-backend` peer (CLI dispatch, launcher env file, installer fixes, Makefile portability, UI naming, meta-port design, main dispatch predicate, corrected macOS audit).
+- **Honcho MCP:** 27 conclusions on `honcho-inspector-backend` peer (CLI dispatch, launcher env file, installer fixes, Makefile portability, UI naming, meta-port design, main dispatch predicate, corrected macOS audit). Doc-update-session conclusions to be added.
 - **487/487 mvn test pass**, 1 skipped. BUILD SUCCESS.
 - **Service stopped cleanly** on FreeBSD; `honcho_inspector_enable` was unset via `sysrc -x` (so it won't auto-start on next boot). DB + alice user preserved at `/var/db/honcho-inspector/honcho-inspector.db`.
 
@@ -24,8 +25,9 @@
 
 ## Code State
 
-### `main` branch (last 6 commits)
+### `main` branch (last 7 commits)
 ```
+d943b1d docs: emergency-action CLI + first-run mode + installer lessons
 da3ac6d test(main): add DashboardApplicationMainDispatchTest (7 tests)
 8fd4e97 docs(status): refresh STATUS.md with post-fix verification + meta-package plan
 c8274ca fix(makefile): run-jar target sources per-OS env file (matches launcher)
