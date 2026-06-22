@@ -20,16 +20,40 @@ public record HonchoProperties(
     String apiVersion,
     long requestTimeoutMs,
     Providers providers,
-    Log log
+    Log log,
+    Bootstrap bootstrap,
+    Audit audit
 ) {
     public HonchoProperties {
         if (baseUrl == null) baseUrl = "https://api.honcho.dev";
         if (apiVersion == null) apiVersion = "v3";
         if (providers == null) providers = new Providers(false);
         if (log == null) log = new Log("INFO", "100MB", 30, "500MB");
+        if (bootstrap == null) bootstrap = new Bootstrap(null, null, null, null, null);
+        if (audit == null) audit = new Audit(90, 1_000_000, "0 0 3 * * *");
     }
 
     public record Providers(boolean strictMode) {}
+
+    public record Bootstrap(
+        String adminUsername,
+        String adminPassword,
+        String adminFirstname,
+        String adminLastname,
+        String adminEmail
+    ) {}
+
+    public record Audit(
+        int retentionDays,
+        long maxRows,
+        String purgeCron
+    ) {
+        public Audit {
+            if (retentionDays <= 0) retentionDays = 90;
+            if (maxRows <= 0) maxRows = 1_000_000L;
+            if (purgeCron == null || purgeCron.isBlank()) purgeCron = "0 0 3 * * *";
+        }
+    }
 
     /**
      * T4b (JSONL logging) — knobs that drive the Logback rolling policy.

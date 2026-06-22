@@ -63,7 +63,9 @@ class HonchoProxyServiceTest {
         return new HonchoProperties(
             "https://api.honcho.dev", "v3", 30_000L,
             new HonchoProperties.Providers(false),
-            new HonchoProperties.Log("INFO", "100MB", 30, "500MB")
+            new HonchoProperties.Log("INFO", "100MB", 30, "500MB"),
+            new HonchoProperties.Bootstrap(null, null, null, null, null),
+            new HonchoProperties.Audit(90, 1_000_000L, "0 0 3 * * *")
         );
     }
 
