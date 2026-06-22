@@ -1,6 +1,6 @@
 package com.revytechinc.honchoinspector.auth;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.revytechinc.honchoinspector.filter.SessionAuthFilter;
 import com.revytechinc.honchoinspector.model.ErrorResponse;
 import jakarta.servlet.http.HttpServletRequest;

@@ -1,6 +1,6 @@
 package com.revytechinc.honchoinspector;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.revytechinc.honchoinspector.auth.AuthController;
 import com.revytechinc.honchoinspector.auth.PasswordHasher;
 import com.revytechinc.honchoinspector.auth.Profile;
@@ -10,7 +10,7 @@ import com.revytechinc.honchoinspector.honcho.HonchoClientFactory;
 import com.revytechinc.honchoinspector.honcho.HonchoMockConfig;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;

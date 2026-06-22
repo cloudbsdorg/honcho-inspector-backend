@@ -12,7 +12,7 @@ spring:
     default-property-inclusion: non_null
   threads:
     virtual:
-      enabled: true
+      enabled: false
   datasource:
     # SQLite. Use a file path; for tests, override with jdbc:sqlite::memory: (no shared in-mem db between connections).
     # Default puts the db in the resolved honcho-inspector config dir, e.g. /etc/honcho-inspector/honcho-inspector.db on Linux.

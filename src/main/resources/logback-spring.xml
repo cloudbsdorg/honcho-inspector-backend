@@ -27,14 +27,28 @@
 <configuration>
 
     <!--
-        Resolve the log directory. Order of precedence:
-          1. HONCHO_CONFIG_DIR environment variable (or system property)
-          2. Current working directory (`.`)
+        Resolve the JSONL log directory. Order of precedence:
+          1. HONCHO_LOG_DIR environment variable (or system property) — explicit override
+          2. ${HONCHO_LOG_DIR_FALLBACK} — operator-supplied fallback (per-OS in install scripts)
+          3. FHS-standard `/var/log/honcho-inspector` (Linux + FreeBSD)
+          4. macOS-standard `/var/log/honcho-inspector`
+          5. Current working directory's `logs/` subdir (dev mode only)
 
-        Operators set HONCHO_CONFIG_DIR to e.g. `/etc/honcho-inspector` and the
-        `logs/` subdirectory is created automatically by RollingFileAppender.
+        The reason we DON'T default to `${HONCHO_CONFIG_DIR}/logs` is that on
+        production Linux, the config dir is `/etc/honcho-inspector` which is
+        read-only under systemd's `ProtectSystem=strict`. The install script
+        creates `/var/log/honcho-inspector` owned by the service user; that
+        path is always writable.
     -->
-    <property name="LOG_DIR" value="${HONCHO_CONFIG_DIR:-.}"/>
+    <property name="LOG_DIR" value="${HONCHO_LOG_DIR:-/var/log/honcho-inspector}"/>
+    <!--
+        LOG_DIR IS the JSONL log directory; the file is written at
+        ${LOG_DIR}/honcho-inspector.jsonl (no further `logs/` suffix).
+        The previous design appended `${LOG_DIR}/logs/` which broke under
+        systemd's `ProtectSystem=strict`: the log dir at /var/log/honcho-inspector
+        is writable but a hypothetical `/var/log/honcho-inspector/logs/` subdir
+        would not be auto-created by RollingFileAppender.
+    -->
 
     <!--
         Project version is injected from the Maven build (see
@@ -50,11 +64,11 @@
         where `honcho-inspector` writes logs.
     -->
     <appender name="FILE_JSONL" class="ch.qos.logback.core.rolling.RollingFileAppender">
-        <file>${LOG_DIR}/logs/honcho-inspector.jsonl</file>
+        <file>${LOG_DIR}/honcho-inspector.jsonl</file>
 
         <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
             <!-- rotated files are gzipped; the .jsonl suffix is preserved before .gz -->
-            <fileNamePattern>${LOG_DIR}/logs/honcho-inspector.%d{yyyy-MM-dd}.%i.jsonl.gz</fileNamePattern>
+            <fileNamePattern>${LOG_DIR}/honcho-inspector.%d{yyyy-MM-dd}.%i.jsonl.gz</fileNamePattern>
             <!-- roll when the active file crosses this size; "%i" disambiguates same-day rolls -->
             <maxFileSize>${HONCHO_LOG_MAX_FILE_SIZE:-100MB}</maxFileSize>
             <!-- keep at most N days of rotated files -->

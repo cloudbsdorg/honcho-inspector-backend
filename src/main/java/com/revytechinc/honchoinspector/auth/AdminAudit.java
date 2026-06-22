@@ -1,7 +1,7 @@
 package com.revytechinc.honchoinspector.auth;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -51,7 +51,7 @@ public class AdminAudit {
                 metadata == null || metadata.isEmpty() ? null : json.writeValueAsString(metadata),
                 Instant.now()
             ));
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             log.warn("audit: failed to serialize metadata for action={} actor={}", action, actorUserId, e);
         } catch (RuntimeException e) {
             log.warn("audit: failed to write entry action={} actor={}", action, actorUserId, e);

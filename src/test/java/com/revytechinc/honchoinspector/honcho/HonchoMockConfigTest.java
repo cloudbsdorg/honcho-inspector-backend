@@ -1,6 +1,6 @@
 package com.revytechinc.honchoinspector.honcho;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.revytechinc.honchoinspector.IntegrationTestBase;
 import com.revytechinc.honchoinspector.model.HonchoContext;
 import org.junit.jupiter.api.Test;
