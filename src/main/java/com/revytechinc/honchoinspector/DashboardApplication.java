@@ -15,22 +15,29 @@ import java.util.Arrays;
 public class DashboardApplication {
 
     public static void main(String[] args) {
-        if (args.length > 0 && CliRunner.isKnownCommand(args[0])) {
-            runCli(args);
-            return;
-        }
-        SpringApplication.run(DashboardApplication.class, args);
+        System.exit(dispatch(args));
     }
 
-    private static void runCli(String[] args) {
+    static boolean shouldRunCli(String[] args) {
+        return args.length > 0 && CliRunner.isKnownCommand(args[0]);
+    }
+
+    static int dispatch(String[] args) {
+        if (shouldRunCli(args)) {
+            return runCli(args);
+        }
+        SpringApplication.run(DashboardApplication.class, args);
+        return 0;
+    }
+
+    private static int runCli(String[] args) {
         ConfigurableApplicationContext ctx = new SpringApplicationBuilder(DashboardApplication.class)
             .web(WebApplicationType.NONE)
             .logStartupInfo(false)
             .run(args);
         try {
             CliRunner runner = ctx.getBean(CliRunner.class);
-            int exit = runner.handle(args[0], Arrays.copyOfRange(args, 1, args.length));
-            System.exit(exit);
+            return runner.handle(args[0], Arrays.copyOfRange(args, 1, args.length));
         } finally {
             ctx.close();
         }
