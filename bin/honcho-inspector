@@ -168,6 +168,32 @@ source_env_file() {
     fi
 }
 
+# OS-appropriate path defaults. The env file sourced by source_env_file
+# may not include HONCHO_DB_PATH or HONCHO_CONFIG_DIR (the install
+# script's template only ships HONCHO_CRYPTO_KEY as the operator-tunable
+# knob; the data dir path is set by the per-OS service file). The
+# launcher mirrors the rc.d/systemd/launchd defaults so the CLI hits
+# the same database as the long-running service.
+default_data_dir() {
+    local os
+    os="$(uname -s 2>/dev/null || echo unknown)"
+    case "$os" in
+        Linux)             echo "/var/lib/honcho-inspector" ;;
+        FreeBSD|DragonFly|OpenBSD|NetBSD) echo "/var/db/honcho-inspector" ;;
+        Darwin)            echo "/var/lib/honcho-inspector" ;;
+        *)                 echo "./data" ;;
+    esac
+}
+
+# Set OS-appropriate defaults for HONCHO_DB_PATH and HONCHO_CONFIG_DIR
+# if they are not already set. The env file's `set -a` source above
+# has already populated any operator-set values, so the `: ${VAR:=...}`
+# pattern only fires when the env file does not define the variable.
+: "${HONCHO_DATA_DIR:=$(default_data_dir)}"
+: "${HONCHO_DB_PATH:=jdbc:sqlite:${HONCHO_DATA_DIR}/honcho-inspector.db}"
+: "${HONCHO_CONFIG_DIR:=$(resolve_config_dir)}"
+export HONCHO_DATA_DIR HONCHO_DB_PATH HONCHO_CONFIG_DIR
+
 source_env_file
 
 CONFIG_DIR="$(resolve_config_dir)"
