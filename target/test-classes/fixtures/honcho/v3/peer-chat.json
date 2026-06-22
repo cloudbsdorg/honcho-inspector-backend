@@ -1,0 +1,12 @@
+{
+  "_meta": {
+    "captured_at": "2026-06-18T07:14:43Z",
+    "honcho_version": "3.0.7",
+    "endpoint": "POST /v3/workspaces/{ws}/peers/{peerId}/chat",
+    "method": "POST",
+    "synthetic": false
+  },
+  "data": {
+    "content": "\nHello! Welcome from **fixture-capture 1781766883** 👋\n\nI see this is a greeting message from June 18, 2026. Is there anything specific you'd like to know or discuss? I'm here to help!"
+  }
+}

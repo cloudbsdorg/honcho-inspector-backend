@@ -140,13 +140,13 @@ public class AuthController {
         description = "Public unauthenticated health endpoint. Returns only the service status, a `first_run` boolean, and a `needs_register` alias. The UI uses `first_run` to decide whether to render the bootstrap wizard on first launch. Once any user exists, both flags are false. The previous version leaked user/session/profile counts to unauthenticated callers; those have been moved to the admin-only dashboard overview."
     )
     @ApiResponse(responseCode = "200", description = "Service is up",
-        content = @Content(schema = @Schema(example = "{\"ok\":true,\"first_run\":false,\"needs_register\":false}")))
+        content = @Content(schema = @Schema(example = "{\"ok\":true,\"firstRun\":false,\"needsRegister\":false}")))
     public ResponseEntity<?> health() {
         boolean firstRun = auth.isFirstUser();
         return ResponseEntity.ok(Map.of(
             "ok", true,
-            "first_run", firstRun,
-            "needs_register", firstRun
+            "firstRun", firstRun,
+            "needsRegister", firstRun
         ));
     }
 }
