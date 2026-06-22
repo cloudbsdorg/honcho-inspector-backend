@@ -52,7 +52,10 @@ public class AdminUserController {
         @RequestParam(defaultValue = "20") String pageSize
     ) {
         var p = PageSize.parse(pageSize);
-        return ResponseEntity.ok(admin.list(page, p));
+        var result = admin.list(page, p);
+        return ResponseEntity.ok(new UserListDto(
+            result.items().stream().map(UserResponse::from).toList(),
+            result.total(), result.page(), result.rows(), result.pages()));
     }
 
     @GetMapping("/search")
@@ -64,7 +67,10 @@ public class AdminUserController {
         @RequestParam(defaultValue = "20") String pageSize
     ) {
         var p = PageSize.parse(pageSize);
-        return ResponseEntity.ok(admin.search(q, page, p));
+        var result = admin.search(q, page, p);
+        return ResponseEntity.ok(new UserListDto(
+            result.items().stream().map(UserResponse::from).toList(),
+            result.total(), result.page(), result.rows(), result.pages()));
     }
 
     @GetMapping("/{id}")
