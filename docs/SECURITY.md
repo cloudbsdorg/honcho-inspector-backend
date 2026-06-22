@@ -115,10 +115,19 @@ These are real positives. They are the baseline; findings in §3 assume them.
   the Springdoc `/v3/api-docs` surface all pass through with zero
   overhead.
 - **`/api/health` is a no-information liveness probe.** Returns only
-  `{ok, needs_register}`. Aggregate user/session/profile counts (the
-  previous behaviour) were moved to the admin-only
+  `{ok, first_run, needs_register}`. The two flags are aliases — both
+  are `true` when `users.count() == 0` (the service is in bootstrap
+  state and the UI should show the first-run wizard), both `false`
+  otherwise. Aggregate user/session/profile counts (the previous
+  behaviour) were moved to the admin-only
   `/api/admin/dashboard/overview` so an unauthenticated probe no longer
   enumerates the user base.
+- **First-run mode is locked once any user exists.** Every endpoint
+  under `/api/setup/**` returns 409 if `users.count() > 0`. The
+  UI-driven bootstrap (`POST /api/setup/first-admin`) is the only
+  public surface that creates a user before admin auth is set up.
+  After the first admin exists, all user creation flows through
+  `/api/admin/users` (admin-only).
 - **Audit log for mutations.** Every admin write path and every
   user-management mutation records a row in `audit_log` with actor,
   action, target, IP, session, and a JSON metadata map. Retention is
@@ -228,10 +237,29 @@ front. This is by design, but it is a hard dependency that is **not yet
 documented** in the README — fixed by the new
 [`docs/reverse-proxy.md`](reverse-proxy.md).
 
-**Remediation.** Keep it this way (the proxy is the right place for TLS).
-The new doc makes the requirement explicit.
+The chain that brings the JVM up is also part of the model:
 
-**Status:** Resolved by documentation.
+1. The init system (`systemd` / `rc.d` / `launchd`) starts the launcher
+   with an env-file-driven environment.
+2. The launcher (`bin/honcho-inspector`) sources the per-OS env file
+   (`/etc/default/honcho-inspector` on Linux + FreeBSD,
+   `/etc/defaults/honcho-inspector` on macOS) using
+   `set -a; . $f; set +a`, then sets OS-appropriate defaults for
+   `HONCHO_DB_PATH`, `HONCHO_CONFIG_DIR`, and `HONCHO_DATA_DIR`.
+3. The launcher `exec`s `java -jar` with the resolved env.
+
+A misconfigured env file (wrong `HONCHO_DB_PATH`, missing
+`HONCHO_CRYPTO_KEY`) silently degrades — the JVM starts but logs
+warnings and uses ephemeral defaults. The install script writes a
+starter env file with `HONCHO_CRYPTO_KEY` as a placeholder; the
+operator must replace it before going to production.
+
+**Remediation.** Keep it this way (the proxy is the right place for TLS).
+The new doc makes the requirement explicit. The installer + launcher
+chain is documented in `docs/lessons/installer-and-packaging.md` and
+the man page FILES section.
+
+**Status:** Resolved by documentation + install script.
 
 ### F-05 — `e.getMessage()` is returned in 500 responses (Low)
 
@@ -519,6 +547,56 @@ auto-purge would be a no-op for most installs). Operators who set
 `SESSION_TTL_MINUTES>0` should run the manual trigger on a cron, or call
 it from the reverse proxy's log-rotation hook.
 
+### F-17 — Emergency-action CLI is unauthenticated by design (Medium)
+
+**Where:** `src/main/java/com/revytechinc/honchoinspector/cli/CliRunner.java`,
+`bin/honcho-inspector` (CLI dispatch path), `bin/install-honcho-inspector`
+(jar installation).
+
+**What.** The jar exposes five emergency-action subcommands
+(`list-users`, `reset-admin-password`, `promote-to-admin`,
+`revoke-all-sessions`, `help`) when invoked with a known subcommand as
+the first argument. Dispatch happens in `DashboardApplication.main()`
+before the web server starts, in a minimal Spring context. The CLI does
+NOT authenticate the caller. File-system permissions on the SQLite
+database and the operator's shell account are the access control.
+
+**Why it matters.** A shell user with read+write on
+`$HONCHO_CONFIG_DIR/honcho-inspector.db` can reset any user's
+password, promote any user to admin, or revoke all sessions, all
+without an admin session. On a typical install the file is owned by
+the service user (`www-data` / `www` / `_www`) with mode `0640`,
+restricting access to the service user and the `root` group; on a
+loosely-permissioned install (e.g. dev on the operator's laptop)
+anyone with shell access to the box can run the CLI.
+
+**Remediation.** Document the threat model clearly so operators don't
+get surprised:
+
+- Stop the service before running the CLI (SQLite's single-writer
+  lock will block otherwise; running while the service is up is
+  not unsafe but is slow and risks lock contention).
+- Restrict access to the service account on the host. The package
+  manager + POSIX install script both create the service user and
+  set the file ownership; verify with `ls -la
+  ${HONCHO_CONFIG_DIR}/honcho-inspector.db`.
+- Run the CLI as the service user or `root`. Other unprivileged
+  shell users on the host cannot read the SQLite DB and so cannot
+  run the CLI against it.
+- The CLI is intentionally a recovery path, not an attack surface.
+  The audit log records all mutations through the API; the CLI's
+  mutations bypass the audit log because they run before the web
+  server (and thus the `AdminAudit` listener) starts. Operators
+  who need a CLI mutation trail should add a wrapper script that
+  records the operator name + timestamp to the JSONL log before
+  invoking the CLI subcommand.
+
+**Status:** Resolved by documentation. The CLI is documented in the
+man page `EMERGENCY ACTIONS` section and in
+`docs/lessons/installer-and-packaging.md` §13 (CLI dispatch) and §17
+(operational checklist). The threat model is this finding; the
+mitigations are operational, not code-level.
+
 ---
 
 ## 4. Dependency / supply-chain notes
@@ -608,10 +686,24 @@ For a fresh production install:
 - [ ] Log shipping is configured and the security-events channel (when
       added — see F-10) is forwarded to a SIEM.
 - [ ] The first registration is done immediately after install, and
-      `/api/health` is checked to confirm `users=1` so the admin
-      invitation is closed.
+      `/api/health` is checked to confirm `first_run: false` (i.e.
+      `users.count() > 0`) so the admin invitation is closed.
 - [ ] `bin/honcho-inspector` runs as a non-root user; the JVM is started
       without `agentlib` or `jdwp` flags.
+- [ ] **Emergency-action CLI is operator-only.** The CLI subcommands
+      (`list-users`, `reset-admin-password`, `promote-to-admin`,
+      `revoke-all-sessions`) bypass admin auth. File-system
+      permissions on `${HONCHO_CONFIG_DIR}/honcho-inspector.db`
+      (mode `0640`, owned by the service user) are the only
+      protection. Verify with `ls -la
+      ${HONCHO_CONFIG_DIR}/honcho-inspector.db` — if the file is
+      world-readable or owned by a non-service user, tighten it
+      before running the CLI. See F-17.
+- [ ] **CLI mutations bypass the audit log.** The CLI runs before the
+      web server starts, so the `AdminAudit` listener is not yet
+      wired. Operators who need a CLI mutation trail should record
+      the operator name + timestamp + subcommand to the JSONL log
+      before invoking the CLI subcommand. See F-17.
 - [ ] `/api/health` is exposed to a private monitoring network only; the
       counts leak minimal info but should not be public.
 
