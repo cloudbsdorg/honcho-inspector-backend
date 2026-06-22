@@ -115,11 +115,16 @@ start: build ## Build then start via the OS-aware launcher (foreground)
 	fi
 	$(LAUNCHER)
 
-run-jar: build ## Run the built fat jar directly (no launcher, no config-dir resolution)
+run-jar: build ## Run the built fat jar directly (no launcher; sources per-OS env file)
 	@if [ -z "$$(command -v java)" ]; then printf "java not found in PATH\n" >&2; exit 1; fi
 	@if [ ! -f "$(JAR)" ]; then \
 		printf "jar not found: %s (run 'make build' first)\n" "$(JAR)" >&2; exit 1; \
 	fi
+	@case "$$(uname -s)" in \
+		Linux)             for f in /etc/default/honcho-inspector /etc/sysconfig/honcho-inspector; do [ -f "$$f" ] && { set -a; . "$$f" 2>/dev/null; set +a; }; done ;; \
+		FreeBSD|DragonFly|OpenBSD|NetBSD) for f in /etc/default/honcho-inspector "$${HOMEBREW_PREFIX:-/usr/local}/etc/honcho-inspector/honcho-inspector.env"; do [ -f "$$f" ] && { set -a; . "$$f" 2>/dev/null; set +a; }; done ;; \
+		Darwin)            for f in /etc/defaults/honcho-inspector "$${HOME:-}/Library/Application Support/honcho-inspector/env"; do [ -f "$$f" ] && { set -a; . "$$f" 2>/dev/null; set +a; }; done ;; \
+	esac
 	java -Xms64m -Xmx256m -jar "$(JAR)"
 
 # === Database (dev default: ./honcho-inspector.db) ===
