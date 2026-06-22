@@ -1,8 +1,221 @@
 # Honcho Inspector Backend — Status Snapshot
 
-**Captured:** 2026-06-21 23:30 CDT · just before the user shut down to move.
-**User will return in ~20 min** and resume the in-progress work.
-**Updated:** 2026-06-21 23:38 CDT · launcher env-file fix committed + pushed as `c2f84cc`.
+**Captured:** 2026-06-21 23:50 CDT · user is shutting down in 5 min.
+**Last commits on `main`:** `1eb39b7` (launcher env file defaults fix), `c8274ca` (Makefile run-jar fix).
+
+---
+
+## TL;DR
+
+- **macOS live test: PASS** on `minimini.cloudbsd.org`. Bootstrap admin `alice` exists, all admin endpoints respond 200.
+- **FreeBSD live test: PASS** on `pppoe1.cloudbsd.org`. Install + service + first-run mode + **all CLI commands** verified end-to-end (list-users, reset-admin-password, promote-to-admin, revoke-all-sessions, help).
+- **Launcher env-file fix shipped** as `1eb39b7` — `source_env_file()` probes per-OS env file + sets OS-appropriate `HONCHO_DATA_DIR`/`HONCHO_DB_PATH`/`HONCHO_CONFIG_DIR` defaults if env file doesn't have them.
+- **Makefile run-jar fix shipped** as `c8274ca` — same env file sourcing as the launcher.
+- **All CLI commands verified on FreeBSD** after the launcher fix: list-users shows alice, promote-to-admin alice → "already admin", reset-admin-password --generate resets, reset-admin-password --password short → "validation" (exit 4), revoke-all-sessions → "revoked 4 sessions; 0 remain".
+- **UI package name confirmed:** `honcho-inspector-frontend` (user picked this over `honcho-inspector-u`/`honcho-inspector-ui`).
+- **Meta-package design captured** to Honcho MCP — `www/honcho-inspector` for FreeBSD, `honcho-inspector` umbrella for Homebrew, planned but not yet implemented (user said "I will want to").
+- **Honcho MCP:** 21 new conclusions on `honcho-inspector-backend` peer (CLI dispatch, launcher env file, installer fixes, Makefile portability, UI naming, meta-package design).
+- **480/480 mvn test pass**, 1 skipped. BUILD SUCCESS.
+- **Service stopped cleanly** on FreeBSD before shutdown; `honcho_inspector_enable="YES"` in rc.conf so it auto-restarts on next boot.
+
+---
+
+## Code State
+
+### `main` branch (last 5 commits)
+```
+c8274ca fix(makefile): run-jar target sources per-OS env file (matches launcher)
+1eb39b7 fix(launcher): set OS-appropriate defaults for HONCHO_DB_PATH and HONCHO_CONFIG_DIR
+a674435 docs(status): STATUS.md updated with audit findings + post-shutdown checklist
+c2f84cc feat(cli): emergency-action CLI + first-run mode + portable Makefile
+4f7a88e feat(install): per-OS installers + Homebrew formula + macOS live-test
+```
+
+### Uncommitted working tree
+**None.** All work committed and pushed. FreeBSD host has the latest launcher at `/usr/local/bin/honcho-inspector` (9644 bytes, includes `source_env_file` + defaults).
+
+### FreeBSD port
+`/home/mlapointe/git/cloudbsd-ports` on branch `honcho_inspectord` at `b6bbff8a60da` — pushed to origin.
+
+### Meta-package (planned, not yet implemented)
+- FreeBSD: `www/honcho_inspector/` (web category, per user "this would be a web item")
+- Homebrew: `honcho-inspector` umbrella formula depending on `cloudbsdorg/honcho-inspector/honcho-inspector` + `cloudbsdorg/honcho-inspector-frontend/honcho-inspector-frontend`
+- Linux: `make install-all` target or wrapper script
+- Branch for the FreeBSD meta-port: `honcho_inspector_meta` (separate from `honcho_inspectord`)
+
+---
+
+## What Works (Verified End-to-End on FreeBSD, Post-Launcher-Fix)
+
+```bash
+# On pppoe1.cloudbsd.org (FreeBSD 16.0-CURRENT):
+
+$ sudo honcho-inspector list-users
+ID                                 USERNAME                 ADMIN   CREATED_AT
+0b7942428a9826887df96f4bba3280f7aa8ca4646eeea431 alice                    yes     2026-06-22T04:21:36.315938574Z
+
+$ sudo honcho-inspector promote-to-admin --username alice
+user 'alice' is already an admin
+
+$ sudo honcho-inspector reset-admin-password --username alice --generate
+password reset for user 'alice' (id=0b7942428a9826887df96f4bba3280f7aa8ca4646eeea431)
+[new random password printed to stdout for the operator to capture]
+
+$ sudo honcho-inspector reset-admin-password --username alice --password short
+password must be at least 8 characters
+[exit 4]
+
+$ sudo honcho-inspector revoke-all-sessions
+revoked 4 sessions; 0 remain
+
+$ sudo honcho-inspector help
+[full usage + exit codes + notes]
+
+# Web server still responds in parallel (SQLite single-writer lock makes CLI block briefly on writes):
+$ curl http://127.0.0.1:8080/api/health
+{"ok":true,"first_run":false,"needs_register":false}  HTTP 200
+
+$ curl -H "X-Session-Id: $SID" http://127.0.0.1:8080/api/admin/dashboard/overview
+{"usersTotal":1,"usersAdmins":1,"usersLast7d":1,"usersLast30d":1,"profilesTotal":0,"auditTotal":0,"auditLast30d":0,"generatedAt":"2026-06-22T04:42:19Z"}  HTTP 200
+```
+
+---
+
+## Open Questions for User
+
+1. **Meta-package implementation** — FreeBSD `www/honcho_inspector/` skeleton ready to create on branch `honcho_inspector_meta`. Should I create the skeleton now or wait for the user to request?
+
+2. **macOS `HONCHO_CRYPTO_KEY` gap** — pre-existing in launchd plist. Options:
+   - (a) Hardcode in plist (bad for secrets)
+   - (b) Post-process plist at install time
+   - (c) Document in man page that operator must `export` in shell
+
+3. **FreeBSD port distinfo SHA256** — currently a placeholder. Need to publish a GitHub release first, then update `distinfo` with the real SHA256.
+
+---
+
+## Next Steps (When User Returns)
+
+1. **Re-test CLI on FreeBSD** (after pulling the new commits — should already be at `c8274ca`):
+   ```bash
+   cd /home/mlapointe/secure/git/honcho-inspector-backend
+   git pull
+   mvn -B -ntp package -DskipTests
+   scp target/honcho-inspector-backend-0.1.0-SNAPSHOT.jar pppoe1.cloudbsd.org:~/
+   ssh pppoe1.cloudbsd.org 'sudo cp ~/honcho-inspector-backend-0.1.0-SNAPSHOT.jar /tmp/target/ && \
+     sudo /tmp/bin/install-honcho-inspector --uninstall && \
+     sudo /tmp/bin/install-honcho-inspector && \
+     sudo service honcho_inspector start'
+   sleep 8
+   ssh pppoe1.cloudbsd.org 'sudo honcho-inspector list-users'   # should show alice
+   ```
+
+2. **Add `DashboardApplicationMainDispatchTest`** with 5 scenarios (CLI command, no args, unknown command, help, env-resolved DB path).
+
+3. **Decide on macOS `HONCHO_CRYPTO_KEY` gap** (open question #2).
+
+4. **Create FreeBSD meta-port skeleton** at `www/honcho_inspector/` on branch `honcho_inspector_meta` (when user requests).
+
+5. **Update FreeBSD port distinfo** with real SHA256 after first GitHub release.
+
+---
+
+## Honcho MCP — 21 New Conclusions This Session
+
+All on peer `honcho-inspector-backend`:
+
+**CLI dispatch (3):**
+- CLI dispatch in main() not CommandLineRunner (web server too late)
+- SpringApplicationBuilder.web(WebApplicationType.NONE) is the right primitive for CLI
+- exit codes 0/2/3/4/5 propagate via System.exit
+
+**Launcher (3):**
+- launcher source_env_file() must probe per-OS paths (Linux /etc/default + /etc/sysconfig, FreeBSD /etc/default + HOMEBREW_PREFIX, macOS /etc/defaults + ~/Library/.../env)
+- env file from install script does NOT include HONCHO_DB_PATH (only HONCHO_CRYPTO_KEY); launcher must mirror rc.d defaults
+- existing operator vars WIN via 'set -a; . $f 2>/dev/null; set +a'
+
+**Installer (4):**
+- find_source_file basename probe too greedy (launcher vs rc.d both named honcho-inspector)
+- install_jar writes BOTH unversioned and versioned forms
+- FreeBSD rc.d basename is 'honcho_inspector' (underscore), not 'honcho-inspector' (hyphen)
+- rc.d must export HONCHO_CONFIG_DIR and HONCHO_DB_PATH after sourcing env file
+
+**Build/portability (1):**
+- Makefile portable to both GNU make and BSD bmake (no ifeq, no $(shell), no $(wildcard), no !=)
+
+**First-run (1):**
+- First-run mode is UI-driven: /api/health returns first_run, POST /api/setup/first-admin open when DB empty
+
+**Mac gap (1):**
+- macOS launchd plist does NOT set HONCHO_CRYPTO_KEY (pre-existing gap)
+
+**FreeBSD port vs in-tree (1):**
+- FreeBSD port uses ${ETCDIR}/honcho-inspector.env (under /usr/local/etc/honcho-inspector/), NOT /etc/default/honcho-inspector
+
+**UI naming (2):**
+- UI package name: 'honcho-inspector-frontend' (with hyphens, full word)
+- 'd' for backend (terse, operator-facing), 'frontend' for UI (verbose, end-user-facing)
+
+**Meta-package (3):**
+- Meta-package design: 'honcho-inspector' is the umbrella
+- FreeBSD meta-package placement: 'www/honcho_inspector' (web category, not 'misc/')
+- Meta-port Makefile pattern: NO_BUILD/NO_INSTALL/NO_ARCH/NO_MTREE, pure dependency aggregator
+
+**Meta-package branch (1):**
+- Git branch for meta-port: 'honcho_inspector_meta' in /home/mlapointe/git/cloudbsd-ports
+
+---
+
+## Critical Context (Likely to be Forgotten)
+
+- **macOS test admin:** username `alice`, password `correct horse battery staple` (or the password reset by the CLI)
+- **FreeBSD test admin:** username `alice`, password `correct horse battery staple` (same)
+- **macOS service user:** `_www:_www` (uid 70, group 70)
+- **FreeBSD service user:** `www:www` (uid 80, group 80)
+- **macOS Java:** `/Library/Java/JavaVirtualMachines/jdk-25.jdk/Contents/Home/bin/java` → symlinked to `/usr/local/bin/java`
+- **FreeBSD Java:** `/usr/local/openjdk25/bin/java` (installed via `pkg install openjdk25`)
+- **macOS `/tmp` is a symlink to `/private/tmp`** with TCC restrictions — unprivileged user can't write from remote SSH; use `sudo tee`
+- **macOS `service.error.include-message` valid Spring Boot 3.5 enum values:** `ALWAYS`, `NEVER`, `ON_PARAM` (NOT `when_authorized`)
+- **FreeBSD's `sudo` invokes `/bin/sh`** — bash-only `${var//pat/repl}` fails; use `tr` for portability
+- **FreeBSD `/etc/default/` doesn't exist by default** — must `sudo mkdir -p /etc/default` before install
+- **All installer shell scripts syntax-validated:** `bash -n bin/install-honcho-inspector` OK, `bash -n etc/rc.d/honcho-inspector` OK, `bash -n bin/honcho-inspector` OK
+- **CLI dispatch flow:** `DashboardApplication.main()` → checks `CliRunner.isKnownCommand(args[0])` → `runCli(args)` → `SpringApplicationBuilder.web(WebApplicationType.NONE).run(args)` → `ctx.getBean(CliRunner.class).handle(cmd, restArgs)` → `System.exit(code)`
+- **CLI exit codes:** 0=ok, 2=invalid args, 3=user not found, 4=validation (password too short), 5=db error
+- **`find_source_file` probes (after fix):** PROJECT_DIR/.., SCRIPT_DIR, /tmp, PWD — only full relative paths, no basename
+- **launcher env file sourcing:** Linux `/etc/default/honcho-inspector` + `/etc/sysconfig/honcho-inspector` (RHEL); FreeBSD `/etc/default/honcho-inspector` + `${HOMEBREW_PREFIX}/etc/honcho-inspector/honcho-inspector.env`; macOS `/etc/defaults/honcho-inspector` + `~/Library/.../env`. Existing vars WIN via `set -a`.
+- **launcher defaults (post-`1eb39b7`):** `: ${HONCHO_DATA_DIR:=$(default_data_dir)}` then `: ${HONCHO_DB_PATH:=jdbc:sqlite:${HONCHO_DATA_DIR}/honcho-inspector.db}`. `default_data_dir` returns `/var/lib/honcho-inspector` on Linux/macOS, `/var/db/honcho-inspector` on FreeBSD/BSD.
+
+---
+
+## Welcome Back Checklist (When User Returns)
+
+```bash
+# 1. Verify test hosts reachable
+ssh pppoe1.cloudbsd.org "uname -a"
+ssh minimini.cloudbsd.org "uname -a"
+
+# 2. Check mvn test still passes
+cd /home/mlapointe/secure/git/honcho-inspector-backend
+git log --oneline -3   # expect c8274ca, 1eb39b7, a674435
+mvn -B -ntp test       # expect 480 pass, 1 skipped
+
+# 3. Check FreeBSD service is running
+ssh pppoe1.cloudbsd.org "service honcho_inspector status"
+ssh pppoe1.cloudbsd.org "curl -s http://127.0.0.1:8080/api/health"
+
+# 4. Verify CLI works on FreeBSD
+ssh pppoe1.cloudbsd.org "sudo honcho-inspector list-users"   # should show alice
+
+# 5. Remaining work:
+# - DashboardApplicationMainDispatchTest (5 scenarios)
+# - macOS launchd plist HONCHO_CRYPTO_KEY gap (open question #2)
+# - Create FreeBSD meta-port skeleton at www/honcho_inspector/ on branch honcho_inspector_meta
+# - Update FreeBSD port distinfo with real SHA256 after first GitHub release
+```
+
+---
+
+**End of STATUS.md — see you on the other side!** 🔧
 
 ---
 
