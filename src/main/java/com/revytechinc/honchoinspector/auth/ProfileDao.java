@@ -67,7 +67,10 @@ public class ProfileDao {
     }
 
     public long count() {
-        Long n = jdbc.queryForObject("SELECT COUNT(*) FROM honcho_profiles", Long.class);
-        return n == null ? 0 : n;
+        return jdbc.queryForObject("SELECT COUNT(*) FROM honcho_profiles", Long.class);
+    }
+
+    public List<Profile> findAll() {
+        return jdbc.query("SELECT * FROM honcho_profiles ORDER BY created_at", ROW);
     }
 }
