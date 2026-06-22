@@ -2,9 +2,20 @@
 #
 # honcho-inspector launcher script (POSIX: Linux, FreeBSD, macOS)
 #
-# Resolves the OS-appropriate config dir and execs the honcho-inspector-backend jar
-# with `--spring.config.additional-location=<dir>` so the operator can drop
-# a custom application.yml at the OS-appropriate place.
+# This script is the dev-mode launcher. For a system install (runs as
+# www-data / www / _www, with a service file and env-injection), use:
+#
+#   sudo bin/install-honcho-inspector
+#
+# The install script copies this jar to /usr/local/lib/honcho-inspector/,
+# installs the per-OS service file (systemd / rc.d / launchd), and
+# sets up a dedicated unprivileged service user. See the man page
+# honcho-inspector(1) §INSTALLATION for the full procedure.
+#
+# This script resolves the OS-appropriate config dir and execs the
+# honcho-inspector-backend jar with --spring.config.additional-location
+# so the operator can drop a custom application.yml at the OS-appropriate
+# place.
 #
 # Per-OS config culture (the lesson):
 #   Linux:     /etc/honcho-inspector/application.yml
@@ -26,7 +37,23 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-JAR_DIR="${HONCHO_JAR_DIR:-$PROJECT_DIR/target}"
+# Probe the jar in this order:
+#   1. $HONCHO_JAR_DIR (operator override)
+#   2. $HOMEBREW_PREFIX/opt/honcho-inspector/libexec (Homebrew tap)
+#   3. /usr/local/lib/honcho-inspector (manual POSIX install)
+#   4. $PROJECT_DIR/target (dev mode)
+JAR_DIR="${HONCHO_JAR_DIR:-}"
+if [ -z "$JAR_DIR" ] && [ -n "${HOMEBREW_PREFIX:-}" ] \
+    && [ -d "${HOMEBREW_PREFIX}/opt/honcho-inspector/libexec" ]; then
+    JAR_DIR="${HOMEBREW_PREFIX}/opt/honcho-inspector/libexec"
+fi
+if [ -z "$JAR_DIR" ] && [ -d /usr/local/lib/honcho-inspector ]; then
+    JAR_DIR=/usr/local/lib/honcho-inspector
+fi
+if [ -z "$JAR_DIR" ]; then
+    JAR_DIR="$PROJECT_DIR/target"
+fi
+
 JAR_FILE="$(ls -1 "$JAR_DIR"/honcho-inspector-backend-*.jar 2>/dev/null | grep -v '\.original$' | head -n1 || true)"
 
 if [ -z "${JAR_FILE:-}" ]; then

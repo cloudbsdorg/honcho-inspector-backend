@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  macOS launchd plist for the honcho-inspector backend.
+
+  Install (typically by bin/install-honcho-inspector):
+    install -m 0644 etc/launchd/com.honcho.inspector.plist \
+        /Library/LaunchDaemons/com.honcho.inspector.plist
+    launchctl load -w /Library/LaunchDaemons/com.honcho.inspector.plist
+
+  Runs as the built-in _www user (the macOS analog of www-data on
+  Linux). _www exists by default on macOS for system web services.
+  Secrets belong in /etc/defaults/honcho-inspector (mode 0640
+  root:_www), NOT in the application.yml drop-in.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.honcho.inspector</string>
+
+    <key>UserName</key>
+    <string>_www</string>
+
+    <key>GroupName</key>
+    <string>_www</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/honcho-inspector</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <!--
+          The launcher script (bin/honcho-inspector) handles all of
+          the following: finding the jar in HOMEBREW_PREFIX/libexec
+          or /usr/local/lib/honcho-inspector, finding java on PATH
+          (or JAVA_HOME), and setting up the spring config + logging
+          properties. We do not hardcode the Java path here because
+          the operator may have OpenJDK installed via Homebrew, the
+          macOS installer, or a manual tarball — and the launcher
+          handles all three via the standard PATH lookup.
+        -->
+        <key>HONCHO_CONFIG_DIR</key>
+        <string>/usr/local/etc/honcho-inspector</string>
+        <key>HONCHO_DB_PATH</key>
+        <string>jdbc:sqlite:/var/lib/honcho-inspector/honcho-inspector.db</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+        <key>Crashed</key>
+        <true/>
+    </dict>
+
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>StandardOutPath</key>
+    <string>/var/log/honcho-inspector/launchd.out.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/var/log/honcho-inspector/launchd.err.log</string>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+
+    <key>SoftResourceLimits</key>
+    <dict>
+        <key>NumberOfFiles</key>
+        <integer>65536</integer>
+    </dict>
+</dict>
+</plist>

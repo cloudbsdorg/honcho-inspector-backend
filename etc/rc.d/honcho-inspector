@@ -1,0 +1,90 @@
+#!/bin/sh
+#
+# PROVIDE: honcho_inspector
+# REQUIRE: DAEMON NETWORKING
+# KEYWORD: shutdown
+#
+# FreeBSD rc.d service for the honcho-inspector backend.
+#
+# Add the following lines to /etc/rc.conf to enable:
+#   honcho_inspector_enable="YES"
+#   honcho_inspector_user="www"           # default
+#   honcho_inspector_group="www"          # default
+#   honcho_inspector_java="/usr/local/openjdk25/bin/java"  # default
+#   honcho_inspector_java_opts="-Xms64m -Xmx256m"          # default
+#   honcho_inspector_jar="/usr/local/lib/honcho-inspector/honcho-inspector-backend.jar"
+#
+# Secrets (HONCHO_CRYPTO_KEY, optional bootstrap credentials) belong
+# in /etc/default/honcho-inspector (mode 0640 root:wheel), NOT in the
+# /usr/local/etc/honcho-inspector/application.yml drop-in.
+
+. /etc/rc.subr
+
+name=honcho_inspector
+rcvar=honcho_inspector_enable
+
+load_rc_config ${name}
+
+: ${honcho_inspector_enable:=NO}
+: ${honcho_inspector_user:=www}
+: ${honcho_inspector_group:=www}
+: ${honcho_inspector_java:=/usr/local/openjdk25/bin/java}
+: ${honcho_inspector_java_opts:=-Xms64m -Xmx256m}
+: ${honcho_inspector_jar:=/usr/local/lib/honcho-inspector/honcho-inspector-backend.jar}
+: ${honcho_inspector_config_dir:=/usr/local/etc/honcho-inspector}
+: ${honcho_inspector_data_dir:=/var/db/honcho-inspector}
+: ${honcho_inspector_log_dir:=/var/log/honcho-inspector}
+: ${honcho_inspector_env_file:=/etc/default/honcho-inspector}
+
+# /var/run/... is the FreeBSD convention for runtime state. We use
+# it for the pidfile so the daemon can be cleanly stopped.
+: ${honcho_inspector_pidfile:=/var/run/honcho-inspector.pid}
+
+# honor an environment file if present. The file is shell-sourced
+# so each line is `KEY="value"`.
+if [ -f "${honcho_inspector_env_file}" ]; then
+    set -a
+    . "${honcho_inspector_env_file}"
+    set +a
+fi
+
+# Spring Boot system properties. Java 9+ rejects `--key=value` in
+# the JVM-args slot; the -D form is the correct one.
+honcho_inspector_jvm_args="${honcho_inspector_java_opts} \
+    -Dhoncho.config.dir=${honcho_inspector_config_dir} \
+    -Dlogging.file.name=${honcho_inspector_log_dir}/honcho-inspector-backend.log"
+
+command="${honcho_inspector_java}"
+command_args="${honcho_inspector_jvm_args} -jar ${honcho_inspector_jar}"
+procname="${honcho_inspector_java}"
+pidfile="${honcho_inspector_pidfile}"
+
+# Pre-start: make sure the runtime directories exist with the
+# correct ownership and mode. The data and log dirs are created
+# owned by the service user; the config dir is left for the
+# operator to populate.
+start_precmd=honcho_inspector_prestart
+honcho_inspector_prestart()
+{
+    if [ ! -d "${honcho_inspector_data_dir}" ]; then
+        install -d -o "${honcho_inspector_user}" \
+            -g "${honcho_inspector_group}" -m 0750 \
+            "${honcho_inspector_data_dir}"
+    fi
+    if [ ! -d "${honcho_inspector_log_dir}" ]; then
+        install -d -o "${honcho_inspector_user}" \
+            -g "${honcho_inspector_group}" -m 0750 \
+            "${honcho_inspector_log_dir}"
+    fi
+    if [ ! -d "${honcho_inspector_config_dir}" ]; then
+        install -d -o root -g "${honcho_inspector_group}" -m 0750 \
+            "${honcho_inspector_config_dir}"
+    fi
+    # required for /var/run/... on systems without compat dirs
+    pidfile_dir="$(dirname "${pidfile}")"
+    if [ ! -d "${pidfile_dir}" ]; then
+        install -d -m 0755 "${pidfile_dir}"
+    fi
+}
+
+run_rc_command "$1"

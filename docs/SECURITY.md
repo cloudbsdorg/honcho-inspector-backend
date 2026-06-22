@@ -253,8 +253,10 @@ exceptions.
 
 **Remediation.** Map unexpected exceptions to a fixed
 `{"error":"internal server error"}` and log the detail with a correlation
-id. Set `server.error.include-message: when_authorized` (or `never` in
-prod) and rely on a `@ControllerAdvice` for the friendly envelope.
+id. Set `server.error.include-message: never` (the only safe Spring
+Boot 3.5 value for prod) and rely on a `@ControllerAdvice` for the
+friendly envelope. Valid Spring Boot 3.5 values for
+`server.error.include-message` are `ALWAYS`, `NEVER`, `ON_PARAM`.
 
 **Status:** Open.
 
@@ -395,12 +397,13 @@ message>, "path":...}` for unmapped exceptions. Combined with F-05, the
 caller learns a fair amount about the upstream.
 
 **Remediation.** In the prod config example, set
-`server.error.include-message: when_authorized` and
-`include-binding-errors: never`. Keep `include-stacktrace: never` (already
-set).
+`server.error.include-message: never` (the only safe value in
+Spring Boot 3.5; `when_authorized` is NOT a valid value and causes
+the ApplicationContext to fail to start) and `include-binding-errors: never`.
+Keep `include-stacktrace: never` (already set).
 
 **Status:** Resolved. The `etc/honcho-inspector/application.yml.example`
-template now ships with `server.error.include-message: when_authorized`,
+template now ships with `server.error.include-message: never`,
 `include-binding-errors: never`, and `include-stacktrace: never` set in
 the recommended production block, with a one-line comment in the
 template header warning the operator to keep them. The bundled jar
@@ -578,6 +581,27 @@ For a fresh production install:
       server MUST return 409 `cannot demote the last admin`. (If it
       returns 200, the binary is misconfigured and every admin is
       self-deletable.)
+- [ ] **Service user:** verify the service is running as the dedicated
+      unprivileged user (`www-data` on Linux, `www` on FreeBSD, `_www`
+      on macOS), NOT as root or as the operator's personal account.
+      The package manager install and the POSIX install script both
+      create the user automatically. Verify with:
+      . `ps -o user,group,comm -p $(pgrep -f honcho-inspector-backend)`
+      . `systemctl show honcho-inspector --property=User` (Linux)
+      . `service honcho_inspector status` (FreeBSD)
+      . `launchctl list | grep honcho.inspector` (macOS)
+- [ ] **File ownership:** the SQLite database and the log dir are
+      owned by the service user; the config dir is owned by `root`
+      and the service group with mode `0750`; the env file is mode
+      `0640` owned by `root` and the service group. Verify with:
+      . `ls -la /var/lib/honcho-inspector /var/log/honcho-inspector /etc/honcho-inspector /etc/default/honcho-inspector`
+- [ ] **Hardening directives (Linux systemd only):** verify the
+      unit file has not been overridden to drop hardening. Read
+      `/etc/systemd/system/honcho-inspector.service` and confirm
+      `NoNewPrivileges=true`, `ProtectSystem=strict`, `PrivateTmp=true`,
+      and `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6` are
+      still present. (`systemctl cat honcho-inspector` shows the
+      effective unit after any drop-in overrides.)
 - [ ] Backups of `$HONCHO_CONFIG_DIR/honcho-inspector.db` are stored
       encrypted; the backup process reads `HONCHO_CRYPTO_KEY` from the
       same secret store.
