@@ -1,2 +1,7 @@
+.idea/
+target/
 .playwright-mcp/
 login-page.png
+*.class
+*.log
+.DS_Store
