@@ -5,6 +5,7 @@ import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 @Repository
@@ -51,6 +52,16 @@ public class AuthSessionDao {
 
     public int deleteExpired(Instant now) {
         return jdbc.update("DELETE FROM auth_sessions WHERE expires_at IS NOT NULL AND expires_at < ?", now.toString());
+    }
+
+    public List<AuthSession> findByUserId(String userId) {
+        return jdbc.query(
+            "SELECT * FROM auth_sessions WHERE user_id = ? ORDER BY last_seen_at DESC",
+            ROW, userId);
+    }
+
+    public int deleteByUserId(String userId) {
+        return jdbc.update("DELETE FROM auth_sessions WHERE user_id = ?", userId);
     }
 
     public long count() {
