@@ -41,6 +41,24 @@ honcho:
   # to prevent forward-incompatible deploys.
   providers:
     strict-mode: false
+  # Bootstrap admin. On first startup (users table empty), if BOTH username AND
+  # password are set, an admin user is created. Leave blank to disable. Put
+  # real values in /etc/honcho-inspector/application.yml on deployed systems;
+  # this block ships blank so the bundled jar cannot accidentally create an
+  # admin with a known password.
+  bootstrap:
+    admin-username: ${HONCHO_BOOTSTRAP_ADMIN_USERNAME:}
+    admin-password: ${HONCHO_BOOTSTRAP_ADMIN_PASSWORD:}
+    admin-firstname: ${HONCHO_BOOTSTRAP_ADMIN_FIRSTNAME:}
+    admin-lastname: ${HONCHO_BOOTSTRAP_ADMIN_LASTNAME:}
+    admin-email: ${HONCHO_BOOTSTRAP_ADMIN_EMAIL:}
+  # Audit retention. AuditLogDao entries older than retention-days are purged
+  # daily at purge-cron (default 03:00 local). If row count exceeds max-rows,
+  # the oldest entries are purged until the cap is satisfied.
+  audit:
+    retention-days: ${HONCHO_AUDIT_RETENTION_DAYS:90}
+    max-rows: ${HONCHO_AUDIT_MAX_ROWS:1000000}
+    purge-cron: ${HONCHO_AUDIT_PURGE_CRON:0 0 3 * * *}
 
 # CORS allowed origins. Comma-separated list.
 cors:
