@@ -1582,6 +1582,577 @@ paths:
             '*/*':
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  # =========================================================================
+  # Admin surface (Phase 4 — implemented; was sketched in Phase 1)
+  # =========================================================================
+  # All paths under /api/admin/** require an X-Session-Id header whose
+  # session resolves to a user with isAdmin=true. Enforced centrally by
+  # the @RequireAdmin annotation + AdminAuthInterceptor HandlerInterceptor.
+  # Unauthenticated callers get 401; authenticated non-admins get 403.
+  # There is no per-controller opt-in helper. See README §"Admin API" and
+  # docs/SECURITY.md §2.
+  /api/admin/users:
+    get:
+      tags:
+      - admin
+      summary: List users (paginated)
+      description: 'Paginated user list. `?pageSize=10|20|30|ALL`, defaults to 20.
+
+        Returns `UserResponse` items (no `passwordHash` is ever returned).
+
+        Admin-only.
+
+        '
+      operationId: list_1
+      parameters:
+      - name: page
+        in: query
+        description: Page index (0-based)
+        schema:
+          type: integer
+          default: 0
+          minimum: 0
+      - name: pageSize
+        in: query
+        description: 'Page size: 10, 20, 30, or ALL (case-insensitive).'
+        schema:
+          type: string
+          default: '20'
+          enum:
+          - '10'
+          - '20'
+          - '30'
+          - ALL
+      responses:
+        '200':
+          description: Page of users
+          content:
+            '*/*':
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/UserResponse'
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  rows:
+                    type: integer
+                  pages:
+                    type: integer
+        '401':
+          description: Not authenticated
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Caller is not admin
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      tags:
+      - admin
+      summary: Create a new user with explicit role
+      description: 'Admin creates a new user. `isAdmin` defaults to false. Returns
+
+        the created `UserResponse` (no `passwordHash`).
+
+        '
+      operationId: create_1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminCreateUserInput'
+      responses:
+        '201':
+          description: User created
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '400':
+          description: Validation error (e.g. password too short)
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Caller is not admin
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Username already exists
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/admin/users/search:
+    get:
+      tags:
+      - admin
+      summary: Search users by username, firstname, lastname, or email
+      description: 'Case-insensitive LIKE substring match. Empty `q` lists all
+
+        users. Admin-only.
+
+        '
+      operationId: search
+      parameters:
+      - name: q
+        in: query
+        description: Search query (empty lists all)
+        schema:
+          type: string
+          default: ''
+      - name: page
+        in: query
+        schema:
+          type: integer
+          default: 0
+      - name: pageSize
+        in: query
+        schema:
+          type: string
+          default: '20'
+      responses:
+        '200':
+          description: Page of matching users
+          content:
+            '*/*':
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/UserResponse'
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  rows:
+                    type: integer
+                  pages:
+                    type: integer
+        '403':
+          description: Caller is not admin
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/admin/users/{id}:
+    get:
+      tags:
+      - admin
+      summary: Get a single user
+      operationId: get_1
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: User found
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '404':
+          description: User not found
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    put:
+      tags:
+      - admin
+      summary: Update a user (identity and/or role)
+      description: 'All fields optional. Omitted = unchanged. `isAdmin` is tri-state:
+
+        omit to leave role, set to true/false to change. Returns 409 if
+
+        the caller is the last admin or is trying to demote themselves.
+
+        '
+      operationId: update_1
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminUpdateUserInput'
+      responses:
+        '200':
+          description: User updated
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '404':
+          description: User not found
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Self-protection rule violated
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags:
+      - admin
+      summary: Delete a user
+      description: 'CASCADE removes the user''s profiles and sessions. Returns
+
+        409 if the caller is the last admin or is trying to delete
+
+        themselves.
+
+        '
+      operationId: delete_1
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '204':
+          description: User deleted
+        '404':
+          description: User not found
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Self-protection rule violated
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/admin/users/{id}/sessions:
+    get:
+      tags:
+      - admin
+      summary: List a user's auth sessions
+      operationId: sessions
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: List of auth sessions (live + recent)
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AuthSession'
+  /api/admin/users/{id}/sessions/revoke:
+    post:
+      tags:
+      - admin
+      summary: Revoke all auth sessions for a user (force-logout)
+      operationId: revoke
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Number of sessions revoked
+          content:
+            '*/*':
+              schema:
+                type: object
+                properties:
+                  revoked:
+                    type: integer
+  /api/admin/users/{id}/password:
+    post:
+      tags:
+      - admin
+      summary: Admin password reset (revokes all existing sessions)
+      operationId: resetPassword
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminPasswordResetInput'
+      responses:
+        '204':
+          description: Password reset, sessions revoked
+        '400':
+          description: Validation error
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: User not found
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/admin/audit:
+    get:
+      tags:
+      - admin
+      summary: Query the audit log
+      description: 'Most-recent first. All filters optional, AND-combined. `since`
+
+        is ISO-8601; invalid values return 400.
+
+        '
+      operationId: list_2
+      parameters:
+      - name: actor
+        in: query
+        description: Filter by actor user id
+        schema:
+          type: string
+      - name: target
+        in: query
+        description: Filter by target user id
+        schema:
+          type: string
+      - name: action
+        in: query
+        description: 'Filter by action (e.g. ''user.create'', ''user.delete'', ''audit.purge'')'
+        schema:
+          type: string
+      - name: since
+        in: query
+        description: Filter to entries at or after this ISO-8601 instant
+        schema:
+          type: string
+      - name: page
+        in: query
+        schema:
+          type: integer
+          default: 0
+      - name: pageSize
+        in: query
+        schema:
+          type: string
+          default: '20'
+      responses:
+        '200':
+          description: Page of audit entries
+          content:
+            '*/*':
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AuditEntry'
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  rows:
+                    type: integer
+                  pages:
+                    type: integer
+        '400':
+          description: Invalid 'since' timestamp
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Caller is not admin
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/admin/dashboard/overview:
+    get:
+      tags:
+      - admin
+      summary: Local SQL aggregates for the admin overview panel
+      description: 'Returns user / profile / audit / session counts and 7d / 30d
+
+        growth. No network calls.
+
+        '
+      operationId: overview
+      responses:
+        '200':
+          description: Aggregate counts
+          content:
+            '*/*':
+              schema:
+                type: object
+  /api/admin/dashboard/users/{id}:
+    get:
+      tags:
+      - admin
+      summary: Per-user drilldown
+      operationId: userDrilldown
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: User + profiles + recent sessions + last 20 audit events
+          content:
+            '*/*':
+              schema:
+                type: object
+        '404':
+          description: User not found
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/admin/dashboard/honcho:
+    get:
+      tags:
+      - admin
+      summary: All Honcho profiles with reachability probe (parallel, 5s timeout)
+      description: 'Fan-out to every registered profile; per-profile `getQueueStatus`
+
+        call with 5s timeout. Graceful degradation: one profile down does
+
+        not fail the others.
+
+        '
+      operationId: honchoList
+      responses:
+        '200':
+          description: Per-profile reachability + queue snapshot
+          content:
+            '*/*':
+              schema:
+                type: object
+  /api/admin/dashboard/honcho/{profileId}:
+    get:
+      tags:
+      - admin
+      summary: Per-profile Honcho drilldown (queue + workspace)
+      operationId: honchoDrilldown
+      parameters:
+      - name: profileId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Profile metadata + queue + workspace
+          content:
+            '*/*':
+              schema:
+                type: object
+        '404':
+          description: Profile not found
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/admin/maintenance/status:
+    get:
+      tags:
+      - admin
+      summary: 'Current state: row counts + retention config'
+      operationId: status
+      responses:
+        '200':
+          description: Current state
+          content:
+            '*/*':
+              schema:
+                type: object
+  /api/admin/maintenance/audit/purge:
+    post:
+      tags:
+      - admin
+      summary: Manually trigger the audit retention sweep
+      description: 'Calls `AuditRetentionJob.run` synchronously. Returns the
+
+        deleted counts. Records an `audit.purge` audit entry IF any rows
+
+        were deleted (a no-op run is intentionally not audited).
+
+        '
+      operationId: purgeAudit
+      responses:
+        '200':
+          description: Counts
+          content:
+            '*/*':
+              schema:
+                type: object
+                properties:
+                  ageDeleted:
+                    type: integer
+                  sizeDeleted:
+                    type: integer
+                  totalDeleted:
+                    type: integer
+                  retentionDays:
+                    type: integer
+                  maxRows:
+                    type: integer
+                  ranAt:
+                    type: string
+  /api/admin/maintenance/sessions/purge-expired:
+    post:
+      tags:
+      - admin
+      summary: Manually sweep expired auth_sessions
+      operationId: purgeExpiredSessions
+      responses:
+        '200':
+          description: Number of expired sessions deleted
+          content:
+            '*/*':
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: integer
+                  ranAt:
+                    type: string
 components:
   schemas:
     # ------------------------------------------------------------------
@@ -1618,7 +2189,13 @@ components:
       type: object
       description: 'Public view of a registered user. The password hash is never
 
-        returned. `isAdmin` is true for the first registered user.
+        returned. Returned by `/api/auth/me`, `/api/auth/login`, and every
+
+        `/api/admin/users/*` path. `firstname`, `lastname`, and `email`
+
+        are optional (nullable in the schema; absent from the wire
+
+        response when unset).
 
         '
       properties:
@@ -1630,11 +2207,28 @@ components:
           type: string
           description: Unique username (case-sensitive on the wire)
           example: alice
+        firstname:
+          type: string
+          description: Optional first name
+          example: Alice
+          nullable: true
+        lastname:
+          type: string
+          description: Optional last name
+          example: Admin
+          nullable: true
+        email:
+          type: string
+          description: Optional email (unique when set)
+          example: alice@example.com
+          nullable: true
         isAdmin:
           type: boolean
-          description: 'True for the first user registered after a fresh DB; there
+          description: '`true` for users with admin role. Set at create-time
 
-            is no admin promotion endpoint in this version.
+            only; promoted/demoted via `PUT /api/admin/users/{id}`. There
+
+            is no self-service promotion.
 
             '
           example: true
@@ -1646,6 +2240,9 @@ components:
       example:
         id: a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4
         username: alice
+        firstname: Alice
+        lastname: Admin
+        email: alice@example.com
         isAdmin: true
         createdAt: 2026-06-17 22:00:00+00:00
     LoginResponse:
@@ -2009,13 +2606,13 @@ components:
         error: invalid username or password
     HealthResponse:
       type: object
-      description: 'Body returned by `GET /api/health`. Includes counts of users,
+      description: 'Body returned by `GET /api/health`. Returns only `ok` and
 
-        sessions, and profiles plus a `needsRegister` boolean the UI
+        `needs_register`. Aggregate user / session / profile counts are
 
-        uses to decide whether to show the registration form on first
+        intentionally NOT exposed on this unauthenticated probe (they
 
-        run.
+        are available to admins via `/api/admin/dashboard/overview`).
 
         '
       properties:
@@ -2023,32 +2620,223 @@ components:
           type: boolean
           description: Always true when the service is up
           example: true
-        users:
-          type: integer
-          description: Total user count
-          example: 1
-        sessions:
-          type: integer
-          description: Active session count
-          example: 2
-        profiles:
-          type: integer
-          description: Honcho profile count across all users
-          example: 3
         needs_register:
           type: boolean
           description: 'True on a fresh database (no users yet). UI uses this to
 
-            show the registration form before the login form.
+            show the registration form before the login form. With the
+
+            admin-gated register endpoint, the first admin is normally
+
+            created by `AdminBootstrap` from the drop-in config; this
+
+            flag is useful for operators verifying bootstrap wiring.
 
             '
           example: false
       example:
         ok: true
-        users: 1
-        sessions: 2
-        profiles: 3
         needs_register: false
+    # ------------------------------------------------------------------
+    # Admin RBAC DTOs
+    # ------------------------------------------------------------------
+    AdminCreateUserInput:
+      type: object
+      description: 'Create-user payload. Required: `username`, `password` (>=8
+
+        chars). Optional: `firstname`, `lastname`, `email`, `isAdmin`.
+
+        Admin-only; called via `POST /api/admin/users`.
+
+        '
+      required:
+      - username
+      - password
+      properties:
+        username:
+          type: string
+          example: alice
+        password:
+          type: string
+          format: password
+          minLength: 8
+          example: correct horse battery staple
+        firstname:
+          type: string
+          nullable: true
+          example: Alice
+        lastname:
+          type: string
+          nullable: true
+          example: Liddell
+        email:
+          type: string
+          format: email
+          nullable: true
+          example: alice@example.com
+        isAdmin:
+          type: boolean
+          description: '`true` to create this user with admin role. Defaults to
+
+            false when omitted.
+
+            '
+          default: false
+          example: false
+      example:
+        username: alice
+        password: correct horse battery staple
+        firstname: Alice
+        lastname: Liddell
+        email: alice@example.com
+        isAdmin: false
+    AdminUpdateUserInput:
+      type: object
+      description: 'Update-user payload. Omitted fields are unchanged. `isAdmin`
+
+        is tri-state: omit to leave the role alone, set to `true` to
+
+        promote, set to `false` to demote. The last remaining admin
+
+        cannot be demoted (server returns 409).
+
+        '
+      properties:
+        username:
+          type: string
+          example: alice
+        firstname:
+          type: string
+          nullable: true
+        lastname:
+          type: string
+          nullable: true
+        email:
+          type: string
+          format: email
+          nullable: true
+        isAdmin:
+          type: boolean
+          description: '`true` to promote, `false` to demote, omitted to leave
+
+            the role unchanged.
+
+            '
+    AdminPasswordResetInput:
+      type: object
+      description: 'Password reset payload. New password must be at least 8
+
+        characters. Successful reset revokes all of the target user''s
+
+        existing auth sessions (force-logout).
+
+        '
+      required:
+      - newPassword
+      properties:
+        newPassword:
+          type: string
+          format: password
+          minLength: 8
+          example: correct horse battery staple
+      example:
+        newPassword: correct horse battery staple
+    # ------------------------------------------------------------------
+    # Audit + auth session (documented in narrative only; the controllers
+    # return anon-style inline objects, so the springdoc-generated
+    # snapshot does not emit them. Listed here so client code generators
+    # have the field set to import.)
+    # ------------------------------------------------------------------
+    AuditEntry:
+      type: object
+      description: 'One row of the `audit_log` table, returned by `GET
+
+        /api/admin/audit`. `metadata` is a free-form JSON object whose
+
+        shape depends on `action`.
+
+        '
+      properties:
+        id:
+          type: integer
+          description: Monotonic audit-log id
+          example: 42
+        actorUserId:
+          type: string
+          nullable: true
+          description: Hex user id of the actor; null for the bootstrap path
+        action:
+          type: string
+          description: '`user.bootstrap`, `user.create`, `user.update`, `user.delete`,
+            `user.sessions.revoke`, `user.password.reset`, `audit.purge`,
+            `sessions.purge`'
+          example: user.create
+        targetUserId:
+          type: string
+          nullable: true
+          description: Hex user id of the target; null for non-user actions
+        targetResource:
+          type: string
+          nullable: true
+          description: Optional resource identifier (e.g. "audit_log", "auth_sessions")
+        ip:
+          type: string
+          nullable: true
+          description: Source IP recorded at audit time
+        sessionId:
+          type: string
+          nullable: true
+          description: Hex auth session id of the actor; null for bootstrap
+        metadata:
+          type: object
+          additionalProperties: true
+          description: Free-form action-specific JSON
+        createdAt:
+          type: string
+          format: date-time
+          description: ISO-8601 instant the audit row was written
+      example:
+        id: 42
+        actorUserId: a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4
+        action: user.create
+        targetUserId: f0e1d2c3b4a59687
+        targetResource: null
+        ip: 10.0.0.1
+        sessionId: 5f4dcc3b5aa765d61d8327deb882cf99
+        metadata:
+          username: bob
+          isAdmin: false
+        createdAt: 2026-06-21T20:00:00Z
+    AuthSession:
+      type: object
+      description: 'One row of the `auth_sessions` table, returned by `GET
+
+        /api/admin/users/{id}/sessions`.
+
+        '
+      properties:
+        id:
+          type: string
+          description: Hex session id (the value sent in `X-Session-Id`)
+        userId:
+          type: string
+          description: Hex user id of the owner
+        createdAt:
+          type: string
+          format: date-time
+        lastSeenAt:
+          type: string
+          format: date-time
+          nullable: true
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: 'ISO-8601 instant; null when `SESSION_TTL_MINUTES=0` (never
+            expire)'
+        ip:
+          type: string
+          nullable: true
 # ----------------------------------------------------------------------------
 # Top-level workflow narrative - the recommended end-to-end flow.
 # ----------------------------------------------------------------------------
@@ -2089,13 +2877,23 @@ x-workflow-narrative: "## Recommended end-to-end workflow\n\nPhase 1 ships a sin
   \ proxy returns\n502.\n"
 x-phase-boundaries:
   phase1:
-    description: 'Phase 1 (this release): auth, profiles, health, and the Honcho
+    description: 'Phase 1 (this release): auth, profiles, health, the Honcho
 
-      v3 pass-through proxy. All 28 paths under `/api/auth`,
+      v3 pass-through proxy, and the admin RBAC surface. All 42 paths
 
-      `/api/profiles`, `/api/health`, and `/api/{peers,sessions,
+      under `/api/auth`, `/api/profiles`, `/api/health`,
 
-      queue-status,workspace,search,dream}` are live.
+      `/api/{peers,sessions,queue-status,workspace,search,dream}`, and
+
+      `/api/admin/{users,audit,dashboard,maintenance}` are live. The
+
+      admin surface is gated by `@RequireAdmin` +
+
+      `AdminAuthInterceptor`; the `x-phase-boundaries.phase1.paths`
+
+      list below enumerates every admin path. The Phase 2 stubs under
+
+      `/api/{orgs,stats,reports,invites}` remain unimplemented.
 
       '
     paths:
@@ -2127,6 +2925,21 @@ x-phase-boundaries:
     - /api/search
     - /api/dream
     - /api/workspace/info
+    # Admin RBAC surface (admin-only; enforced by @RequireAdmin + AdminAuthInterceptor)
+    - /api/admin/users
+    - /api/admin/users/search
+    - /api/admin/users/{id}
+    - /api/admin/users/{id}/sessions
+    - /api/admin/users/{id}/sessions/revoke
+    - /api/admin/users/{id}/password
+    - /api/admin/audit
+    - /api/admin/dashboard/overview
+    - /api/admin/dashboard/users/{id}
+    - /api/admin/dashboard/honcho
+    - /api/admin/dashboard/honcho/{profileId}
+    - /api/admin/maintenance/status
+    - /api/admin/maintenance/audit/purge
+    - /api/admin/maintenance/sessions/purge-expired
   phase2:
     description: 'Phase 2 (sketched, not implemented): multi-tenant organization
 

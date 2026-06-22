@@ -73,9 +73,11 @@ These are real positives. They are the baseline; findings in §3 assume them.
   DAO. No string concatenation, no `Statement.executeQuery`. Verified across
   `UserDao`, `AuthSessionDao`, `ProfileDao`.
 - **No Spring Security on the classpath, no filter chain surprises.** The
-  56-line `SessionAuthFilter` is the only authn gate, and it has a 3-entry
-  public-path allowlist (`/api/auth/login`, `/api/auth/register`,
-  `/api/health`). Easy to audit.
+  ~60-line `SessionAuthFilter` is the only authn gate, and it has a 2-entry
+  public-path allowlist (`/api/auth/login`, `/api/health`). Easy to audit.
+  Admin gating is a separate HandlerInterceptor
+  (`auth/AdminAuthInterceptor`) that runs **after** the auth filter, so
+  the `CurrentUser` attribute is always populated before the admin check.
 - **Constructor injection only** — no `@Autowired` field injection anywhere.
   Reduces the attack surface for bean-injection issues and is easier to
   reason about.
@@ -105,6 +107,24 @@ These are real positives. They are the baseline; findings in §3 assume them.
 - **Startup info logger** prints a one-line summary of port, profiles,
   config dir, Honcho upstream, CORS, and session TTL — useful for prod
   diagnostics without leaking secrets.
+- **Centralised admin gate** via the `@RequireAdmin` annotation +
+  `AdminAuthInterceptor`. Every handler under `/api/admin/**` is enforced
+  uniformly; there is no per-controller opt-in helper, and no endpoint
+  can opt out by accident. The interceptor does its work only for
+  `HandlerMethod` handlers — static resources, the public auth paths, and
+  the Springdoc `/v3/api-docs` surface all pass through with zero
+  overhead.
+- **`/api/health` is a no-information liveness probe.** Returns only
+  `{ok, needs_register}`. Aggregate user/session/profile counts (the
+  previous behaviour) were moved to the admin-only
+  `/api/admin/dashboard/overview` so an unauthenticated probe no longer
+  enumerates the user base.
+- **Audit log for mutations.** Every admin write path and every
+  user-management mutation records a row in `audit_log` with actor,
+  action, target, IP, session, and a JSON metadata map. Retention is
+  90 days age OR 1,000,000 rows, whichever fires first, and the daily
+  sweep records its own `audit.purge` row so the operator can see that
+  the sweep ran.
 
 ---
 
@@ -349,7 +369,16 @@ table) that records: login (success/fail, username, source IP), logout,
 profile CRUD (user, profile id, action), password change (when added).
 Spring's `ApplicationEventPublisher` is the natural fit.
 
-**Status:** Open.
+**Status:** Resolved (Phase 4 of the admin RBAC rollout). The
+`audit_log` table records every admin write path:
+`user.bootstrap` (the `AdminBootstrap` first-startup path),
+`user.create`, `user.update`, `user.delete`,
+`user.sessions.revoke`, `user.password.reset`, `audit.purge` (the
+retention sweep's own bookkeeping), and `sessions.purge`. Each entry
+captures `actorUserId`, `action`, `targetUserId`, `ip`, `sessionId`, and
+a JSON-encoded `metadata` map. Failed logins and proxy failures remain
+in the JSONL log only — by design, those events happen at high volume
+and the structured `audit_log` is reserved for mutations.
 
 ### F-11 — `error.include-message: always` leaks upstream error text to the client (Low)
 
@@ -370,7 +399,14 @@ caller learns a fair amount about the upstream.
 `include-binding-errors: never`. Keep `include-stacktrace: never` (already
 set).
 
-**Status:** Open.
+**Status:** Resolved. The `etc/honcho-inspector/application.yml.example`
+template now ships with `server.error.include-message: when_authorized`,
+`include-binding-errors: never`, and `include-stacktrace: never` set in
+the recommended production block, with a one-line comment in the
+template header warning the operator to keep them. The bundled jar
+defaults to `include-message: always` (line 5 of `application.yml`) for
+dev convenience; production deployments are expected to copy the
+template to the OS config dir and edit.
 
 ### F-12 — `User.isAdmin` is a boolean with no role system (Info)
 
@@ -389,7 +425,19 @@ field without an auth gate, expecting one to exist.
 admin endpoints, with tests; or (b) drop the column until it's needed. If
 kept, add an explicit test that asserts `/api/admin` is gated.
 
-**Status:** Open.
+**Status:** Resolved (Phases 1, 3, 5 of the admin RBAC rollout). The
+`@RequireAdmin` annotation + `AdminAuthInterceptor` HandlerInterceptor
+enforce the role on every handler under `/api/admin/**`. The interceptor
+runs after `SessionAuthFilter`, so unauthenticated callers get 401
+before the admin check, and authenticated non-admins get 403
+`{"error":"admin only"}`. The annotation is class-level or method-level
+(both work, matching `@Transactional` semantics). There is no per-
+controller opt-in helper — the gate is uniform and declarative.
+`AdminAuthInterceptorTest` has 8 unit tests covering the matrix
+(class-level, method-level, mixed, no annotation, missing session
+attribute, non-admin, admin, static-resource passthrough). Every
+`/api/admin/*` controller has at least one test that asserts
+non-admins get 403.
 
 ### F-13 — `HonchoConfigDirResolver.resolve()` `mkdir` happens in the launcher, not the resolver (Info)
 
@@ -461,7 +509,12 @@ README documents this honestly ("0 = never expire").
 calls `deleteExpired` every N minutes. Or document the operator
 responsibility to vacuum manually.
 
-**Status:** Open.
+**Status:** Resolved (Phase 7b). `POST /api/admin/maintenance/sessions/purge-expired`
+exposes the call as a manual admin trigger. A scheduled job is still not
+wired (by design — `SESSION_TTL_MINUTES=0` is the documented default, so
+auto-purge would be a no-op for most installs). Operators who set
+`SESSION_TTL_MINUTES>0` should run the manual trigger on a cron, or call
+it from the reverse proxy's log-rotation hook.
 
 ---
 
@@ -505,6 +558,26 @@ For a fresh production install:
       service user, mode `0750`. The SQLite file is mode `0640`.
 - [ ] The sqlite file is on a filesystem that supports `fcntl` locking
       (not a network FS).
+- [ ] **Bootstrap admin:** on a fresh deploy, populate
+      `honcho.bootstrap.admin-username` and `honcho.bootstrap.admin-password`
+      in the drop-in config, then start the service. Verify the admin
+      was created by logging in and reading `/api/admin/dashboard/overview`.
+      **Then remove the `honcho.bootstrap.*` block** from the config file
+      and rotate the password via `POST /api/admin/users/{id}/password`.
+      Leaving the credentials in `/etc/honcho-inspector/application.yml`
+      is a credential-on-disk leak.
+- [ ] **Audit retention:** verify the `honcho.audit.*` block is set to a
+      policy that matches your compliance window (defaults: 90 days age
+      OR 1,000,000 rows, whichever fires first). The retention sweep
+      runs at `honcho.audit.purge-cron` (default 03:00 local). The sweep
+      records its own `audit.purge` entry; absence of recent
+      `audit.purge` rows in `GET /api/admin/audit?action=audit.purge`
+      means the sweep stopped running — investigate the JSONL log.
+- [ ] **Self-protection sanity check:** as the bootstrap admin, try
+      `PUT /api/admin/users/{own-id}` with `{"isAdmin":false}`. The
+      server MUST return 409 `cannot demote the last admin`. (If it
+      returns 200, the binary is misconfigured and every admin is
+      self-deletable.)
 - [ ] Backups of `$HONCHO_CONFIG_DIR/honcho-inspector.db` are stored
       encrypted; the backup process reads `HONCHO_CRYPTO_KEY` from the
       same secret store.
@@ -564,6 +637,17 @@ days). Operators in regulated environments should lower
 `HONCHO_LOG_MAX_HISTORY` and ship JSONL to a SIEM with its own
 retention controls. Full policy, schema, sizing math, and
 `jq`/`gunzip` operational examples are in [`docs/logging.md`](logging.md).
+
+The `audit_log` table is a separate, structured-events surface —
+`who did what when to which resource` — distinct from the operational
+JSONL stream. It is admin-queryable via
+`GET /api/admin/audit?actor=&target=&action=&since=&pageSize=` and
+retained per the `honcho.audit.*` config block (default 90 days age
+OR 1,000,000 rows; see the man page `honcho-inspector(1)` for the
+operator-facing summary). Both surfaces are part of the audit story
+and are intentionally separate: the JSONL stream is high-volume and
+short-lived; the `audit_log` table is low-volume, structured, and
+queryable.
 
 ---
 

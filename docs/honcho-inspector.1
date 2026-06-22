@@ -1,0 +1,653 @@
+.\" Man page for the honcho-inspector backend
+.\" Render with: groff -man -Tutf8 docs/honcho-inspector.1 | less
+.\" Install with: install -m 0644 docs/honcho-inspector.1 /usr/local/share/man/man1/
+.\" Then: man honcho-inspector
+.TH HONCHO-INSPECTOR 1 "2026-06-22" "0.1.0" "Honcho Inspector Backend"
+.SH NAME
+honcho-inspector \- multi-user admin surface for Honcho workspaces
+.SH SYNOPSIS
+.B honcho-inspector
+[\fIOPTIONS\fR]
+.SH DESCRIPTION
+.B honcho-inspector
+is a single-jar Spring Boot 3.5 / Java 25 service that sits between
+the Angular
+.B honcho-inspector
+UI and one or more Honcho instances. It keeps Honcho API keys off
+the browser, persists per-user encrypted profiles, and exposes a
+multi-user admin surface (one SQLite database, no external service
+to run).
+
+The service is multi-tenant at the user level (every user has their
+own profiles, sessions, and audit visibility) and admin-managed
+(there is no public sign-up; the first admin is created by the
+bootstrap, every subsequent user is created by an admin).
+
+It is the backend half of the
+.B honcho-inspector
+product; the UI lives in a separate repository.
+.PP
+The service MUST sit behind a TLS-terminating reverse proxy in any
+internet-reachable environment. See
+.BR reverse-proxy.md
+in the project source tree for nginx, Apache, and Caddy examples.
+.SH OPTIONS
+.TP
+.BR \-\- " " "\fIspring\-boot args\fR"
+Everything after
+.B \-\-
+is passed to Spring Boot. The launcher script already sets
+.B HONCHO_CONFIG_DIR
+based on the OS (see
+.B FILES
+below); other Spring properties can be set on the command line
+with the standard Spring relaxed binding.
+.IP
+Example: bind to a non-default port and set the log level:
+.PP
+.RS 8
+.B honcho-inspector \-\- \-\-server.port=9090 \-\-logging.level.com.revytechinc=DEBUG
+.RE
+.TP
+.B \-\-help
+Print the Spring Boot usage banner and exit.
+.TP
+.B \-\-version
+Print the Spring Boot version and exit.
+.SH ENVIRONMENT
+The service uses standard Spring Boot relaxed binding; every
+property can be set as an environment variable in addition to a
+command-line flag or a yaml file. The launcher also sets
+.B HONCHO_CONFIG_DIR
+based on the OS unless it is already in the environment.
+.PP
+\fBServer / runtime\fR
+.TP
+.B PORT
+Default:
+.BR 8080 .
+Binds the Spring
+.B server.port
+property.
+.TP
+.B CORS_ALLOWED_ORIGINS
+Default:
+.BR http://localhost:4200,http://127.0.0.1:4200 .
+Comma-separated list of allowed origins. Must list the exact
+public origin of the UI in production. No wildcards.
+.TP
+.B SESSION_TTL_MINUTES
+Default:
+.BR 0
+(never expire). Set non-zero (e.g.
+.BR 60 )
+to expire idle auth sessions; the column
+.B auth_sessions.expires_at
+is the trigger. Expired sessions are NOT auto-reaped; run
+.B POST /api/admin/maintenance/sessions/purge-expired
+from a cron, or use the
+.B SESSION_TTL_MINUTES=0
+default.
+.TP
+.B HONCHO_CONFIG_DIR
+Default: OS-aware (see
+.BR FILES ).
+The directory holding the drop-in
+.B application.yml
+and the SQLite database.
+.TP
+.B HONCHO_DB_PATH
+Default:
+.BR jdbc:sqlite:${HONCHO_DB_FILE:honcho-inspector.db} .
+Override the JDBC URL. Use
+.BR jdbc:sqlite::memory:
+for ephemeral test databases. (Setting this on the command line
+is silently ignored because of YAML binding precedence; the
+environment variable is the correct knob.)
+.TP
+.B HONCHO_DB_FILE
+Default:
+.BR honcho-inspector.db .
+The SQLite filename, resolved against
+.BR HONCHO_CONFIG_DIR .
+.TP
+.B HONCHO_CRYPTO_KEY
+Default: ephemeral random (data lost on restart).
+Base64 32 bytes; encrypts profile API keys at rest with
+AES-256-GCM. Generate with
+.BR "openssl rand \-base64 32" .
+If unset, the service logs a warning and uses a random key that
+is lost on restart, which makes the encrypted profile data
+unreadable.
+.TP
+.B HONCHO_LOG_LEVEL
+Default:
+.BR INFO .
+Root + the project packages; Spring Web logs at the same level.
+.TP
+.B HONCHO_LOG_MAX_FILE_SIZE
+Default:
+.BR 100MB .
+Active JSONL file cap before mid-day roll.
+.TP
+.B HONCHO_LOG_MAX_HISTORY
+Default:
+.BR 30 .
+Number of days of rotated
+.B .jsonl.gz
+files kept.
+.TP
+.B HONCHO_LOG_TOTAL_SIZE_CAP
+Default:
+.BR 500MB .
+Total disk cap across active + rotated files; oldest pruned first.
+.PP
+\fBHoncho upstream\fR
+.TP
+.B HONCHO_BASE_URL
+Default:
+.BR https://api.honcho.dev .
+Default Honcho upstream. The per-profile
+.B baseUrl
+field on
+.B /api/profiles
+overrides this per request.
+.TP
+.B HONCHO_API_VERSION
+Default:
+.BR v3 .
+Path prefix for the upstream API.
+.TP
+.B HONCHO_REQUEST_TIMEOUT_MS
+Default:
+.BR 30000 .
+RestClient timeout.
+.PP
+\fBFirst-startup bootstrap admin\fR
+.TP
+.B HONCHO_BOOTSTRAP_ADMIN_USERNAME
+Default: blank.
+If set together with
+.BR HONCHO_BOOTSTRAP_ADMIN_PASSWORD ,
+.B AdminBootstrap
+creates the first admin on
+.B ApplicationReadyEvent
+when the
+.B users
+table is empty. The bundled jar ships this blank; production
+opt-in is by populating the drop-in yaml. REMOVE these
+credentials from the yaml after the first admin exists \(em
+leaving them in is a credential-on-disk leak.
+.TP
+.B HONCHO_BOOTSTRAP_ADMIN_PASSWORD
+Default: blank.
+Bootstrap password, min 8 chars. Set via secret manager, not in
+the on-disk yaml.
+.TP
+.B HONCHO_BOOTSTRAP_ADMIN_FIRSTNAME
+Default: blank.
+Optional first name.
+.TP
+.B HONCHO_BOOTSTRAP_ADMIN_LASTNAME
+Default: blank.
+Optional last name.
+.TP
+.B HONCHO_BOOTSTRAP_ADMIN_EMAIL
+Default: blank.
+Optional email (must be unique if set).
+.PP
+\fBAudit log retention\fR
+.TP
+.B HONCHO_AUDIT_RETENTION_DAYS
+Default:
+.BR 90 .
+Age cap for
+.B audit_log
+rows; rows older than this are purged by the daily
+.B AuditRetentionJob
+sweep. Set to 0 to disable the age window (size cap still applies).
+.TP
+.B HONCHO_AUDIT_MAX_ROWS
+Default:
+.BR 1000000 .
+Size cap; if
+.B COUNT(*) > max-rows
+after the age window is applied, the oldest remaining rows are
+deleted until the cap is satisfied. Set to 0 to disable the size
+cap (age window still applies).
+.TP
+.B HONCHO_AUDIT_PURGE_CRON
+Default:
+.BR "0 0 3 * * *" .
+Spring cron expression for the daily sweep (3:00 AM local). The
+sweep records its own
+.B audit.purge
+audit row, but only when rows are actually deleted (a no-op run
+is intentionally not audited to avoid daily noise).
+.SH CONFIGURATION FILES
+The service loads configuration in the following order, highest
+priority first:
+.IP 1. 4
+Command-line flag (after
+.BR \-\- ).
+.IP 2.
+Environment variable (Spring relaxed binding).
+.IP 3.
+Drop-in file at
+.BR ${HONCHO_CONFIG_DIR}/application.yml ,
+loaded additively.
+.IP 4.
+Bundled
+.B application.yml
+in the jar (defaults for dev).
+.PP
+The
+.B etc/honcho-inspector/application.yml.example
+file in the source tree is the canonical template for the drop-in
+config. It includes the
+.BR honcho.bootstrap.* " and"
+.BR honcho.audit.* " blocks; the bundled jar's defaults for those"
+two blocks are blank. Copy it to the OS config dir (see
+.BR FILES )
+and edit.
+.SH FILES
+The launcher script sets
+.B HONCHO_CONFIG_DIR
+based on the OS unless it is already in the environment:
+.TP
+.B /etc/honcho-inspector/
+Linux.
+.TP
+.B /usr/local/etc/honcho-inspector/
+FreeBSD.
+.TP
+.B ~/Library/Application Support/honcho-inspector/
+macOS.
+.TP
+.B %APPDATA%\\honcho-inspector\\
+Windows.
+.PP
+Under
+.BR ${HONCHO_CONFIG_DIR} :
+.TP
+.B application.yml
+The drop-in configuration. Created by the operator.
+.TP
+.B honcho-inspector.db
+The SQLite database. Created on first start.
+.TP
+.B logs/honcho-inspector.jsonl
+The active structured log file. Rotated at
+.BR HONCHO_LOG_MAX_FILE_SIZE ,
+gzipped after rotation, and pruned by
+.B HONCHO_LOG_TOTAL_SIZE_CAP
+and
+.BR HONCHO_LOG_MAX_HISTORY .
+.PP
+Under the source tree:
+.TP
+.B etc/honcho-inspector/application.yml.example
+The drop-in config template. Copy this to the OS config dir
+(see above) and edit.
+.TP
+.B docs/SECURITY.md
+Threat model, audit findings (with status: Resolved/Open), and
+the operator hardening checklist.
+.TP
+.B docs/reverse-proxy.md
+nginx (primary), Apache, and Caddy configurations for terminating
+TLS in front of the service.
+.TP
+.B docs/lessons/
+Engineer's notes on what was learned during the rollout of each
+major surface.
+.SH FIRST STARTUP
+On a fresh install:
+.IP 1. 4
+Copy
+.B etc/honcho-inspector/application.yml.example
+to
+.B /etc/honcho-inspector/application.yml
+(Linux) or the OS-appropriate config dir.
+.IP 2.
+Set
+.B HONCHO_CRYPTO_KEY
+in the environment, not in the yaml. Generate with
+.BR "openssl rand \-base64 32" .
+.IP 3.
+Set
+.B CORS_ALLOWED_ORIGINS
+to the exact public origin of the UI.
+.IP 4.
+Optionally populate
+.B honcho.bootstrap.admin-username
+and
+.BR honcho.bootstrap.admin-password
+to create the first admin on startup. Leave the bundled jar's
+defaults blank in dev.
+.IP 5.
+Set
+.B server.address
+to
+.B 127.0.0.1
+in the drop-in yaml so the service is not reachable on the host's
+external IPs. The reverse proxy is the public listener.
+.IP 6.
+Start the service:
+.PP
+.RS 8
+.B sudo /usr/local/bin/honcho-inspector
+.RE
+.IP 7.
+Verify the bootstrap admin was created by logging in:
+.PP
+.RS 8
+.B curl \-X POST http://127.0.0.1:8080/api/auth/login \\
+.br
+.B   \-H 'content\-type: application/json' \\
+.br
+.B   \-d '{"username":"admin","password":"..."}'
+.RE
+.IP 8.
+REMOVE the
+.B honcho.bootstrap.*
+credentials from the drop-in yaml and restart. Leaving them in
+is a credential-on-disk leak.
+.SH ADMIN API
+The service exposes 14 admin-only paths under
+.BR /api/admin/ .
+All require an
+.B X-Session-Id
+header whose session resolves to a user with
+.BR isAdmin=true ;
+enforcement is by the
+.B @RequireAdmin
+annotation plus
+.BR AdminAuthInterceptor ,
+declaratively on every handler in the namespace.
+.PP
+\fBUser management\fR
+.TP
+.B GET /api/admin/users
+Paginated user list.
+.B ?pageSize=10|20|30|ALL
+(default 20). Returns
+.B UserResponse
+items; the
+.B passwordHash
+field is never included.
+.TP
+.B GET /api/admin/users/search?q=
+Case-insensitive LIKE substring match across
+.BR username ,
+.BR firstname ,
+.BR lastname ,
+and
+.BR email .
+Empty
+.B q
+lists all.
+.TP
+.B GET /api/admin/users/{id}
+One user.
+.TP
+.B POST /api/admin/users
+Create a user with an explicit
+.B isAdmin
+role. Body:
+.BI { username, password, " firstname?, lastname?, email?, isAdmin } .
+.TP
+.B PUT /api/admin/users/{id}
+Update identity + role; all fields optional.
+.TP
+.B DELETE /api/admin/users/{id}
+Delete a user; CASCADE removes their profiles and sessions.
+.TP
+.B GET /api/admin/users/{id}/sessions
+List a user's auth sessions.
+.TP
+.B POST /api/admin/users/{id}/sessions/revoke
+Force-logout (returns
+.BI { revoked: <count> } ).
+.TP
+.B POST /api/admin/users/{id}/password
+Admin password reset (revokes all existing sessions of the target).
+.PP
+\fBAudit and dashboard\fR
+.TP
+.B GET /api/admin/audit
+Query the audit log. Filters:
+.BR ?actor= ,
+.BR ?target= ,
+.BR ?action= ,
+.B ?since=
+(ISO-8601),
+.BR ?page= ,
+.BR ?pageSize= .
+Most-recent first.
+.TP
+.B GET /api/admin/dashboard/overview
+Local SQL aggregates (user / profile / audit counts, 7d / 30d
+growth).
+.TP
+.B GET /api/admin/dashboard/users/{id}
+Per-user drilldown: profile list, recent sessions, last 20 audit
+events.
+.TP
+.B GET /api/admin/dashboard/honcho
+All profiles + parallel reachability probe (5s timeout per profile;
+graceful degradation on partial failure).
+.TP
+.B GET /api/admin/dashboard/honcho/{profileId}
+Per-profile Honcho drilldown: queue + workspace.
+.TP
+.B GET /api/admin/maintenance/status
+Row counts + retention config.
+.TP
+.B POST /api/admin/maintenance/audit/purge
+Manually trigger the
+.B AuditRetentionJob
+sweep; returns the deleted counts.
+.TP
+.B POST /api/admin/maintenance/sessions/purge-expired
+Manually sweep
+.B auth_sessions
+where
+.B expires_at < now .
+.PP
+\fBSelf-protection rules\fR
+.RS 4
+The last remaining admin cannot be demoted or deleted
+(\fB409\fR), and a user cannot demote or delete themselves
+(\fB409\fR). Enforced in
+.BR AdminUserService ,
+so the rule is independent of the controller layer. Recovery
+from a lockout is via direct DB edit:
+.PP
+.RS 4
+.B sqlite3 ${HONCHO_CONFIG_DIR}/honcho-inspector.db \\
+.br
+.B   "UPDATE users SET is_admin = 1 WHERE username = '<existing user>';"
+.RE
+.RE
+.SH AUDIT LOG AND RETENTION
+Every admin write path and every user-management mutation records
+a row in
+.B audit_log
+with actor, action, target, IP, session, and a JSON metadata
+map. Recorded actions:
+.RS 4
+.BR user.bootstrap ,
+.BR user.create ,
+.BR user.update ,
+.BR user.delete ,
+.BR user.sessions.revoke ,
+.BR user.password.reset ,
+.BR audit.purge ,
+.BR sessions.purge .
+.RE
+.PP
+Retention is 90 days age OR 1,000,000 rows, whichever fires
+first. The daily sweep runs at
+.BR HONCHO_AUDIT_PURGE_CRON
+(default 3:00 AM local) and records its own
+.B audit.purge
+row when it actually deletes rows. The sweep is a no-op when
+both retention windows are satisfied, in which case no audit row
+is written.
+.PP
+To verify the sweep is running, query the audit log for the
+sweep's own bookkeeping:
+.PP
+.RS 4
+.B curl 'http://127.0.0.1:8080/api/admin/audit?action=audit.purge' \\
+.br
+.B   \-H "x\-session\-id: ${SID}"
+.RE
+.PP
+Absence of recent
+.B audit.purge
+rows means the sweep stopped running; investigate the JSONL log
+in
+.BR ${HONCHO_CONFIG_DIR}/logs/honcho-inspector.jsonl .
+.SH RECOVERY FROM LOST ADMIN
+If the bootstrap admin is lost (password forgotten, user
+deleted, etc.), there are two recovery paths.
+.IP 1. 4
+If the
+.B users
+table is empty (e.g. the database was wiped), populate
+.B honcho.bootstrap.*
+in the drop-in yaml and restart. The bootstrap is a no-op
+unless
+.B users.count() == 0
+and both
+.B admin-username
+and
+.B admin-password
+are set.
+.IP 2.
+If the
+.B users
+table is non-empty, set
+.B is_admin = 1
+on an existing user via
+.BR sqlite3 :
+.PP
+.RS 8
+.B sqlite3 ${HONCHO_CONFIG_DIR}/honcho-inspector.db \\
+.br
+.B   "UPDATE users SET is_admin = 1 WHERE username = '<existing user>';"
+.RE
+.PP
+The login flow is unchanged; the promoted user logs in with
+their existing password.
+.SH EXIT STATUS
+The launcher script
+.BR bin/honcho-inspector " (or the installed"
+.B /usr/local/bin/honcho-inspector
+) returns:
+.TP
+.B 0
+The service stopped cleanly.
+.TP
+.B 1
+The Spring Boot context failed to start (port in use, missing
+config, schema migration failure, etc.). The JSONL log captures
+the root cause.
+.TP
+.B 2
+Invalid command-line argument.
+.SH SIGNALS
+.TP
+.B SIGTERM
+Initiate a graceful shutdown. Spring Boot's actuator will run
+the standard shutdown hooks; in-flight requests are allowed to
+complete for up to 30 seconds before the process is killed.
+.TP
+.B SIGINT
+Same as
+.B SIGTERM
+when sent from a terminal (Ctrl-C).
+.TP
+.B SIGHUP
+Ignored. The service does not reload configuration on
+.BR SIGHUP ;
+a full restart is required to pick up yaml or environment
+changes.
+.SH SEE ALSO
+.BR honcho (1)
+(upstream product; not a separate man page),
+.BR sqlite3 (1),
+.BR nginx (8),
+.BR caddy (8),
+.BR openssl (1)
+.PP
+Project documentation:
+.IP \(bu 2
+.B README.md
+\(em developer entry point
+.IP \(bu
+.B docs/SECURITY.md
+\(em threat model, audit findings, hardening checklist
+.IP \(bu
+.B docs/reverse-proxy.md
+\(em reverse proxy examples
+.IP \(bu
+.B docs/honcho-providers.md
+\(em provider layer architecture
+.IP \(bu
+.B docs/lessons/admin-rbac-rollout.md
+\(em engineering notes on the admin RBAC rollout
+.IP \(bu
+.B docs/openapi.yaml
+\(em hand-written OpenAPI 3 narrative contract
+.PP
+Upstream Honcho documentation:
+.RB < https://docs.honcho.dev >
+.SH BUGS
+.IP \(bu 2
+No rate limit on
+.BR /api/auth/login .
+A credential-stuffing attacker can probe indefinitely. The
+mitigation is the reverse proxy's rate limit (see
+.BR reverse-proxy.md ).
+.IP \(bu
+No rate limit on
+.BR /api/auth/register .
+The endpoint is admin-only, so the surface is smaller, but a
+compromised admin credential can be used to create unlimited
+user accounts. Same mitigation.
+.IP \(bu
+.B SessionAuthFilter
+does not set
+.B Cache-Control: no-store
+on authenticated responses. The
+.B X-Session-Id
+header is the only auth credential, but a caching proxy that
+ignores Vary could in theory serve a previous user's data. The
+mitigation is the same reverse proxy.
+.IP \(bu
+Audit retention is fire-and-forget (see
+.BR "AUDIT LOG AND RETENTION" ).
+A broken
+.B audit_log
+table is logged at WARN but does not block user CRUD. Operators
+should monitor the JSONL log for
+.B AdminAudit
+WARN events.
+.IP \(bu
+The drift check between
+.B docs/openapi.yaml
+and the live springdoc snapshot is intentionally narrow
+(paths, methods, operationIds only). It does not check schemas,
+parameters, requestBody, responses, or descriptions, so the
+hand-written file can drift from the live implementation in
+those dimensions. The OpenAPI spec, the live test suite, and
+the implementation are the canonical sources for the rich
+shape.
+.SH AUTHOR
+Honcho Inspector maintainers <honcho-inspector@example.com>
+.PP
+Project:
+.RB < https://github.com/cloudbsdorg/honcho-inspector-backend >

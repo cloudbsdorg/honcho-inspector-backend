@@ -65,7 +65,7 @@ sudo bin/honcho-inspector                                # OS detection sets HON
 
 On first run, the SQLite DB is created at `$HONCHO_CONFIG_DIR/honcho-inspector.db` and the schema is loaded from `src/main/resources/schema.sql` (idempotent — `CREATE TABLE IF NOT EXISTS`).
 
-The first user to register becomes admin.
+On a fresh DB with **no users**, `AdminBootstrap` reads `honcho.bootstrap.*` from `/etc/honcho-inspector/application.yml` and creates the first admin if both `admin-username` and `admin-password` are set. The bundled jar ships the bootstrap block blank; production opt-in is by populating the drop-in config. See [Admin onboarding](#admin-onboarding) below.
 
 ## Configuration
 
@@ -94,6 +94,14 @@ All config is externalized. Priority (high → low):
 | `HONCHO_LOG_MAX_FILE_SIZE`     | `100MB`                                | Active JSONL file cap before mid-day roll (`SizeAndTimeBasedRollingPolicy`) |
 | `HONCHO_LOG_MAX_HISTORY`       | `30`                                   | Number of days of rotated `.jsonl.gz` files kept |
 | `HONCHO_LOG_TOTAL_SIZE_CAP`    | `500MB`                                | Total disk cap across active + rotated files; oldest pruned first |
+| `HONCHO_BOOTSTRAP_ADMIN_USERNAME` | (blank — no admin created)         | First-admin username, read by `AdminBootstrap` on startup if the DB is empty |
+| `HONCHO_BOOTSTRAP_ADMIN_PASSWORD` | (blank — no admin created)         | First-admin password; min 8 chars. Set via secret manager, not in `/etc/...yml` |
+| `HONCHO_BOOTSTRAP_ADMIN_FIRSTNAME` | (blank)                            | Optional first name for the bootstrap admin user record |
+| `HONCHO_BOOTSTRAP_ADMIN_LASTNAME`  | (blank)                            | Optional last name |
+| `HONCHO_BOOTSTRAP_ADMIN_EMAIL`     | (blank)                            | Optional email (must be unique if set) |
+| `HONCHO_AUDIT_RETENTION_DAYS`   | `90`                                   | Age cap for `audit_log` rows; rows older than this are purged daily |
+| `HONCHO_AUDIT_MAX_ROWS`         | `1000000`                              | Size cap; if `COUNT(*) > max-rows`, oldest rows are deleted until the cap is satisfied |
+| `HONCHO_AUDIT_PURGE_CRON`       | `0 0 3 * * *`                          | Cron for the retention sweep (3:00 AM local). Manual trigger via `POST /api/admin/maintenance/audit/purge` |
 
 Logs are emitted as **structured JSONL** (one JSON event per line) to
 `$HONCHO_CONFIG_DIR/logs/honcho-inspector.jsonl` and stdout, with API
@@ -123,14 +131,22 @@ session:
 
 ## API surface
 
-All `/api/*` paths under `/api/health` (public), `/api/auth/*` (public), `/api/profiles/*` (session), `/api/{peers,sessions,queue-status,workspace,search,dream}/*` (session + profile header).
+| Path prefix | Auth | Purpose |
+|---|---|---|
+| `/api/health` | public | Liveness probe (returns `ok` + `needs_register`; no user/session/profile counts) |
+| `/api/auth/login` | public | Exchange username/password for a session id |
+| `/api/auth/me`, `/api/auth/logout` | session | Current user, invalidate session |
+| `/api/auth/register` | **admin-only** | Create a new user. Not public. See [Admin onboarding](#admin-onboarding). |
+| `/api/profiles/*` | session | Per-user Honcho profiles (CRUD, reveal, test) |
+| `/api/{peers,sessions,queue-status,workspace,search,dream,orgs,stats,reports,invites}/*` | session + profile header | Honcho proxy (forwards to the selected profile's upstream) |
+| `/api/admin/users/*`, `/api/admin/audit`, `/api/admin/dashboard/*`, `/api/admin/maintenance/*` | **admin-only** | Admin management surface. See [Admin API](#admin-api) below. |
 
 OpenAPI spec: see [docs/openapi.yaml](docs/openapi.yaml) and Swagger UI at [http://localhost:8080/swagger-ui.html](http://localhost:8080/swagger-ui.html).
 The hand-written narrative spec is at `docs/openapi.yaml`; the live springdoc snapshot is at `docs/openapi.generated.json`. The [drift check](docs/regenerating-openapi.md) enforces they stay aligned.
 
 ### Auth flow
 
-1. `POST /api/auth/register` with `{ username, password }` — first user becomes admin. Returns `201 { id, username, isAdmin, createdAt }`.
+1. (First-time setup) An admin is created either by `AdminBootstrap` reading `honcho.bootstrap.*` from the drop-in config, or by an existing admin via `POST /api/admin/users`. There is **no public registration**; the old "first user to register becomes admin" path is gone.
 2. `POST /api/auth/login` with `{ username, password }` — returns `200 { sessionId, user: { ... } }`. Store `sessionId`.
 3. Send `X-Session-Id: <sessionId>` on every subsequent request.
 4. `GET /api/auth/me` — re-fetch the current user (useful on app reload).
@@ -158,6 +174,42 @@ The proxy above is version-agnostic on purpose: a per-version `HonchoClient` (e.
 
 For the full anatomy + custom-provider tutorial + V4 walkthrough, see [docs/honcho-providers.md](docs/honcho-providers.md).
 
+### Admin onboarding
+
+There is **no public sign-up**. The first admin is created by `AdminBootstrap` on a fresh DB by reading `honcho.bootstrap.*` from `/etc/honcho-inspector/application.yml` (see the etc template). If the bundled jar is started on a fresh DB and the bootstrap block is blank, `AdminBootstrap` logs a warning and does nothing — the operator must populate the config and restart, or insert a user directly via `sqlite3` and flip `is_admin = 1`.
+
+After the first admin exists, all subsequent users are created by an admin via `POST /api/admin/users` (admin-only). The `honcho.bootstrap.*` credentials should be removed from the config file once the first admin exists — leaving them in is a credential-on-disk leak.
+
+Recovery from a lost-admin situation: edit `/etc/honcho-inspector/application.yml` and re-populate `honcho.bootstrap.admin-username` and `honcho.bootstrap.admin-password`. On the next start, `AdminBootstrap` re-checks `users.count() == 0` and is a no-op (the lost admin's row is still there). For a true lockout, set `is_admin = 1` on an existing user via `sqlite3` directly.
+
+### Admin API
+
+All paths under `/api/admin/**` are gated by `@RequireAdmin` + the `AdminAuthInterceptor` HandlerInterceptor. The interceptor runs **after** `SessionAuthFilter`, so unauthenticated callers get 401 before the admin check, and authenticated non-admins get 403 `admin only`.
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET`    | `/api/admin/users` | Paginated list. `?pageSize=10\|20\|30\|ALL`, defaults to 20. Returns `UserResponse` (no `passwordHash`). |
+| `GET`    | `/api/admin/users/search?q=` | Case-insensitive LIKE across username, firstname, lastname, email |
+| `GET`    | `/api/admin/users/{id}` | One user |
+| `POST`   | `/api/admin/users` | Create user with explicit `isAdmin` role; body `{ username, password, firstname?, lastname?, email?, isAdmin }` |
+| `PUT`    | `/api/admin/users/{id}` | Update identity + role; all fields optional (omitted = unchanged) |
+| `DELETE` | `/api/admin/users/{id}` | Delete user; CASCADE removes their profiles and sessions |
+| `GET`    | `/api/admin/users/{id}/sessions` | List a user's live + recent auth sessions |
+| `POST`   | `/api/admin/users/{id}/sessions/revoke` | Force-logout (returns `{ revoked: <count> }`) |
+| `POST`   | `/api/admin/users/{id}/password` | Admin password reset (revokes all existing sessions) |
+| `GET`    | `/api/admin/audit` | Query `audit_log`; filters `?actor=&target=&action=&since=&page=&pageSize=`; `since` is ISO-8601 |
+| `GET`    | `/api/admin/dashboard/overview` | Local SQL aggregates (user / profile / audit counts, 7d/30d growth) |
+| `GET`    | `/api/admin/dashboard/users/{id}` | Per-user drilldown: profile list, recent sessions, last 20 audit events |
+| `GET`    | `/api/admin/dashboard/honcho` | All profiles + parallel reachability probe (5s timeout per profile) |
+| `GET`    | `/api/admin/dashboard/honcho/{profileId}` | Per-profile Honcho drilldown: queue + workspace |
+| `GET`    | `/api/admin/maintenance/status` | Row counts + retention config |
+| `POST`   | `/api/admin/maintenance/audit/purge` | Manual `AuditRetentionJob` trigger; returns deleted counts |
+| `POST`   | `/api/admin/maintenance/sessions/purge-expired` | Manual sweep of `auth_sessions` where `expires_at < now` |
+
+**Self-protection rules** (enforced in `AdminUserService`): the last remaining admin cannot be demoted or deleted (returns 409), and a user cannot demote or delete themselves (returns 409). Recovery is via direct DB edit (`UPDATE users SET is_admin = 1 WHERE id = ...`).
+
+**Audit log.** Every admin write path calls `AdminAudit.record(...)` with `actorUserId`, `action`, `targetUserId`, `ip`, `sessionId`, and a JSON-encoded metadata map. Recorded actions: `user.bootstrap`, `user.create`, `user.update`, `user.delete`, `user.sessions.revoke`, `user.password.reset`, `audit.purge`, `sessions.purge`. The `audit.purge` action records the deleted counts so the operator has a permanent record of every retention run (a no-op run is intentionally not audited to avoid daily noise).
+
 ## Deployment
 
 The backend listens on plain HTTP and **must** sit behind a TLS-terminating
@@ -178,13 +230,13 @@ catalogued in [`docs/SECURITY.md`](docs/SECURITY.md).
 ## Build, test, verify
 
 ```bash
-mvn test                  # 29/29 unit + slice tests; <10s
+mvn test                  # 449 unit + slice + integration tests; <90s
 mvn package               # builds the fat jar at target/honcho-inspector-backend-0.1.0-SNAPSHOT.jar
-mvn verify                # full verify, includes test
+mvn verify                # full verify, includes test + OpenAPI drift check
 java -jar target/honcho-inspector-backend-0.1.0-SNAPSHOT.jar
 ```
 
-The test suite uses an in-memory SQLite (`HONCHO_DB_PATH=jdbc:sqlite::memory:`) and a fixed crypto key. `AuthControllerTest` covers register/login/logout/me/profile CRUD/test/reveal; `CorsConfigTest` covers CORS origin parsing; `HonchoConfigDirResolverTest` covers OS detection.
+The test suite uses an in-memory SQLite (`HONCHO_DB_PATH=jdbc:sqlite::memory:`) and a fixed crypto key. The new admin RBAC surface has dedicated coverage: `AdminAuthInterceptorTest` (8 unit tests on the annotation + interceptor), `AdminUserServiceTest` (23 unit tests on create / update / delete / revoke / reset-password with every self-protection rule), `AdminUserControllerTest` (21 MockMvc tests on every endpoint, pagination, 401/403/404/409), `AdminAuditControllerTest` (9 tests on filter combinations), `AdminBootstrapTest` (4 tests on the config-file-driven first admin), `AuditRetentionJobTest` (4 tests on age + size-cap purging), `AdminDashboardServiceTest` (9 unit tests including partial fan-out failures), `AdminDashboardControllerTest` (7 MockMvc tests), and `AdminMaintenanceControllerTest` (7 tests on manual purge + status).
 
 ## Security model
 
@@ -194,7 +246,11 @@ The test suite uses an in-memory SQLite (`HONCHO_DB_PATH=jdbc:sqlite::memory:`) 
 - **API keys are AES-256-GCM** with a 12-byte random IV per encryption. The key is `HONCHO_CRYPTO_KEY` (base64 32 bytes). If unset, the server logs a warning and uses an ephemeral random key — values are lost on restart.
 - **No CSRF tokens needed** — the API requires `X-Session-Id` (custom header), not cookies. Browsers will refuse to set the header cross-origin without explicit CORS opt-in.
 - **CORS is whitelist-only** via `CORS_ALLOWED_ORIGINS`. Origins are matched exactly, no wildcards.
-- **First user is admin.** The admin flag is a boolean; there is no admin-endpoint for creating users in this version. To make a second user an admin, set `is_admin = 1` directly in the DB.
+- **No open sign-up.** `POST /api/auth/register` is `@RequireAdmin`; the public `SessionAuthFilter` no longer permits it. The first admin is created by `AdminBootstrap` from `honcho.bootstrap.*` in the drop-in config. All subsequent users are created by an existing admin via `POST /api/admin/users`.
+- **Central admin gate.** The `@RequireAdmin` annotation on a controller (class-level or method-level) is enforced by the `AdminAuthInterceptor` HandlerInterceptor for every request to that handler. Static resources, public auth paths, and the Springdoc `/v3/api-docs` surface pass through with zero overhead. There is no per-controller opt-in helper — the gate is uniform.
+- **Self-protection.** The last remaining admin cannot be demoted or deleted, and a user cannot demote or delete themselves. Both return 409. Enforced in `AdminUserService.update/delete`, so the rule is independent of the controller layer.
+- **Audit log.** Every admin write path and every user-management mutation records an entry in `audit_log` (fire-and-forget; a broken audit table never breaks the calling write path). Retention is 90 days by age, or 1,000,000 rows by size, whichever fires first; the daily sweep runs at 3:00 AM local. Manual trigger: `POST /api/admin/maintenance/audit/purge`.
+- **`/api/health` is a no-information liveness probe.** It returns only `{ok, needs_register}`. Aggregate user / session / profile counts are exclusively available to admins via `GET /api/admin/dashboard/overview`.
 
 For the full threat model, audit findings (with severity + remediation
 guidance), and the operator hardening checklist, see
@@ -221,10 +277,18 @@ a release.
 ```
 src/main/java/com/honcho/dashboard/
   DashboardApplication.java
-  auth/         — User, Profile, AuthSession, PasswordHasher, CryptoService, AuthService, AuthController, ProfileController, ProfileService, *Dao
-  config/       — CorsConfig, HonchoConfigDirResolver, HttpClientConfig, StartupInfoLogger
+  auth/         — User, Profile, AuthSession, PasswordHasher, CryptoService,
+                   AuthService, AuthController,
+                   AdminUserService, AdminUserController, AdminAudit,
+                   AdminAuditController, AdminBootstrap, AuditLogDao,
+                   AdminDashboardService, AdminDashboardController,
+                   AuditRetentionJob, AdminMaintenanceController,
+                   RequireAdmin, PageSize, *Dao
+  config/       — CorsConfig, HonchoConfigDirResolver, HonchoProperties,
+                   HttpClientConfig, StartupInfoLogger, AdminAuthConfig
   controller/   — HonchoController (the proxy)
   filter/       — SessionAuthFilter
+  auth/         — AdminAuthInterceptor
   model/        — HonchoContext, ErrorResponse
   service/      — HonchoProxyService (the actual upstream calls)
 src/main/resources/
@@ -233,14 +297,15 @@ src/main/resources/
 bin/
   honcho-inspector                 — POSIX launcher; detects OS and sets HONCHO_CONFIG_DIR
 etc/honcho-inspector/
-  application.yml.example          — drop-in config template
+  application.yml.example          — drop-in config template (bootstrap + audit blocks)
 docs/
   SECURITY.md                      — threat model, audit findings, hardening checklists
   reverse-proxy.md                 — nginx (primary), Apache, Caddy configs + requirements
   honcho-providers.md              — provider layer architecture, custom-provider tutorial, V4 walkthrough
   regenerating-openapi.md          — when/how to refresh docs/openapi.yaml + drift-check policy
-  openapi.yaml                     — hand-written OpenAPI 3 narrative contract
+  openapi.yaml                     — hand-written OpenAPI 3 narrative contract (admin surface included)
   openapi.generated.json           — springdoc snapshot (CI drift-checks against openapi.yaml)
+  honcho-inspector.1               — groff man page for the operator
   lessons/
     os-config-conventions.md       — why we use OS-aware config dirs, not ~/.X
 .github/workflows/
@@ -252,3 +317,13 @@ docs/
 BSD 3-Clause. See [LICENSE](LICENSE).
 
 Copyright (c) 2026, REVYTECH, Inc.
+
+## Operator documentation
+
+A standalone groff man page is at [`docs/honcho-inspector.1`](docs/honcho-inspector.1) covering synopsis, the `honcho.bootstrap.*` / `honcho.audit.*` configuration blocks, file locations, the `/api/admin/*` surface, the daily `AuditRetentionJob` sweep, and recovery from a lost-admin lockout. Render it with:
+
+```bash
+groff -man -Tutf8 docs/honcho-inspector.1 | less
+# or, after `make install` (FHS):
+man honcho-inspector
+```
