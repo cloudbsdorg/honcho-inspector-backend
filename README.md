@@ -133,7 +133,8 @@ session:
 
 | Path prefix | Auth | Purpose |
 |---|---|---|
-| `/api/health` | public | Liveness probe (returns `ok` + `needs_register`; no user/session/profile counts) |
+| `/api/health` | public | Liveness probe (returns `ok` + `first_run` + `needs_register`; no user/session/profile counts) |
+| `/api/setup/*` | public (DB-empty only) | First-run bootstrap. Locked once any user exists. |
 | `/api/auth/login` | public | Exchange username/password for a session id |
 | `/api/auth/me`, `/api/auth/logout` | session | Current user, invalidate session |
 | `/api/auth/register` | **admin-only** | Create a new user. Not public. See [Admin onboarding](#admin-onboarding). |
@@ -146,11 +147,43 @@ The hand-written narrative spec is at `docs/openapi.yaml`; the live springdoc sn
 
 ### Auth flow
 
-1. (First-time setup) An admin is created either by `AdminBootstrap` reading `honcho.bootstrap.*` from the drop-in config, or by an existing admin via `POST /api/admin/users`. There is **no public registration**; the old "first user to register becomes admin" path is gone.
+1. (First-time setup) An admin is created via one of three mutually exclusive bootstrap paths. The first one to insert a row into the `users` table wins; the other two become no-ops:
+   - **Config-file bootstrap (headless):** populate `honcho.bootstrap.*` in `/etc/honcho-inspector/application.yml`. `AdminBootstrap` (an `ApplicationReadyEvent` listener) creates the first admin on startup if `users.count() == 0` and both `admin-username` and `admin-password` are set.
+   - **UI-driven bootstrap (with the Honcho Inspector UI):** start the service, open the UI, follow the first-run wizard. The UI calls `POST /api/setup/first-admin` (open when DB is empty) and returns the operator a session immediately. See [First-run mode](#first-run-mode) below.
+   - **CLI bootstrap (recovery):** with the service stopped, run `honcho-inspector promote-to-admin --username <existing>` from the shell. See [Emergency-action CLI](#emergency-action-cli) below.
+
+   There is **no public registration**; the old "first user to register becomes admin" path is gone. After any bootstrap completes, all subsequent users are created by an admin via `POST /api/admin/users`.
 2. `POST /api/auth/login` with `{ username, password }` — returns `200 { sessionId, user: { ... } }`. Store `sessionId`.
 3. Send `X-Session-Id: <sessionId>` on every subsequent request.
 4. `GET /api/auth/me` — re-fetch the current user (useful on app reload).
 5. `POST /api/auth/logout` — invalidates the session server-side.
+
+### First-run mode
+
+The backend exposes a first-run state via `GET /api/health`, which returns `{ok, first_run, needs_register}` (the two flags are aliases — same value). When `first_run` is `true` (the `users` table is empty), the UI shows the first-run wizard. The wizard submits `{username, password, ...}` to `POST /api/setup/first-admin`, which:
+
+- Returns 409 if any user already exists.
+- Validates the body (`password` ≥ 8 chars, `username` non-blank).
+- Creates an admin user (`isAdmin=true` — server-determined, not client-supplied).
+- Inserts a fresh session row.
+- Returns `200 { sessionId, user: {...} }` — the same shape as `POST /api/auth/login`.
+
+After the first admin is created this way, `/api/setup/*` is locked and all subsequent user management flows through `/api/admin/users`. The choice of bootstrap path is operator preference: config-file for headless deploys, UI-driven for the operator who wants to point a browser at the new install and walk through the wizard.
+
+### Emergency-action CLI
+
+When the web server is unreachable, the UI is down, or the only admin is locked out, the jar itself exposes five emergency-action subcommands. They are dispatched in `DashboardApplication.main()` before the web server starts, in a minimal Spring context (no HTTP server), so they can be run while the service is stopped:
+
+```bash
+honcho-inspector list-users                                  # print every user
+honcho-inspector reset-admin-password --username NAME --generate  # reset to a random password (printed once)
+honcho-inspector reset-admin-password --username NAME --password PASS  # reset to a specific password
+honcho-inspector promote-to-admin --username NAME            # set is_admin=1 (idempotent)
+honcho-inspector revoke-all-sessions                         # wipe auth_sessions (force-logout everyone)
+honcho-inspector help                                        # print usage
+```
+
+Stop the service first (SQLite enforces a single-writer lock — running the CLI while the service is up will block on writes). The CLI does not authenticate the caller; file-system permissions on the SQLite DB and the operator's shell account are the access control. Exit codes follow `sysexits.h` conventions: `0` success, `2` invalid arguments, `3` user not found, `4` validation error, `5` database error. The full reference is in the man page — see `man honcho-inspector` after install, or `docs/honcho-inspector.1` in the source tree. The dispatch path is unit-tested in `DashboardApplicationMainDispatchTest` (7 tests on the `shouldRunCli` predicate); the full subcommand flow is integration-tested in `CliRunnerTest` (23 tests).
 
 ### Profile flow
 
@@ -176,11 +209,13 @@ For the full anatomy + custom-provider tutorial + V4 walkthrough, see [docs/honc
 
 ### Admin onboarding
 
-There is **no public sign-up**. The first admin is created by `AdminBootstrap` on a fresh DB by reading `honcho.bootstrap.*` from `/etc/honcho-inspector/application.yml` (see the etc template). If the bundled jar is started on a fresh DB and the bootstrap block is blank, `AdminBootstrap` logs a warning and does nothing — the operator must populate the config and restart, or insert a user directly via `sqlite3` and flip `is_admin = 1`.
+There is **no public sign-up**. The first admin is created by one of three bootstrap paths (see the [Auth flow](#auth-flow) section above): the config-file bootstrap (`AdminBootstrap` reading `honcho.bootstrap.*` from `/etc/honcho-inspector/application.yml`), the UI-driven bootstrap (`POST /api/setup/first-admin` from the first-run wizard), or the CLI bootstrap (`honcho-inspector promote-to-admin --username NAME`).
+
+If the bundled jar is started on a fresh DB and both the bootstrap block and the UI/CLI paths are unused, `AdminBootstrap` logs a warning and does nothing — the operator must populate the config and restart, walk through the UI wizard, or run the CLI subcommand.
 
 After the first admin exists, all subsequent users are created by an admin via `POST /api/admin/users` (admin-only). The `honcho.bootstrap.*` credentials should be removed from the config file once the first admin exists — leaving them in is a credential-on-disk leak.
 
-Recovery from a lost-admin situation: edit `/etc/honcho-inspector/application.yml` and re-populate `honcho.bootstrap.admin-username` and `honcho.bootstrap.admin-password`. On the next start, `AdminBootstrap` re-checks `users.count() == 0` and is a no-op (the lost admin's row is still there). For a true lockout, set `is_admin = 1` on an existing user via `sqlite3` directly.
+Recovery from a lost-admin situation is via the [emergency-action CLI](#emergency-action-cli) (preferred — no yaml edit, no DB edit, no restart), or via the config-file bootstrap (re-populate `honcho.bootstrap.*` and restart), or via `sqlite3` directly (most invasive).
 
 ### Admin API
 
@@ -218,8 +253,9 @@ All paths under `/api/admin/**` are gated by `@RequireAdmin` + the `AdminAuthInt
 |---|---|---|
 | macOS | `brew install cloudbsdorg/honcho-inspector/honcho-inspector` | `~/Library/LaunchDaemons/com.honcho.inspector.plist` |
 | Linux (Homebrew/Linuxbrew) | `brew install cloudbsdorg/honcho-inspector/honcho-inspector` | `/etc/systemd/system/honcho-inspector.service` |
-| FreeBSD (ports) | `cd /usr/ports/net/honcho-inspector && make install clean` | `/usr/local/etc/rc.d/honcho_inspector` |
-| FreeBSD (pkg) | `pkg install honcho-inspector` | `/usr/local/etc/rc.d/honcho_inspector` |
+| FreeBSD backend (ports) | `cd /usr/ports/net/honcho-inspector && make install clean` | `/usr/local/etc/rc.d/honcho_inspector` |
+| FreeBSD backend (pkg) | `pkg install honcho-inspector` | `/usr/local/etc/rc.d/honcho_inspector` |
+| FreeBSD meta-package (backend + UI) | `pkg install honcho-inspector` (the `www/honcho-inspector` meta-port) | installs both as transitive deps |
 
 The package-manager install creates the dedicated service user
 (`www-data` on Linux, `www` on FreeBSD, `_www` on macOS), the
@@ -228,11 +264,33 @@ needs to set `HONCHO_CRYPTO_KEY` (and optionally the bootstrap
 admin credentials) in `/etc/default/honcho-inspector` and start the
 service.
 
+### Install via `make install` (OS-agnostic POSIX)
+
+The Makefile is portable to both GNU make (Linux) and BSD bmake
+(FreeBSD). It is the canonical entry point for operators who want
+to install from source without going through a package manager:
+
+```bash
+make build                  # mvn package, skips tests
+sudo make install           # auto-detects OS, runs the POSIX install script
+sudo $EDITOR /etc/default/honcho-inspector   # set HONCHO_CRYPTO_KEY
+sudo systemctl restart honcho-inspector       # Linux
+# or:  sudo service honcho_inspector restart  # FreeBSD
+# or:  sudo launchctl kickstart -k system/com.honcho.inspector  # macOS
+```
+
+Aliases for explicit OS targeting:
+`make install-linux`, `make install-freebsd`, `make install-macos`
+(each errors out if the OS doesn't match). Fine-grained targets:
+`make install-launcher`, `make install-config-only`, `make install-jar`,
+`make install-service`. The `make run-jar` target sources the per-OS
+env file before launching the jar (same probe paths as the launcher).
+
 ### Install manually (POSIX)
 
-For operators who do not use a package manager, the project ships
-[`bin/install-honcho-inspector`](bin/install-honcho-inspector). Run
-it as root after `mvn package`:
+For operators who do not use a package manager or `make`, the project
+ships [`bin/install-honcho-inspector`](bin/install-honcho-inspector).
+Run it as root after `mvn package`:
 
 ```bash
 mvn -B -ntp package -DskipTests
@@ -268,13 +326,13 @@ catalogued in [`docs/SECURITY.md`](docs/SECURITY.md).
 ## Build, test, verify
 
 ```bash
-mvn test                  # 449 unit + slice + integration tests; <90s
+mvn test                  # 487 unit + slice + integration tests; <90s
 mvn package               # builds the fat jar at target/honcho-inspector-backend-0.1.0-SNAPSHOT.jar
 mvn verify                # full verify, includes test + OpenAPI drift check
 java -jar target/honcho-inspector-backend-0.1.0-SNAPSHOT.jar
 ```
 
-The test suite uses an in-memory SQLite (`HONCHO_DB_PATH=jdbc:sqlite::memory:`) and a fixed crypto key. The new admin RBAC surface has dedicated coverage: `AdminAuthInterceptorTest` (8 unit tests on the annotation + interceptor), `AdminUserServiceTest` (23 unit tests on create / update / delete / revoke / reset-password with every self-protection rule), `AdminUserControllerTest` (21 MockMvc tests on every endpoint, pagination, 401/403/404/409), `AdminAuditControllerTest` (9 tests on filter combinations), `AdminBootstrapTest` (4 tests on the config-file-driven first admin), `AuditRetentionJobTest` (4 tests on age + size-cap purging), `AdminDashboardServiceTest` (9 unit tests including partial fan-out failures), `AdminDashboardControllerTest` (7 MockMvc tests), and `AdminMaintenanceControllerTest` (7 tests on manual purge + status).
+The test suite uses an in-memory SQLite (`HONCHO_DB_PATH=jdbc:sqlite::memory:`) and a fixed crypto key. The new admin RBAC surface has dedicated coverage: `AdminAuthInterceptorTest` (8 unit tests on the annotation + interceptor), `AdminUserServiceTest` (23 unit tests on create / update / delete / revoke / reset-password with every self-protection rule), `AdminUserControllerTest` (21 MockMvc tests on every endpoint, pagination, 401/403/404/409), `AdminAuditControllerTest` (9 tests on filter combinations), `AdminBootstrapTest` (4 tests on the config-file-driven first admin), `AuditRetentionJobTest` (4 tests on age + size-cap purging), `AdminDashboardServiceTest` (9 unit tests including partial fan-out failures), `AdminDashboardControllerTest` (7 MockMvc tests), `AdminMaintenanceControllerTest` (7 tests on manual purge + status), `DashboardApplicationMainDispatchTest` (7 unit tests on the `shouldRunCli` predicate that intercepts CLI dispatch in `main()`), `CliRunnerTest` (23 tests on every emergency-action subcommand), and `SetupControllerTest` (8 tests on the first-run UI-driven bootstrap path).
 
 ## Security model
 
@@ -288,7 +346,7 @@ The test suite uses an in-memory SQLite (`HONCHO_DB_PATH=jdbc:sqlite::memory:`) 
 - **Central admin gate.** The `@RequireAdmin` annotation on a controller (class-level or method-level) is enforced by the `AdminAuthInterceptor` HandlerInterceptor for every request to that handler. Static resources, public auth paths, and the Springdoc `/v3/api-docs` surface pass through with zero overhead. There is no per-controller opt-in helper — the gate is uniform.
 - **Self-protection.** The last remaining admin cannot be demoted or deleted, and a user cannot demote or delete themselves. Both return 409. Enforced in `AdminUserService.update/delete`, so the rule is independent of the controller layer.
 - **Audit log.** Every admin write path and every user-management mutation records an entry in `audit_log` (fire-and-forget; a broken audit table never breaks the calling write path). Retention is 90 days by age, or 1,000,000 rows by size, whichever fires first; the daily sweep runs at 3:00 AM local. Manual trigger: `POST /api/admin/maintenance/audit/purge`.
-- **`/api/health` is a no-information liveness probe.** It returns only `{ok, needs_register}`. Aggregate user / session / profile counts are exclusively available to admins via `GET /api/admin/dashboard/overview`.
+- **`/api/health` is a no-information liveness probe.** It returns only `{ok, first_run, needs_register}`. The two flags are aliases — both are `true` when `users.count() == 0` (the service is in bootstrap state and the UI should show the first-run wizard). Once any user exists, both are `false`. Aggregate user / session / profile counts are exclusively available to admins via `GET /api/admin/dashboard/overview`.
 
 For the full threat model, audit findings (with severity + remediation
 guidance), and the operator hardening checklist, see
@@ -316,12 +374,13 @@ a release.
 src/main/java/com/honcho/dashboard/
   DashboardApplication.java
   auth/         — User, Profile, AuthSession, PasswordHasher, CryptoService,
-                   AuthService, AuthController,
+                   AuthService, AuthController, SetupController (first-run UI bootstrap),
                    AdminUserService, AdminUserController, AdminAudit,
                    AdminAuditController, AdminBootstrap, AuditLogDao,
                    AdminDashboardService, AdminDashboardController,
                    AuditRetentionJob, AdminMaintenanceController,
                    RequireAdmin, PageSize, *Dao
+  cli/          — CliRunner (emergency-action subcommands dispatched in main())
   config/       — CorsConfig, HonchoConfigDirResolver, HonchoProperties,
                    HttpClientConfig, StartupInfoLogger, AdminAuthConfig
   controller/   — HonchoController (the proxy)
@@ -332,15 +391,22 @@ src/main/java/com/honcho/dashboard/
 src/main/resources/
   application.yml
   schema.sql
+src/test/java/com/honcho/dashboard/  — 487 unit/slice/integration tests
+  cli/                               — CliRunnerTest (23), DashboardApplicationMainDispatchTest (7)
+  auth/                              — AdminAuthInterceptorTest, AdminUserServiceTest, *ControllerTest,
+                                       SetupControllerTest (8), AdminBootstrapTest, AuditRetentionJobTest
+  docs/                              — OpenApiDriftCheckTest
+Makefile                       — OS-agnostic entry point (GNU make + bmake portable);
+                                 `make install` is canonical, `make install-linux|freebsd|macos` are aliases
 bin/
-  honcho-inspector                 — POSIX launcher; detects OS and sets HONCHO_CONFIG_DIR
+  honcho-inspector                 — POSIX launcher; sources env file, sets OS defaults, dispatches CLI
   install-honcho-inspector         — POSIX install script (creates user, dirs, service file, man page)
 etc/honcho-inspector/
   application.yml.example          — drop-in config template (bootstrap + audit blocks)
 etc/systemd/
   honcho-inspector.service         — Linux systemd unit (User=www-data, hardened)
 etc/rc.d/
-  honcho-inspector                 — FreeBSD rc.d script (honcho_inspector_user=www)
+  honcho-inspector                 — FreeBSD rc.d script (name=honcho_inspector, user=www)
 etc/launchd/
   com.honcho.inspector.plist       — macOS launchd plist (UserName=_www)
 packaging/
@@ -353,11 +419,13 @@ docs/
   reverse-proxy.md                 — nginx (primary), Apache, Caddy configs + requirements
   honcho-providers.md              — provider layer architecture, custom-provider tutorial, V4 walkthrough
   regenerating-openapi.md          — when/how to refresh docs/openapi.yaml + drift-check policy
-  openapi.yaml                     — hand-written OpenAPI 3 narrative contract (admin surface included)
+  openapi.yaml                     — hand-written OpenAPI 3 narrative contract (admin + setup surfaces)
   openapi.generated.json           — springdoc snapshot (CI drift-checks against openapi.yaml)
-  honcho-inspector.1               — groff man page for the operator
+  honcho-inspector.1               — groff man page for the operator (incl. EMERGENCY ACTIONS section)
   lessons/
     os-config-conventions.md       — why we use OS-aware config dirs, not ~/.X
+    admin-rbac-rollout.md          — 13 lessons from the admin RBAC + first-run + CLI rollout
+    installer-and-packaging.md     — 18 lessons from the macOS/Linux/FreeBSD install + meta-port rollout
 .github/workflows/
   ci.yml                           — mvn test + OpenAPI drift check on push/PR
 ```

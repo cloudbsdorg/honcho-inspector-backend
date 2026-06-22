@@ -50,10 +50,21 @@ Example: bind to a non-default port and set the log level:
 .RE
 .TP
 .B \-\-help
-Print the Spring Boot usage banner and exit.
+Print the Spring Boot usage banner and exit. (The
+.B honcho-inspector help
+subcommand, by contrast, prints the
+.BR "EMERGENCY ACTIONS" " usage, which is a different output.)"
 .TP
 .B \-\-version
 Print the Spring Boot version and exit.
+.PP
+If the first non\-flag argument is a known
+.BR "EMERGENCY ACTIONS"
+subcommand (see below), the launcher dispatches to the CLI handler
+instead of starting the web server. The CLI runs in a minimal Spring
+context (no HTTP server) and the JVM exits with the subcommand's
+exit code (see
+.BR "EXIT STATUS" ")."
 .SH ENVIRONMENT
 The service uses standard Spring Boot relaxed binding; every
 property can be set as an environment variable in addition to a
@@ -261,11 +272,49 @@ Linux.
 .B /usr/local/etc/honcho-inspector/
 FreeBSD.
 .TP
-.B ~/Library/Application Support/honcho-inspector/
-macOS.
+.B /usr/local/etc/honcho-inspector/
+macOS (Homebrew + manual install). Operators who installed via
+the macOS installer (different prefix) may have it elsewhere;
+inspect the Homebrew formula or the launchd plist's
+.B ProgramArguments
+to confirm.
 .TP
 .B %APPDATA%\\honcho-inspector\\
 Windows.
+.PP
+The launcher also probes per-OS locations for the operator-tunable
+env file. The file is mode
+.B 0640
+.BR root:<service group> " (the service group is "
+.BR www-data " on Linux, "
+.BR www " on FreeBSD, "
+.BR _www " on macOS)."
+Only
+.B HONCHO_CRYPTO_KEY
+and other operator-tunable runtime knobs live in this file. Data
+paths (the SQLite DB, the config dir, the log dir) are set by the
+init system unit, not the env file. A missing or unreadable env
+file is silent: the launcher falls back to the launcher-supplied
+defaults for the OS.
+.TP
+.B /etc/default/honcho-inspector
+Linux (also
+.BR /etc/sysconfig/honcho-inspector " on RHEL-family distros)."
+.TP
+.B /etc/default/honcho-inspector
+FreeBSD. Operators who installed via the Homebrew-prefixed port may
+also override with
+.B ${HOMEBREW_PREFIX}/etc/honcho-inspector.env
+(see
+.BR service (8) " variables "
+.BR honcho_inspector_env_file )."
+.TP
+.B /etc/defaults/honcho-inspector
+macOS (plural — a macOS convention; the Linux singular form is
+.BR /etc/default/ )."
+Operators running the jar from a manual install (no launchd) may
+also drop a per-user override at
+.BR ~/Library/Application Support/honcho-inspector/env "."
 .PP
 Under
 .BR ${HONCHO_CONFIG_DIR} :
@@ -431,58 +480,6 @@ are left untouched; only the jar and the service file are updated:
 .RS 4
 .B sudo bin/install-honcho-inspector
 .RE
-.SH FIRST STARTUP
-On a fresh install:
-.IP 1. 4
-Copy
-.B etc/honcho-inspector/application.yml.example
-to
-.B /etc/honcho-inspector/application.yml
-(Linux) or the OS-appropriate config dir.
-.IP 2.
-Set
-.B HONCHO_CRYPTO_KEY
-in the environment, not in the yaml. Generate with
-.BR "openssl rand \-base64 32" .
-.IP 3.
-Set
-.B CORS_ALLOWED_ORIGINS
-to the exact public origin of the UI.
-.IP 4.
-Optionally populate
-.B honcho.bootstrap.admin-username
-and
-.BR honcho.bootstrap.admin-password
-to create the first admin on startup. Leave the bundled jar's
-defaults blank in dev.
-.IP 5.
-Set
-.B server.address
-to
-.B 127.0.0.1
-in the drop-in yaml so the service is not reachable on the host's
-external IPs. The reverse proxy is the public listener.
-.IP 6.
-Start the service:
-.PP
-.RS 8
-.B sudo /usr/local/bin/honcho-inspector
-.RE
-.IP 7.
-Verify the bootstrap admin was created by logging in:
-.PP
-.RS 8
-.B curl \-X POST http://127.0.0.1:8080/api/auth/login \\
-.br
-.B   \-H 'content\-type: application/json' \\
-.br
-.B   \-d '{"username":"admin","password":"..."}'
-.RE
-.IP 8.
-REMOVE the
-.B honcho.bootstrap.*
-credentials from the drop-in yaml and restart. Leaving them in
-is a credential-on-disk leak.
 .SH ADMIN API
 The service exposes 14 admin-only paths under
 .BR /api/admin/ .
@@ -640,10 +637,242 @@ Absence of recent
 rows means the sweep stopped running; investigate the JSONL log
 in
 .BR ${HONCHO_CONFIG_DIR}/logs/honcho-inspector.jsonl .
+.SH EMERGENCY ACTIONS
+When the web server is unreachable (UI is down, the bootstrap admin
+is locked out, the operator needs to act without going through the
+API), the jar itself exposes five emergency-action subcommands.
+They are dispatched in
+.B DashboardApplication.main()
+.B before
+the web server starts, in a minimal Spring context (no HTTP server),
+so they can be run while the service is stopped.
+.PP
+The CLI is intended to run with the service stopped. SQLite enforces
+a single-writer lock; running the CLI while the service is up will
+block on writes. The CLI does NOT authenticate the caller —
+file-system permissions on the SQLite database and the operator's
+shell account are the access control. Restrict access to the
+service account (see
+.BR FILES )
+to the operators who should be able to run the CLI.
+.PP
+.SS Synopsis
+.PP
+.RS 4
+.B honcho-inspector list-users
+.br
+.B honcho-inspector reset-admin-password --username NAME [--password PASS | --generate]
+.br
+.B honcho-inspector promote-to-admin --username NAME
+.br
+.B honcho-inspector revoke-all-sessions
+.br
+.B honcho-inspector help
+.RE
+.PP
+.SS list-users
+Print every row in the
+.B users
+table as a fixed-width table:
+.PP
+.RS 4
+.B "ID                                USERNAME                 ADMIN    CREATED_AT"
+.br
+.B "abcdef0123456789...               alice                    yes      2026-06-22T01:00:00Z"
+.br
+.B "fedcba9876543210...               bob                      no       2026-06-22T01:00:00Z"
+.RE
+.PP
+If the table is empty, prints
+.BR "(no users)" "."
+.SS reset-admin-password
+Reset the password for the named user. One of
+.B --password
+or
+.B --generate
+is required. The password must be at least 8 characters.
+.TP
+.B --username NAME
+Required. The username whose password to reset.
+.TP
+.B --password PASS
+Set the new password to
+.IR PASS .
+Must be at least 8 characters.
+.TP
+.B --generate
+Generate a fresh random 20-character URL-safe password and print it
+once. The password is NOT stored anywhere after the CLI exits;
+the operator must record it immediately.
+.PP
+On success, prints
+.BR "password reset for user '<NAME>' (id=<ID>)" " and, if"
+.B --generate
+was used,
+.BR "  new password: <RANDOM>" " followed by "
+.BR "  IMPORTANT: this password is shown only once. Store it now." "."
+.SS promote-to-admin
+Set
+.B is_admin = 1
+for the named user. Idempotent: if the user is already an admin,
+prints
+.B "user '<NAME>' is already an admin"
+and exits 0. Otherwise prints
+.BR "user '<NAME>' (id=<ID>) promoted to admin" "."
+.TP
+.B --username NAME
+Required.
+.SS revoke-all-sessions
+Wipe every row in the
+.B auth_sessions
+table, force-logging-out every user (including admins). Use this
+when you suspect a session token has been compromised, or after a
+bulk password reset. Prints
+.BR "revoked <N> sessions; <M> remain" "."
+.PP
+The CLI does not prompt for confirmation. A second run is a no-op
+(if no sessions exist) and prints
+.BR "revoked 0 sessions; 0 remain" "."
+.SS help
+Print the synopsis above to stdout and exit 0. The Spring Boot
+.B --help
+flag (no subcommand) is different and prints the Spring Boot usage
+banner.
+.SH FIRST STARTUP
+On a fresh install:
+.IP 1. 4
+Copy
+.B etc/honcho-inspector/application.yml.example
+to
+.B /etc/honcho-inspector/application.yml
+(Linux) or the OS-appropriate config dir.
+.IP 2.
+Set
+.B HONCHO_CRYPTO_KEY
+in the environment, not in the yaml. Generate with
+.BR "openssl rand \-base64 32" .
+.IP 3.
+Set
+.B CORS_ALLOWED_ORIGINS
+to the exact public origin of the UI.
+.IP 4.
+Optionally populate
+.B honcho.bootstrap.admin-username
+and
+.BR honcho.bootstrap.admin-password
+to create the first admin on startup. Leave the bundled jar's
+defaults blank in dev.
+.IP 5.
+Set
+.B server.address
+to
+.B 127.0.0.1
+in the drop-in yaml so the service is not reachable on the host's
+external IPs. The reverse proxy is the public listener.
+.IP 6.
+Start the service:
+.PP
+.RS 8
+.B sudo /usr/local/bin/honcho-inspector
+.RE
+.IP 7.
+Pick a bootstrap path:
+.RS
+.IP \fBa\fR 4
+.Config-file bootstrap (headless): the
+.B honcho.bootstrap.*
+block created the first admin on startup. Verify by logging in:
+.PP
+.RS 8
+.B curl \-X POST http://127.0.0.1:8080/api/auth/login \\
+.br
+.B   \-H 'content\-type: application/json' \\
+.br
+.B   \-d '{"username":"admin","password":"..."}'
+.RE
+.IP \fBb\fR
+.UI-driven bootstrap (with the Honcho Inspector UI): open the UI in
+a browser. The UI calls
+.B GET /api/health
+and reads the
+.B first_run
+field (true when the database is empty). The UI shows a "create
+your first admin" wizard which calls
+.B POST /api/setup/first-admin
+and returns the operator a session immediately. The
+.B honcho.bootstrap.*
+block in the yaml must be left blank for this path; if both paths
+are populated, the config-file bootstrap fires first and the
+UI-driven path returns 409.
+.RE
+.IP 8.
+REMOVE the
+.B honcho.bootstrap.*
+credentials from the drop-in yaml and restart. Leaving them in
+is a credential-on-disk leak.
+.SH FIRST-RUN API
+The first-run mode is exposed to the UI through two endpoints:
+.TP
+.B GET /api/health
+Public. Returns
+.BR {ok, first_run, needs_register} .
+The
+.B first_run
+(and alias
+.BR needs_register )
+field is true when
+.B users.count() == 0
+— i.e. the service is in bootstrap state and the UI should show
+the first-run wizard. Once any user exists, both fields are false.
+Aggregate user / session / profile counts are NOT exposed here; they
+live on the admin-only
+.B /api/admin/dashboard/overview
+endpoint.
+.TP
+.B POST /api/setup/first-admin
+Public when the database is empty; returns 409 once any user
+exists. Body is the same shape as
+.B /api/auth/register
+.RB ( "username" ", " password ", " firstname? ", " lastname? ", " email? " )"
+with
+.B password
+required to be at least 8 characters. On success, returns the
+same
+.B LoginResponse
+shape as
+.BR /api/auth/login :
+a session id and the user record with
+.BR isAdmin = true .
+After the first admin is created this way,
+.B /api/setup/*
+is locked and all further user management flows through
+.BR /api/admin/users .
 .SH RECOVERY FROM LOST ADMIN
 If the bootstrap admin is lost (password forgotten, user
-deleted, etc.), there are two recovery paths.
+deleted, etc.), there are three recovery paths.
 .IP 1. 4
+Use the emergency-action CLI. With the web server
+.BR stopped ,
+run:
+.PP
+.RS 8
+.B honcho-inspector list-users
+.br
+.B honcho-inspector reset-admin-password --username <existing> --generate
+.br
+.B honcho-inspector promote-to-admin --username <existing>
+.RE
+.PP
+The CLI does not authenticate the caller — file-system
+permissions on the SQLite DB and the operator's shell account
+are the access control. Stop the service first (SQLite's
+single-writer lock will block otherwise) and run the CLI as the
+operator who owns the DB file (typically
+.BR root
+or the
+.B www-data " / " www " / " _www
+service user depending on the OS).
+.IP 2.
 If the
 .B users
 table is empty (e.g. the database was wiped), populate
@@ -656,7 +885,7 @@ and both
 and
 .B admin-password
 are set.
-.IP 2.
+.IP 3.
 If the
 .B users
 table is non-empty, set
@@ -672,6 +901,11 @@ on an existing user via
 .PP
 The login flow is unchanged; the promoted user logs in with
 their existing password.
+.PP
+Recovery paths are listed in operator-preference order: the CLI
+first (no yaml edit, no DB edit, no restart), config-file
+bootstrap second (one yaml edit + restart), sqlite3 escape hatch
+last (most invasive, requires shell access).
 .SH EXIT STATUS
 The launcher script
 .BR bin/honcho-inspector " (or the installed"
@@ -679,15 +913,43 @@ The launcher script
 ) returns:
 .TP
 .B 0
-The service stopped cleanly.
+The service stopped cleanly, or an emergency-action CLI subcommand
+completed successfully.
 .TP
 .B 1
 The Spring Boot context failed to start (port in use, missing
 config, schema migration failure, etc.). The JSONL log captures
-the root cause.
+the root cause. Also returned when an unhandled exception escapes
+the CLI dispatch path.
 .TP
 .B 2
-Invalid command-line argument.
+Invalid command-line argument. Returned by the emergency-action
+CLI for unknown subcommands, missing required flags
+.RB ( " \-\-username" ", etc.)"
+and contradictory flag combinations.
+.TP
+.B 3
+User not found. The CLI subcommand's
+.B --username
+flag did not match any row in
+.BR users .
+.TP
+.B 4
+Validation error. A password was too short, a username was empty,
+or a similar input constraint was violated.
+.TP
+.B 5
+Database error. The CLI subcommand caught a runtime exception
+while writing to the SQLite database (locked DB, missing column,
+disk-full, etc.). The JSONL log captures the root cause.
+.PP
+The CLI exit codes
+.BR 3 ", " 4 " and " 5
+are not used by the web-server launcher; only the emergency-action
+subcommands return them. Shell scripts branching on the exit code
+should default to
+.B 0
+for success and treat any non-zero code as failure.
 .SH SIGNALS
 .TP
 .B SIGTERM

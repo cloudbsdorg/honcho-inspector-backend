@@ -10,9 +10,11 @@ deployments.
 SQLite / single-jar).
 
 **Status:** Phase 1 of the rollout is shipped (commits `029bea4` through
-`a9a5fd5`). 449 tests, 0 failures, 0 errors. Live integration test
-against `honcho.cloudbsd.org` confirmed the bootstrap, RBAC, audit
-retention, and Honcho fan-out surfaces.
+`a9a5fd5`). Phase 2 added the emergency-action CLI (`CliRunner`) and
+the first-run API (`SetupController`). 487 tests, 0 failures, 0 errors.
+Live integration test against `honcho.cloudbsd.org`, `minimini.cloudbsd.org`
+(macOS), and `pppoe1.cloudbsd.org` (FreeBSD) confirmed the bootstrap,
+RBAC, audit retention, Honcho fan-out, first-run mode, and CLI surfaces.
 
 ---
 
@@ -465,3 +467,204 @@ even with `sudo` on the `cp`. **Lesson:** when scripting macOS
 remotely, do all writes via `sudo tee` directly to the target path;
 do not stage files in `/tmp/`. The `/private/tmp` TCC rule is not
 documented clearly and is easy to hit.
+
+---
+
+## 13. First-run mode and the emergency-action CLI
+
+After Phase 1 shipped, two operator-facing gaps surfaced:
+
+1. **First-run with the UI.** The original bootstrap (`AdminBootstrap`)
+   reads `honcho.bootstrap.*` from the drop-in config. This works
+   for headless operators, but the UI (a separate repo) needed a
+   way to bootstrap the very first admin through the API so the
+   UI's "create your first admin" wizard could work without any
+   pre-existing credentials. The user said: "i want the backend to
+   reflect a state of being in a first run mode, have the UI pick
+   that up, and continue in the UI."
+
+2. **Emergency actions when the web server is up.** When an admin
+   is locked out (forgotten password, lost credentials, the bootstrap
+   block was deleted after first use and the single admin was
+   demoted), the operator needs a way to act without going through
+   the API. The user said: "now we should have something on the jar
+   to manage the backend, emergency actions, like reset system
+   passwords/tokens."
+
+The first gap became `SetupController` + the `first_run` field in
+`HealthResponse`. The second became `CliRunner` (a
+`CommandLineRunner` bean dispatching to five subcommands).
+
+### 13.1 First-run mode: two bootstrap paths, one first-admin wins
+
+The bootstrap decision is now three-way, not two-way:
+
+- **Config-file bootstrap** — populate `honcho.bootstrap.*` in
+  `${HONCHO_CONFIG_DIR}/application.yml`. `AdminBootstrap` creates
+  the admin on `ApplicationReadyEvent` when the `users` table is empty.
+- **API-driven bootstrap** — call `POST /api/setup/first-admin` (open
+  when the DB is empty, returns a session immediately).
+- **CLI bootstrap** — run `honcho-inspector promote-to-admin --username X`
+  after creating a user via the CLI or directly via `sqlite3`.
+
+The three paths are mutually exclusive: the first one to insert a row
+into `users` wins. Once any user exists, `AdminBootstrap` becomes a
+no-op (its check is `users.count() == 0`), and `/api/setup/first-admin`
+returns 409.
+
+The `/api/health` response gained a new field: `first_run`. It is
+true when `users.count() == 0`. The previous `needs_register` field
+is kept as an alias of `first_run` (same value, different name) so
+the old UI contract is preserved while new code can use the more
+descriptive name.
+
+### 13.2 `first_run` not `isFirstUser` — the field name matters
+
+The first draft of the new field was `is_first_user`, with the
+understanding that "first user" implied "first run." But the user
+specifically asked for "first run mode" — not "first user mode." The
+naming distinction matters because "first user" is a sequence
+question (is this the first user?) while "first run" is a state
+question (is the service in the bootstrap state?). They mean the
+same thing right now (no users + first run), but they might diverge
+in the future (e.g. an operator who wants to wipe users but not
+config). The chosen name (`first_run`) is the state, not the count.
+
+`needs_register` is kept as an alias because the UI was already
+using it before the first-run concept was formalised. Keeping the
+alias preserves the wire-contract while letting the code use the
+more accurate term.
+
+### 13.3 CLI dispatch must happen in `main()`, not `CommandLineRunner`
+
+The first version of `CliRunner` was a `CommandLineRunner`. It
+worked for the simple case — `honcho-inspector list-users` would
+intercept the first argument, dispatch, and `System.exit(0)`. But
+it broke in two ways:
+
+1. **Spring Boot binds the web server first.** If the operator runs
+   `honcho-inspector reset-admin-password --generate` while the
+   service is up, the web server starts binding to port 8080 (or
+   fails with "address in use"), THEN the CLI runs. This is wrong:
+   the CLI should not start the web server.
+
+2. **Schema migrations run too late.** A `CommandLineRunner` runs
+   after the `ApplicationContext` is fully refreshed, which is after
+   schema migrations. If a CLI command needs to run against a
+   pre-migration DB (e.g. to fix a migration that broke), it cannot.
+
+The fix is to dispatch in `main()` BEFORE `SpringApplication.run()`:
+
+```java
+public static void main(String[] args) {
+    System.exit(dispatch(args));
+}
+
+static int dispatch(String[] args) {
+    if (shouldRunCli(args)) {
+        return runCli(args);  // boots minimal Spring context, runs CLI, returns exit code
+    }
+    return SpringApplication.run(DashboardApplication.class, args) != null ? 0 : 1;
+}
+```
+
+`shouldRunCli(String[])` is a tiny predicate:
+```java
+static boolean shouldRunCli(String[] args) {
+    return args.length > 0 && CliRunner.isKnownCommand(args[0]);
+}
+```
+
+`runCli(String[])` boots a minimal Spring context using
+`SpringApplicationBuilder.web(WebApplicationType.NONE)` so the web
+server doesn't start. The CLI bean is autowired by the context, the
+operator's subcommand runs, and the exit code propagates up to
+`System.exit` via `main()`.
+
+**The exit-code propagation is important.** A `CommandLineRunner`
+that calls `System.exit(int)` works, but only because the
+`ApplicationRunner.run` throws an `ExitException` that Spring
+swallows. Putting `System.exit` in `main()` is the only way to be
+sure the exit code is honoured across all paths (early dispatch,
+CLI dispatch, normal Spring startup).
+
+### 13.4 The `shouldRunCli` predicate is testable without Spring
+
+`DashboardApplicationMainDispatchTest` has 7 unit tests on the
+`shouldRunCli` predicate. They run in 0.11s (no Spring context
+bootstrap), which is fast enough to keep in the inner dev loop. The
+full CLI integration tests live in `CliRunnerTest` (23 tests) and
+exercise the real Spring context.
+
+The unit-vs-integration split mirrors the lesson's separation of
+"what does the dispatch predicate say?" from "what does the CLI
+actually do?" The predicate is the smaller, faster, more critical
+piece (it's the entry point). The full flow is bigger, slower, and
+already covered by the integration tests.
+
+### 13.5 `CliRunner.handle(String, String[])` is public for cross-package dispatch
+
+The CLI's main entry point is `CommandLineRunner.run(String...)`,
+but `main()` calls `handle(cmd, args)` directly (so the exit code
+can return to `main()` without `System.exit` in the middle of the
+call stack). `handle` is `public` (not `protected`) for this
+reason: it's called from a different package (`com.revytechinc.honchoinspector`
+calls `com.revytechinc.honchoinspector.cli.CliRunner.handle`).
+
+The convention "public for cross-package dispatch, package-private
+otherwise" is documented in a one-line comment in the source. The
+next reader does not have to guess why the method is `public`.
+
+### 13.6 CLI exit codes follow `sysexits.h` conventions
+
+| Code | Meaning              | Maps to                              |
+|------|----------------------|--------------------------------------|
+| 0    | success              | EX_OK                                |
+| 2    | invalid arguments    | EX_USAGE                             |
+| 3    | user not found       | EX_NOUSER (3 on BSD, ENOENT on Linux)|
+| 4    | validation error     | EX_DATAERR                           |
+| 5    | database error       | EX_IOERR                             |
+
+These match the FreeBSD `sysexits.h` convention closely enough
+that shell scripts can branch on them without a translation table.
+The codes 1 and 2 are reserved (Spring Boot's `SpringApplication.run`
+uses 1 for startup failure; the launcher script's "java crashed"
+exit code is 1). Codes 6+ are reserved for future CLI commands
+(revoke-all-sessions doesn't use them yet, but a planned
+`rotate-crypto-key` command will use EX_NOPERM = 77 for "caller has
+no access" and EX_CONFIG = 78 for "crypto key not yet in env file").
+
+### 13.7 Related work, this lesson
+
+- `src/main/java/com/revytechinc/honchoinspector/DashboardApplication.java`
+  — `main()` calls `System.exit(dispatch(args))`; `shouldRunCli(String[])`
+  predicate; `dispatch(String[])` boots minimal context
+  (`WebApplicationType.NONE`) for CLI; `runCli(String[])` returns exit code.
+- `src/test/java/com/revytechinc/honchoinspector/DashboardApplicationMainDispatchTest.java`
+  — 7 unit tests on `shouldRunCli` predicate. Fast (0.11s), no
+  Spring context bootstrap.
+- `src/main/java/com/revytechinc/honchoinspector/cli/CliRunner.java`
+  — emergency-action CLI (list-users, reset-admin-password,
+  promote-to-admin, revoke-all-sessions, help). Exit codes 0/2/3/4/5.
+  `handle(String, String[])` is public for cross-package dispatch.
+- `src/test/java/com/revytechinc/honchoinspector/cli/CliRunnerTest.java`
+  — 23 unit/integration tests.
+- `src/main/java/com/revytechinc/honchoinspector/auth/SetupController.java`
+  — `POST /api/setup/first-admin` (open when DB empty, returns
+  `LoginResponse`).
+- `src/test/java/com/revytechinc/honchoinspector/auth/SetupControllerTest.java`
+  — 8 tests for first-run mode.
+- `src/main/java/com/revytechinc/honchoinspector/auth/AuthController.java`
+  — `/api/health` returns `{ok, first_run, needs_register}`.
+- `src/main/java/com/revytechinc/honchoinspector/config/OpenApiConfig.java`
+  — `TAG_SETUP` added.
+- `src/main/java/com/revytechinc/honchoinspector/filter/SessionAuthFilter.java`
+  — `PUBLIC_PATHS` includes `/api/setup/first-admin`.
+- `docs/honcho-inspector.1` — man page documents the CLI in the new
+  `EMERGENCY ACTIONS` section, the first-run flow in `FIRST STARTUP`,
+  and the new exit codes in `EXIT STATUS`.
+
+For the operator-facing packaging lessons (launcher env file
+sourcing, FreeBSD rc.d naming convention, Makefile portability,
+meta-port design, etc.) see the companion lesson
+[`installer-and-packaging.md`](installer-and-packaging.md).

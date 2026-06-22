@@ -21,12 +21,30 @@
 # 3. CORS must list the *exact* public origin of the UI (https://...). No
 #    wildcards; no http://localhost in prod.
 # 4. Set session.ttl-minutes to a non-zero value so idle sessions expire.
-# 5. On a fresh deploy, decide whether to use the bootstrap admin below
-#    (honcho.bootstrap.*) or create the first admin by running the bundled
-#    jar once, authenticating as the bootstrap user, and then using
-#    POST /api/admin/users to mint the real first admin. Remove the
-#    bootstrap credentials from this file once that user exists — leaving
-#    them in is a credential-on-disk leak. See docs/SECURITY.md §6.
+# 5. On a fresh deploy, decide how the very first admin gets created.
+#    Three bootstrap paths are mutually exclusive; the first one to insert
+#    a row into `users` wins, the others become no-ops:
+#
+#      a. Config-file bootstrap (headless) — populate the `honcho.bootstrap.*`
+#         block below, start the service. `AdminBootstrap` creates the first
+#         admin on `ApplicationReadyEvent` if `users.count() == 0`.
+#
+#      b. UI-driven bootstrap (with the Honcho Inspector UI) — leave the
+#         `honcho.bootstrap.*` block blank. Start the service, then open
+#         the UI; it reads `GET /api/health` (which returns `first_run: true`
+#         when the DB is empty) and shows the first-run wizard. The wizard
+#         submits to `POST /api/setup/first-admin` and returns the operator
+#         a session immediately.
+#
+#      c. CLI bootstrap (recovery) — with the service stopped, run
+#         `honcho-inspector promote-to-admin --username <existing>` from
+#         the shell. See the `EMERGENCY ACTIONS` section of `man
+#         honcho-inspector` for the full subcommand list.
+#
+#    After the first admin exists via any of the three paths, remove the
+#    `honcho.bootstrap.*` credentials from this file (if you used path a)
+#    — leaving them in is a credential-on-disk leak. See
+#    docs/SECURITY.md §6.
 # 6. File ownership after install (set by the package manager or
 #    `bin/install-honcho-inspector`):
 #

@@ -106,11 +106,25 @@ tags:
 
     '
 - name: admin
-  description: 'Reserved for future admin-only endpoints (user management, audit
+  description: 'Admin-only endpoints under `/api/admin/**`. Every path here
 
-    log, etc.). Currently empty, kept here so the OpenAPI tag catalogue
+    is gated by the `@RequireAdmin` annotation + `AdminAuthInterceptor`
 
-    is stable across releases.
+    HandlerInterceptor. Unauthenticated callers get 401 before the admin
+
+    check; authenticated non-admins get 403 `admin only`.
+
+    '
+- name: setup
+  description: 'First-run configuration. Every endpoint under `/api/setup/**`
+
+    is reachable only when the database is empty (no users); once any
+
+    user exists they all return 409. After the first admin is created via
+
+    `/api/setup/first-admin`, all subsequent user and config management
+
+    flows through the `/api/admin/*` surface.
 
     '
 paths:
@@ -122,11 +136,19 @@ paths:
       tags:
       - auth
       summary: Liveness / readiness probe
-      description: 'Public unauthenticated health endpoint. Returns counts of users,
+      description: 'Public unauthenticated health endpoint. Returns only the service
 
-        sessions, and profiles, plus a `needsRegister` boolean the UI uses
+        status and a `first_run` boolean (with a `needs_register` alias).
 
-        to decide whether to show the registration form on first run.
+        The UI uses `first_run` to decide whether to render the bootstrap
+
+        wizard on first launch. Once any user exists, both flags are false.
+
+        The previous version leaked user/session/profile counts to
+
+        unauthenticated callers; those have been moved to the admin-only
+
+        dashboard overview (`GET /api/admin/dashboard/overview`).
 
         '
       operationId: health
@@ -137,23 +159,85 @@ paths:
             '*/*':
               schema:
                 $ref: '#/components/schemas/HealthResponse'
+  # -----------------------------------------------------------------------
+  # First-run setup (public when DB is empty; locked once any user exists)
+  # -----------------------------------------------------------------------
+  /api/setup/first-admin:
+    post:
+      tags:
+      - setup
+      summary: Create the very first admin (first-run only)
+      description: 'Reachable only when the database is empty. Creates an admin user
+
+        (server-determined `isAdmin=true`) and immediately opens a session
+
+        for them, returning the same shape as `POST /api/auth/login`.
+
+        After this call, `/api/setup/*` is locked and all further user
+
+        management flows through `/api/admin/users`. Mutually exclusive
+
+        with the config-file bootstrap path (`honcho.bootstrap.*` in
+
+        `/etc/honcho-inspector/application.yml`); the first one to insert
+
+        a row into `users` wins, the other becomes a no-op.
+
+        '
+      operationId: firstAdmin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FirstAdminInput'
+      responses:
+        '200':
+          description: First admin created; session returned
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          description: Validation error (e.g. password too short)
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 'Database is not empty; first admin already exists. Use
+
+                `/api/auth/register` (admin-only) to add more users.
+
+                '
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /api/auth/register:
     post:
       tags:
       - auth
-      summary: Register a new user
-      description: 'Creates a new user account. The first user to register on a
+      summary: Register a new user (admin-only)
+      description: 'Creates a new user account. ADMIN-ONLY — requires an
 
-        fresh database is automatically promoted to admin. Subsequent
+        authenticated session whose user has `isAdmin=true`. There is
 
-        registrations are non-admin.
+        no public registration. The first admin is created by one of
 
+        the three bootstrap paths: the config-file bootstrap
 
-        Workflow step 1 of the recommended end-to-end flow. After this
+        (`honcho.bootstrap.*` in `/etc/honcho-inspector/application.yml`),
 
-        call, immediately call `POST /api/auth/login` to obtain a
+        the UI-driven bootstrap (`POST /api/setup/first-admin` from
 
-        session id.
+        the first-run wizard), or the CLI bootstrap (`honcho-inspector
+
+        promote-to-admin --username NAME`). Subsequent users are
+
+        created by an existing admin via this endpoint or via
+
+        `POST /api/admin/users`.
 
         '
       operationId: register
@@ -2608,7 +2692,7 @@ components:
       type: object
       description: 'Body returned by `GET /api/health`. Returns only `ok` and
 
-        `needs_register`. Aggregate user / session / profile counts are
+        the first-run flags. Aggregate user / session / profile counts are
 
         intentionally NOT exposed on this unauthenticated probe (they
 
@@ -2620,23 +2704,74 @@ components:
           type: boolean
           description: Always true when the service is up
           example: true
+        first_run:
+          type: boolean
+          description: 'True on a fresh database (no users yet). The UI uses this
+
+            to decide whether to render the first-run wizard, which
+
+            submits to `POST /api/setup/first-admin`. Equivalent to
+
+            `needs_register`; both are aliases that are `true` when
+
+            `users.count() == 0` and `false` otherwise.
+
+            '
+          example: false
         needs_register:
           type: boolean
-          description: 'True on a fresh database (no users yet). UI uses this to
+          description: 'Alias of `first_run`. Kept for backward compatibility
 
-            show the registration form before the login form. With the
+            with UI clients written before the first-run concept was
 
-            admin-gated register endpoint, the first admin is normally
-
-            created by `AdminBootstrap` from the drop-in config; this
-
-            flag is useful for operators verifying bootstrap wiring.
+            formalised; new code should read `first_run`.
 
             '
           example: false
       example:
         ok: true
+        first_run: false
         needs_register: false
+    FirstAdminInput:
+      type: object
+      description: 'Body accepted by `POST /api/setup/first-admin`. The new user
+
+        is always `isAdmin=true` (server-determined, not client-supplied).
+
+        This endpoint is reachable only when the database is empty.
+
+        '
+      required:
+      - username
+      - password
+      properties:
+        username:
+          type: string
+          example: alice
+        password:
+          type: string
+          format: password
+          minLength: 8
+          example: correct horse battery staple
+        firstname:
+          type: string
+          nullable: true
+          example: Alice
+        lastname:
+          type: string
+          nullable: true
+          example: Admin
+        email:
+          type: string
+          format: email
+          nullable: true
+          example: alice@example.com
+      example:
+        username: alice
+        password: correct horse battery staple
+        firstname: Alice
+        lastname: Admin
+        email: alice@example.com
     # ------------------------------------------------------------------
     # Admin RBAC DTOs
     # ------------------------------------------------------------------
