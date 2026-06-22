@@ -41,12 +41,26 @@ load_rc_config ${name}
 : ${honcho_inspector_pidfile:=/var/run/honcho-inspector.pid}
 
 # honor an environment file if present. The file is shell-sourced
-# so each line is `KEY="value"`.
+# so each line is `KEY="value"`. Anything the operator puts there
+# (HONCHO_CRYPTO_KEY, JAVA_HOME, custom HONCHO_* overrides) is
+# auto-exported by `set -a` above and inherited by the daemon child.
 if [ -f "${honcho_inspector_env_file}" ]; then
     set -a
     . "${honcho_inspector_env_file}"
     set +a
 fi
+
+# Export the path knobs the jar needs. We do this AFTER sourcing
+# the env file so the operator can override them in
+# /etc/default/honcho-inspector. The logback config and the
+# HonchoConfigDirResolver both consult HONCHO_CONFIG_DIR (env var);
+# the SQLite JDBC URL honors HONCHO_DB_PATH. The rc.d defaults are
+# the conventional locations on FreeBSD; the macOS launchd plist
+# and the Linux systemd unit set these explicitly to OS-appropriate
+# paths so the rc.d defaults do not collide.
+: ${HONCHO_CONFIG_DIR:=${honcho_inspector_config_dir}}
+: ${HONCHO_DB_PATH:=jdbc:sqlite:${honcho_inspector_data_dir}/honcho-inspector.db}
+export HONCHO_CONFIG_DIR HONCHO_DB_PATH
 
 # Spring Boot system properties. Java 9+ rejects `--key=value` in
 # the JVM-args slot; the -D form is the correct one.

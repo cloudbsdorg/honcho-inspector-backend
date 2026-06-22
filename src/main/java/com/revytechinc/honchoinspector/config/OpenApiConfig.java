@@ -35,6 +35,7 @@ public class OpenApiConfig {
     public static final String TAG_PROFILES = "profiles";
     public static final String TAG_HONCHO_PROXY = "honcho-proxy";
     public static final String TAG_ADMIN = "admin";
+    public static final String TAG_SETUP = "setup";
 
     @Bean
     public OpenAPI honchoInspectorOpenAPI() {
@@ -89,7 +90,10 @@ public class OpenApiConfig {
                     .description("Pass-through proxy to the Honcho v3 REST API. Every endpoint requires `X-Session-Id` AND `X-Honcho-Profile-Id`. Requests are forwarded with the profile's decrypted API key attached as `Authorization: Bearer …`."),
                 new Tag()
                     .name(TAG_ADMIN)
-                    .description("Admin-only endpoints. Enforced by the @RequireAdmin annotation + AdminAuthInterceptor: every request must carry a session id for a user with isAdmin=true. Sub-resources: /api/admin/users (CRUD + sessions + password reset), /api/admin/audit (query the audit log), /api/admin/dashboard (aggregates + parallel Honcho fan-out), /api/admin/maintenance (manual purge + status).")
+                    .description("Admin-only endpoints. Enforced by the @RequireAdmin annotation + AdminAuthInterceptor: every request must carry a session id for a user with isAdmin=true. Sub-resources: /api/admin/users (CRUD + sessions + password reset), /api/admin/audit (query the audit log), /api/admin/dashboard (aggregates + parallel Honcho fan-out), /api/admin/maintenance (manual purge + status)."),
+                new Tag()
+                    .name(TAG_SETUP)
+                    .description("First-run configuration. Every endpoint here is reachable only when the database is empty (no users); once any user exists they all return 409. After the first admin is created via /api/setup/first-admin, all subsequent user and config management flows through the /api/admin/* surface.")
             ))
             .components(new Components());
     }
