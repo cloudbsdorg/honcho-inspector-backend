@@ -99,6 +99,107 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
             </plugin>
+            <!--
+                 Surefire: activate the `test` Spring profile for every
+                 test run. logback-spring.xml uses <springProfile name="test">
+                 to drop the FILE_JSONL RollingFileAppender (which would
+                 otherwise fail to open /var/log/honcho-inspector/... when
+                 the test JVM is running as an unprivileged user and that
+                 directory is owned by the service user — see
+                 logback-spring.xml for the full rationale).
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>create-test-logs-dir</id>
+                        <phase>process-test-resources</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <target>
+                                <mkdir dir="${project.build.directory}/test-logs"/>
+                            </target>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <!--
+                        -DHONCHO_LOG_DIR=${project.build.directory}/test-logs makes
+                        the FILE_JSONL RollingFileAppender writable under the test
+                        user's account. The default path /var/log/honcho-inspector
+                        is owned by the service user (www-data / www / _www), so
+                        the test JVM (running as the operator) cannot open the
+                        file. Logback marks the appender as in error, and Spring
+                        Boot escalates the failure to a fatal
+                        ApplicationContextException at context-load time, masking
+                        every real test failure as the "ApplicationContext failure
+                        threshold (1) exceeded" cascade.
+
+                        The surefire <argLine> form is used (in addition to
+                        <systemPropertyVariables>) because some forked test JVM
+                        startup paths read the system property before the
+                        <systemPropertyVariables> map is applied. The
+                        maven-antrun-plugin (above) creates the directory
+                        before Surefire runs.
+
+                        We deliberately do NOT activate a Spring "test" profile
+                        here: the FILE_JSONL appender is still useful under
+                        tests (the per-class logging tests set their own
+                        HONCHO_CONFIG_DIR and assert the file shape), and the
+                        writable target/test-logs path lets the default
+                        logback-spring.xml just work without any profile
+                        gating. See logback-spring.xml for the matching
+                        LOG_DIR resolution.
+
+                        Two <execution> blocks because LogRotationTest's
+                        "heavy reload" re-parses logback-spring.xml with a
+                        bare JoranConfigurator, which leaves the shared
+                        LoggerContext in a state that the next Spring
+                        context cannot cleanly re-initialize. Running
+                        LogRotationTest in its own forked JVM keeps the
+                        side effect isolated.
+                    -->
+                    <argLine>-DHONCHO_LOG_DIR=${project.build.directory}/test-logs</argLine>
+                    <systemPropertyVariables>
+                        <HONCHO_LOG_DIR>${project.build.directory}/test-logs</HONCHO_LOG_DIR>
+                    </systemPropertyVariables>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>default-test</id>
+                        <phase>test</phase>
+                        <goals>
+                            <goal>test</goal>
+                        </goals>
+                        <configuration>
+                            <excludes>
+                                <exclude>com.revytechinc.honchoinspector.logging.LogRotationTest</exclude>
+                            </excludes>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>log-rotation-test</id>
+                        <phase>test</phase>
+                        <goals>
+                            <goal>test</goal>
+                        </goals>
+                        <configuration>
+                            <includes>
+                                <include>com.revytechinc.honchoinspector.logging.LogRotationTest</include>
+                            </includes>
+                            <forkCount>1</forkCount>
+                            <reuseForks>true</reuseForks>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
 

@@ -28,24 +28,24 @@ class SetupControllerTest extends IntegrationTestBase {
     }
 
     @Test
-    @DisplayName("/api/health on empty DB returns first_run: true and needs_register: true")
+    @DisplayName("/api/health on empty DB returns firstRun: true and needsRegister: true")
     void health_firstRun() throws Exception {
         mvc.perform(get("/api/health"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.ok").value(true))
-            .andExpect(jsonPath("$.first_run").value(true))
-            .andExpect(jsonPath("$.needs_register").value(true));
+            .andExpect(jsonPath("$.firstRun").value(true))
+            .andExpect(jsonPath("$.needsRegister").value(true));
     }
 
     @Test
-    @DisplayName("/api/health after first user returns first_run: false and needs_register: false")
+    @DisplayName("/api/health after first user returns firstRun: false and needsRegister: false")
     void health_afterFirstUser() throws Exception {
         createUserDirect("alice", "alicepw1234", true);
         mvc.perform(get("/api/health"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.ok").value(true))
-            .andExpect(jsonPath("$.first_run").value(false))
-            .andExpect(jsonPath("$.needs_register").value(false));
+            .andExpect(jsonPath("$.firstRun").value(false))
+            .andExpect(jsonPath("$.needsRegister").value(false));
     }
 
     @Test

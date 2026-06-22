@@ -41,22 +41,36 @@ import static org.assertj.core.api.Assertions.assertThat;
 class LogRotationTest {
 
     private static final Logger LOG = LoggerFactory.getLogger(LogRotationTest.class);
-    private static final Path CONFIG_DIR =
+    private static final Path LOG_DIR =
         Path.of(System.getProperty("java.io.tmpdir"), "honcho-test-log-rotation");
-    private static final Path LOGS_DIR = CONFIG_DIR.resolve("logs");
+
+    // Captured in @BeforeAll, restored in @AfterAll so subsequent tests
+    // in the same JVM that re-load a Spring context still see a writable
+    // HONCHO_LOG_DIR. Without the restore, the next test's Spring context
+    // would try to open /var/log/honcho-inspector/honcho-inspector.jsonl
+    // (the production default), which the test user cannot write, and
+    // logback would escalate the failure to a fatal context-load error
+    // — masking the actual test outcome as the "ApplicationContext
+    // failure threshold (1) exceeded" cascade.
+    private static String originalLogDir;
+    private static String originalMaxFileSize;
+    private static String originalTotalSizeCap;
 
     @BeforeAll
     static void setup() throws IOException {
-        // Logback's logback-spring.xml resolves ${HONCHO_CONFIG_DIR},
+        // Logback's logback-spring.xml resolves ${HONCHO_LOG_DIR},
         // ${HONCHO_LOG_MAX_FILE_SIZE}, and ${HONCHO_LOG_TOTAL_SIZE_CAP}
         // against System properties, not the Spring Environment. Spring
         // Boot's LogbackLoggingSystem is a JVM-wide singleton; force-reload
         // the LoggerContext so the new values take effect.
-        System.setProperty("HONCHO_CONFIG_DIR", CONFIG_DIR.toString());
+        originalLogDir = System.getProperty("HONCHO_LOG_DIR");
+        originalMaxFileSize = System.getProperty("HONCHO_LOG_MAX_FILE_SIZE");
+        originalTotalSizeCap = System.getProperty("HONCHO_LOG_TOTAL_SIZE_CAP");
+        System.setProperty("HONCHO_LOG_DIR", LOG_DIR.toString());
         System.setProperty("HONCHO_LOG_MAX_FILE_SIZE", "1KB");
         System.setProperty("HONCHO_LOG_TOTAL_SIZE_CAP", "100KB");
-        if (Files.exists(LOGS_DIR)) {
-            try (Stream<Path> walk = Files.walk(LOGS_DIR)) {
+        if (Files.exists(LOG_DIR)) {
+            try (Stream<Path> walk = Files.walk(LOG_DIR)) {
                 walk.sorted(Comparator.reverseOrder())
                     .forEach(p -> {
                         try {
@@ -67,17 +81,38 @@ class LogRotationTest {
                     });
             }
         }
-        LogbackTestSupport.prepareLogsDir(CONFIG_DIR);
-        LogbackTestSupport.reloadConfig();
+        LogbackTestSupport.prepareLogDir(LOG_DIR);
+        // Heavy reload: HONCHO_LOG_MAX_FILE_SIZE + HONCHO_LOG_TOTAL_SIZE_CAP
+        // are read at RollingFileAppender construction time, so the
+        // lightweight appender re-point in reloadConfig() is not enough.
+        // The XML re-parse also loses <springProfile> support, but this
+        // test does not depend on it and runs without a Spring profile set.
+        LogbackTestSupport.reloadConfigWithXmlReparse();
     }
 
     @AfterAll
     static void cleanup() throws IOException {
-        System.clearProperty("HONCHO_CONFIG_DIR");
-        System.clearProperty("HONCHO_LOG_MAX_FILE_SIZE");
-        System.clearProperty("HONCHO_LOG_TOTAL_SIZE_CAP");
-        if (Files.exists(CONFIG_DIR)) {
-            try (Stream<Path> walk = Files.walk(CONFIG_DIR)) {
+        // Restore the original system properties so subsequent tests in
+        // the same JVM (e.g. a later @SpringBootTest loading a fresh
+        // context) see a writable HONCHO_LOG_DIR. See the field-level
+        // comment for the full rationale.
+        if (originalLogDir != null) {
+            System.setProperty("HONCHO_LOG_DIR", originalLogDir);
+        } else {
+            System.clearProperty("HONCHO_LOG_DIR");
+        }
+        if (originalMaxFileSize != null) {
+            System.setProperty("HONCHO_LOG_MAX_FILE_SIZE", originalMaxFileSize);
+        } else {
+            System.clearProperty("HONCHO_LOG_MAX_FILE_SIZE");
+        }
+        if (originalTotalSizeCap != null) {
+            System.setProperty("HONCHO_LOG_TOTAL_SIZE_CAP", originalTotalSizeCap);
+        } else {
+            System.clearProperty("HONCHO_LOG_TOTAL_SIZE_CAP");
+        }
+        if (Files.exists(LOG_DIR)) {
+            try (Stream<Path> walk = Files.walk(LOG_DIR)) {
                 walk.sorted(Comparator.reverseOrder())
                     .forEach(p -> {
                         try {
@@ -96,15 +131,15 @@ class LogRotationTest {
             LOG.info("rotation-marker-{}", i);
         }
 
-        assertThat(LOGS_DIR).exists();
+        assertThat(LOG_DIR).exists();
 
         long jsonlGzCount;
-        try (Stream<Path> files = Files.list(LOGS_DIR)) {
+        try (Stream<Path> files = Files.list(LOG_DIR)) {
             jsonlGzCount = files.filter(p -> p.getFileName().toString().endsWith(".jsonl.gz")).count();
         }
 
         long totalSizeBytes;
-        try (Stream<Path> files = Files.list(LOGS_DIR)) {
+        try (Stream<Path> files = Files.list(LOG_DIR)) {
             totalSizeBytes = files.filter(Files::isRegularFile)
                 .mapToLong(p -> {
                     try {
@@ -126,7 +161,7 @@ class LogRotationTest {
             .as("total bytes on disk must stay within totalSizeCap=100KB (pruning is working)")
             .isLessThanOrEqualTo(150 * 1024L);
 
-        try (Stream<Path> files = Files.list(LOGS_DIR)) {
+        try (Stream<Path> files = Files.list(LOG_DIR)) {
             files.filter(p -> p.getFileName().toString().contains(".jsonl"))
                 .filter(p -> !p.getFileName().toString().equals("honcho-inspector.jsonl"))
                 .forEach(p -> assertThat(p.getFileName().toString())
