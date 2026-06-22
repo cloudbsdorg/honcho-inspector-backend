@@ -37,6 +37,7 @@ Environment=HONCHO_CONFIG_DIR=/etc/honcho-inspector
 
 ExecStart=/usr/bin/java \
     -Xms64m -Xmx256m \
+    -Dserver.address=127.0.0.1 \
     -Dhoncho.config.dir=/etc/honcho-inspector \
     -Dlogging.file.name=/var/log/honcho-inspector/honcho-inspector-backend.log \
     -jar /usr/local/lib/honcho-inspector/honcho-inspector-backend.jar
