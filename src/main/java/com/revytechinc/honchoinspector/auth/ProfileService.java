@@ -61,6 +61,18 @@ public class ProfileService {
         return Optional.of(new ProfileWithKey(p, crypto.decrypt(p.apiKeyEncrypted())));
     }
 
+    /**
+     * Admin-scoped lookup: returns the profile with its decrypted API key
+     * WITHOUT an ownership check. The caller MUST be an authenticated
+     * admin (verified by {@link AdminAuthInterceptor}). Used by the
+     * dashboard fan-out.
+     */
+    public Optional<ProfileWithKey> getWithKeyForAdmin(String profileId) {
+        var p = profiles.findById(profileId);
+        if (p == null) return Optional.empty();
+        return Optional.of(new ProfileWithKey(p, crypto.decrypt(p.apiKeyEncrypted())));
+    }
+
     public Optional<Profile> update(String userId, String profileId,
                                     String label, String apiKey,
                                     String baseUrl, String workspaceId, String honchoUserName) {
