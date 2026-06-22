@@ -45,7 +45,7 @@ import static org.mockito.Mockito.when;
 class MiscProvidersV3UnitTest {
 
     @Test
-    void workspaceProvider_advertisesGetOnWorkspacesEndpoint() {
+    void workspaceProvider_advertisesGetOnQueueStatusEndpoint() {
         RestClient.Builder builder = mock(RestClient.Builder.class);
         when(builder.build()).thenReturn(mock(RestClient.class));
         WorkspaceProviderV3 provider = new WorkspaceProviderV3(builder);
@@ -57,7 +57,8 @@ class MiscProvidersV3UnitTest {
             .as("WorkspaceProviderV3 is v3-only")
             .isEqualTo(Set.of(HonchoApiVersion.V3));
         assertThat(provider.pathTemplate(HonchoOperation.GET_WORKSPACE_INFO))
-            .isEqualTo("workspaces/{ws}");
+            .as("Honcho v3 has no GET /workspaces/{id}; the probe uses /queue/status")
+            .isEqualTo("workspaces/{ws}/queue/status");
         assertThat(provider.httpMethod(HonchoOperation.GET_WORKSPACE_INFO))
             .isEqualTo(HttpMethod.GET);
     }
@@ -75,7 +76,7 @@ class MiscProvidersV3UnitTest {
             .as("QueueStatusProviderV3 is v3-only")
             .isEqualTo(Set.of(HonchoApiVersion.V3));
         assertThat(provider.pathTemplate(HonchoOperation.GET_QUEUE_STATUS))
-            .isEqualTo("workspaces/{ws}/queue-status");
+            .isEqualTo("workspaces/{ws}/queue/status");
         assertThat(provider.httpMethod(HonchoOperation.GET_QUEUE_STATUS))
             .isEqualTo(HttpMethod.GET);
     }

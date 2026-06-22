@@ -108,21 +108,22 @@ class LiveHonchoProxyIT {
     // ------------------------------------------------------------------
 
     @Test
-    @DisplayName("GET /v3/workspaces/{ws} → 200 and body.workspace_id matches")
-    void getWorkspace_returns200WithWorkspaceId() throws Exception {
-        HttpResponse<String> resp = send("GET", "/v3/workspaces/" + workspaceId, null);
+    @DisplayName("GET /v3/workspaces/{ws}/queue/status → 200 and body is a queue snapshot")
+    void getWorkspace_returns200WithQueueSnapshot() throws Exception {
+        // Honcho v3 does not expose a GET /v3/workspaces/{id} endpoint (the path
+        // only accepts PUT and DELETE). The WorkspaceProviderV3 connectivity
+        // probe therefore hits the queue-status endpoint, which is GET,
+        // requires no body, and returns real workspace-scoped data.
+        HttpResponse<String> resp = send("GET", "/v3/workspaces/" + workspaceId + "/queue/status", null);
 
         assertThat(resp.statusCode())
-            .as("GET /v3/workspaces/{ws} must return 200 (Honcho reachable + key valid)")
+            .as("GET /v3/workspaces/{ws}/queue/status must return 200 (Honcho reachable + key valid)")
             .isEqualTo(200);
 
         JsonNode body = JSON.readTree(resp.body());
-        assertThat(body.has("workspace_id"))
-            .as("workspace info body must include a workspace_id field")
+        assertThat(body.has("total_work_units"))
+            .as("queue snapshot body must include a total_work_units field")
             .isTrue();
-        assertThat(body.path("workspace_id").asText())
-            .as("body.workspace_id must equal the workspace we requested")
-            .isEqualTo(workspaceId);
     }
 
     @Test

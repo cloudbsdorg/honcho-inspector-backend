@@ -25,11 +25,17 @@ import java.util.Set;
  * related path templates, auth handling, and error mapping in a single
  * class. See {@link HonchoProvider} for the rationale.
  *
- * <h2>Notable v2 → v3 contract change</h2>
- * {@link HonchoOperation#LIST_SESSIONS} is <strong>POST</strong> in v3 (it
- * was GET in v2). Honcho v3 uses POST for list endpoints so a richer
- * filter / pagination body can be sent. The {@link HonchoOperation} javadoc
- * documents the same change for the peer list endpoint.
+ * <h2>Notable v2 → v3 contract changes</h2>
+ * <ul>
+ *   <li>{@link HonchoOperation#LIST_SESSIONS} is <strong>POST</strong> in
+ *   v3 (it was GET in v2) and uses a separate
+ *   {@code /workspaces/{ws}/sessions/list} path — the bare
+ *   {@code /workspaces/{ws}/sessions} endpoint only accepts
+ *   {@code CREATE_SESSION} (POST with a body). Honcho v3 uses POST for
+ *   list endpoints so a richer filter / pagination body can be sent.
+ *   The {@link HonchoOperation} javadoc documents the same change for
+ *   the peer list endpoint.</li>
+ * </ul>
  */
 @Component
 public class SessionsProviderV3 implements HonchoProvider {
@@ -61,7 +67,8 @@ public class SessionsProviderV3 implements HonchoProvider {
     @Override
     public String pathTemplate(HonchoOperation op) {
         return switch (op) {
-            case LIST_SESSIONS, CREATE_SESSION -> "workspaces/{ws}/sessions";
+            case LIST_SESSIONS -> "workspaces/{ws}/sessions/list";
+            case CREATE_SESSION -> "workspaces/{ws}/sessions";
             case GET_SESSION, DELETE_SESSION -> "workspaces/{ws}/sessions/{sessionId}";
             case GET_SESSION_CONTEXT -> "workspaces/{ws}/sessions/{sessionId}/context";
             case GET_SESSION_SUMMARIES -> "workspaces/{ws}/sessions/{sessionId}/summaries";

@@ -514,10 +514,10 @@ public class HonchoController {
     @GetMapping("/workspace/info")
     @Operation(
         summary = "Get the active workspace + queue snapshot",
-        description = "Convenience composite: returns the workspace record and the current queue status in one call. Internally issues two Honcho requests (`GET /v3/workspaces/{id}` and `GET /v3/workspaces/{id}/queue/status`); if either fails the whole call fails."
+        description = "Convenience composite: returns the workspace record and the current queue status in one call. Honcho v3 does not expose a `GET /v3/workspaces/{id}` endpoint, so the `workspace` field is synthesized from the profile's `workspaceId` and the `queue` field is the live response from `GET /v3/workspaces/{id}/queue/status`."
     )
     @ApiResponses({
-        @ApiResponse(responseCode = "200", description = "Composite object `{workspace, queue}`"),
+        @ApiResponse(responseCode = "200", description = "Composite object `{workspace: {id}, queue}`"),
         @ApiResponse(responseCode = "400", description = "Missing `X-Honcho-Profile-Id` header",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
         @ApiResponse(responseCode = "404", description = "Profile not found / not owned by current user",
@@ -525,9 +525,8 @@ public class HonchoController {
     })
     public ResponseEntity<?> workspaceInfo(HttpServletRequest req) {
         return call(req, (ctx, wsId) -> {
-            var ws = honcho.getWorkspaceInfo(ctx);
             var queue = honcho.getQueueStatus(ctx);
-            return Map.of("workspace", ws, "queue", queue);
+            return Map.of("workspace", Map.of("id", wsId), "queue", queue);
         });
     }
 
