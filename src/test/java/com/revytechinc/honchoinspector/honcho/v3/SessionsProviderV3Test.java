@@ -65,13 +65,14 @@ class SessionsProviderV3Test {
             .as("provider is v3-only")
             .containsExactly(HonchoApiVersion.V3);
         assertThat(provider.pathTemplate(HonchoOperation.LIST_SESSIONS))
-            .isEqualTo("workspaces/{ws}/sessions");
+            .as("v2→v3 contract change: LIST_SESSIONS uses /sessions/list (the bare /sessions path is CREATE-only)")
+            .isEqualTo("workspaces/{ws}/sessions/list");
         assertThat(provider.httpMethod(HonchoOperation.LIST_SESSIONS))
             .isEqualTo(HttpMethod.POST);
         String template = provider.pathTemplate(HonchoOperation.LIST_SESSIONS);
         String substituted = V3ProviderSupport.substitutePath(template, CTX, wsVar("ws-42"));
         String url = V3ProviderSupport.buildUrl(CTX.baseUrl(), CTX.apiVersion().pathPrefix(), substituted, Map.of());
-        assertThat(url).isEqualTo("https://api.honcho.dev/v3/workspaces/ws-42/sessions");
+        assertThat(url).isEqualTo("https://api.honcho.dev/v3/workspaces/ws-42/sessions/list");
     }
 
     @Test

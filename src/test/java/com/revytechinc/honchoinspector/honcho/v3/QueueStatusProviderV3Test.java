@@ -12,9 +12,8 @@ import static org.mockito.Mockito.when;
 
 /**
  * Contract test for {@link QueueStatusProviderV3}: the single-op
- * provider that handles {@code GET /v3/workspaces/{ws}/queue-status}.
- * The v2 legacy path used {@code /queue/status} (with a slash); v3
- * dropped the slash.
+ * provider that handles {@code GET /v3/workspaces/{ws}/queue/status}.
+ * Confirmed against {@code https://honcho.cloudbsd.org/openapi.json}.
  */
 class QueueStatusProviderV3Test {
 
@@ -29,7 +28,7 @@ class QueueStatusProviderV3Test {
         assertThat(provider.supportedVersions())
             .containsExactly(HonchoApiVersion.V3);
         assertThat(provider.pathTemplate(HonchoOperation.GET_QUEUE_STATUS))
-            .isEqualTo("workspaces/{ws}/queue-status");
+            .isEqualTo("workspaces/{ws}/queue/status");
         assertThat(provider.httpMethod(HonchoOperation.GET_QUEUE_STATUS))
             .isEqualTo(HttpMethod.GET);
     }

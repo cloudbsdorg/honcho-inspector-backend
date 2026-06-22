@@ -29,6 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -522,10 +523,11 @@ class HonchoControllerTest {
     }
 
     @Test
-    void workspaceInfo_callsBothGetWorkspaceInfoAndGetQueueStatus() throws Exception {
-        Object workspaceMarker = Map.of("id", "ws-1");
+    void workspaceInfo_synthesizesWorkspaceFromContextAndReturnsQueueSnapshot() throws Exception {
+        // Honcho v3 has no GET /v3/workspaces/{id} endpoint, so the controller
+        // synthesizes the workspace field from the profile's workspaceId and
+        // delegates the queue snapshot to the queue-status endpoint.
         Object queueMarker = Map.of("pending", 7);
-        when(honchoProxy.getWorkspaceInfo(any())).thenReturn(workspaceMarker);
         when(honchoProxy.getQueueStatus(any())).thenReturn(queueMarker);
 
         mvc.perform(withHeaders(get("/api/workspace/info")))
@@ -533,7 +535,7 @@ class HonchoControllerTest {
             .andExpect(jsonPath("$.workspace.id").value("ws-1"))
             .andExpect(jsonPath("$.queue.pending").value(7));
 
-        verify(honchoProxy).getWorkspaceInfo(any());
+        verify(honchoProxy, never()).getWorkspaceInfo(any());
         verify(honchoProxy).getQueueStatus(any());
     }
 

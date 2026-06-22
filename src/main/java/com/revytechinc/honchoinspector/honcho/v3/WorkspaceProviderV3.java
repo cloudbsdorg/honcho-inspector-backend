@@ -18,12 +18,18 @@ import java.util.Set;
 /**
  * V3 provider for the single workspace-info operation.
  *
- * <p>Maps {@link HonchoOperation#GET_WORKSPACE_INFO} to a
- * {@code GET /v3/workspaces/{ws}} call against the profile's upstream
- * Honcho instance. Kept as a single-op provider because the upstream
- * endpoint is too small to group naturally with the peer or session
- * resource clusters — splitting it that way would force a "Workspace"
- * provider with just one trivial call.
+ * <p>Honcho v3 does not expose a {@code GET /v3/workspaces/{id}} endpoint
+ * (the path only accepts {@code PUT} and {@code DELETE}). As a
+ * connectivity probe we instead hit the queue-status endpoint, which
+ * is GET, requires no body, and returns real workspace-scoped data.
+ * The {@code HonchoController.workspaceInfo} composite endpoint
+ * synthesizes the {@code workspace} field from the context so callers
+ * see the workspace ID alongside the live queue snapshot.
+ *
+ * <p>Kept as a single-op provider because the upstream endpoint is too
+ * small to group naturally with the peer or session resource clusters —
+ * splitting it that way would force a "Workspace" provider with just
+ * one trivial call.
  *
  * <p>All other Honcho provider conventions (auth headers, error
  * translation, URL building) are delegated to
@@ -50,7 +56,7 @@ public class WorkspaceProviderV3 implements HonchoProvider {
 
     @Override
     public String pathTemplate(HonchoOperation op) {
-        return "workspaces/{ws}";
+        return "workspaces/{ws}/queue/status";
     }
 
     @Override

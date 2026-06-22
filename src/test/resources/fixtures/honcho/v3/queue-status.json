@@ -2,7 +2,7 @@
   "_meta": {
     "captured_at": "2026-06-18T07:14:43Z",
     "honcho_version": "3.0.7",
-    "endpoint": "GET /v3/workspaces/{ws}/queue-status",
+    "endpoint": "GET /v3/workspaces/{ws}/queue/status",
     "method": "GET",
     "synthetic": true,
     "synthetic_reason": "real call failed"

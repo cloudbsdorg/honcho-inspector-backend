@@ -37,7 +37,7 @@ class SessionsProviderV3UnitTest {
     }
 
     @Test
-    void listSessions_advertisesV3PostOnSessionsEndpoint() {
+    void listSessions_advertisesV3PostOnSessionsListEndpoint() {
         SessionsProviderV3 provider = newProvider();
 
         assertThat(provider.operations()).contains(HonchoOperation.LIST_SESSIONS);
@@ -45,7 +45,8 @@ class SessionsProviderV3UnitTest {
             .as("SessionsProviderV3 is v3-only")
             .isEqualTo(Set.of(HonchoApiVersion.V3));
         assertThat(provider.pathTemplate(HonchoOperation.LIST_SESSIONS))
-            .isEqualTo("workspaces/{ws}/sessions");
+            .as("v2→v3 contract change: LIST_SESSIONS uses /sessions/list (the bare /sessions path is CREATE-only)")
+            .isEqualTo("workspaces/{ws}/sessions/list");
         assertThat(provider.httpMethod(HonchoOperation.LIST_SESSIONS))
             .as("v2→v3 contract change: LIST_SESSIONS is now POST")
             .isEqualTo(HttpMethod.POST);

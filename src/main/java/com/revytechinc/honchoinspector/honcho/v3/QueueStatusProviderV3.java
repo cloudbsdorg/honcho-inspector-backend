@@ -19,12 +19,12 @@ import java.util.Set;
  * V3 provider for the workspace queue-status operation.
  *
  * <p>Maps {@link HonchoOperation#GET_QUEUE_STATUS} to a
- * {@code GET /v3/workspaces/{ws}/queue-status} call. Returns the
+ * {@code GET /v3/workspaces/{ws}/queue/status} call. Returns the
  * work-unit counts ({@code total}, {@code completed},
  * {@code in-progress}, {@code pending}) for the workspace's
- * background derivation queue. The HonchoController /api/queue-status
- * legacy endpoint used a slightly different path
- * ({@code /queue/status} with a slash); v3 dropped the slash.
+ * background derivation queue. The upstream Honcho v3 API uses the
+ * {@code /queue/status} path (with a slash), confirmed against
+ * {@code https://honcho.cloudbsd.org/openapi.json}.
  */
 @Component
 public class QueueStatusProviderV3 implements HonchoProvider {
@@ -47,7 +47,7 @@ public class QueueStatusProviderV3 implements HonchoProvider {
 
     @Override
     public String pathTemplate(HonchoOperation op) {
-        return "workspaces/{ws}/queue-status";
+        return "workspaces/{ws}/queue/status";
     }
 
     @Override

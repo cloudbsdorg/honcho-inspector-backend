@@ -155,14 +155,15 @@ class HonchoWorkflowIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    @DisplayName("GET /api/workspace/info returns a composite {workspace, queue} response built from two fixtures")
+    @DisplayName("GET /api/workspace/info returns a composite {workspace, queue} response (workspace synthesized from profile, queue from fixture)")
     void getWorkspaceInfoReturnsFixture() throws Exception {
         mvc.perform(withAuth(get("/api/workspace/info"), sessionId, profileId))
             .andExpect(status().isOk())
-            // workspaceInfo composes getWorkspaceInfo + getQueueStatus; both fixtures' data
-            // payloads appear under the workspace + queue keys.
-            .andExpect(jsonPath("$.workspace.id").value("fixture-ws"))
-            .andExpect(jsonPath("$.workspace.metadata.source").value("fixture-capture"))
+            // Honcho v3 has no GET /v3/workspaces/{id} endpoint, so the workspace
+            // field is synthesized from the profile's workspaceId ("ws-1" — the
+            // test profile's workspace per IntegrationTestBase.createProfileFor)
+            // and the queue field is the live queue-status fixture.
+            .andExpect(jsonPath("$.workspace.id").value("ws-1"))
             .andExpect(jsonPath("$.queue.total_work_units").value(0))
             .andExpect(jsonPath("$.queue.completed_work_units").value(0))
             .andExpect(jsonPath("$.queue.pending_work_units").value(0));

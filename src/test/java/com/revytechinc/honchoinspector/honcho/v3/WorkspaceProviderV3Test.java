@@ -12,7 +12,12 @@ import static org.mockito.Mockito.when;
 
 /**
  * Contract test for {@link WorkspaceProviderV3}: the single-op provider
- * that handles {@code GET /v3/workspaces/{ws}}.
+ * that handles {@code GET_WORKSPACE_INFO} as a connectivity probe.
+ *
+ * <p>Honcho v3 does not expose a {@code GET /v3/workspaces/{id}} endpoint
+ * (the path only accepts {@code PUT} and {@code DELETE}). This provider
+ * therefore proxies the probe through the queue-status endpoint, which
+ * is GET, requires no body, and returns real workspace-scoped data.
  *
  * <p>Asserts the four metadata points the registry relies on:
  * the {@code operations()} set, {@code supportedVersions()}, the
@@ -31,7 +36,7 @@ class WorkspaceProviderV3Test {
         assertThat(provider.supportedVersions())
             .containsExactly(HonchoApiVersion.V3);
         assertThat(provider.pathTemplate(HonchoOperation.GET_WORKSPACE_INFO))
-            .isEqualTo("workspaces/{ws}");
+            .isEqualTo("workspaces/{ws}/queue/status");
         assertThat(provider.httpMethod(HonchoOperation.GET_WORKSPACE_INFO))
             .isEqualTo(HttpMethod.GET);
     }
