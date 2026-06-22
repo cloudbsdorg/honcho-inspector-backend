@@ -1,26 +1,2 @@
-target/
-.idea/
-*.iml
-.DS_Store
-.vscode/
-.classpath
-.project
-.settings/
-build/
-out/
-*.log
-HELP.md
-
-# SQLite databases (created by spring-boot:run)
-*.db
-*.db-journal
-
-# Per-checkout runtime state for the shared IntelliJ dev run config
-# (HONCHO_CONFIG_DIR=.run-data in .run/DashboardApplication (dev).run.xml).
-# Wipable via `git clean -xdf`; never shared across team members.
-.run-data/
-
-# Sisyphus orchestrator working state (keep env.sh, evidence/, notepads/ in repo)
-logs/
-.sisyphus/boulder.json
-.sisyphus/run-continuation/
+.playwright-mcp/
+login-page.png
