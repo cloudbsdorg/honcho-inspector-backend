@@ -260,6 +260,44 @@ public class ProfileController {
         }
     }
 
+    @PostMapping("/validate")
+    @Operation(
+        summary = "Validate a not-yet-saved profile's Honcho connectivity",
+        description = "Accepts the same shape as POST /api/profiles (label, apiKey, baseUrl, workspaceId, honchoUserName, apiVersion) and immediately calls the upstream Honcho to verify the credentials are good. Does NOT persist anything. Used by the UI's \"Validate\" button so the user can confirm a profile works before saving."
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Connectivity check result",
+            content = @Content(schema = @Schema(example = "{\"ok\":true,\"message\":\"reachable\"}"))),
+        @ApiResponse(responseCode = "400", description = "Validation error (missing required field)",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    public ResponseEntity<?> validate(@RequestBody ProfileCreateDto body) {
+        // No persistence — this is a preflight check. We don't even need
+        // to look up the current user, since the API key in the body is
+        // a plaintext the user just typed; it never touches the DB.
+        if (body == null || body.apiKey() == null || body.apiKey().isBlank()
+            || body.baseUrl() == null || body.baseUrl().isBlank()
+            || body.workspaceId() == null || body.workspaceId().isBlank()
+            || body.honchoUserName() == null || body.honchoUserName().isBlank()) {
+            return ResponseEntity.badRequest().body(new ErrorResponse(
+                "apiKey, baseUrl, workspaceId, and honchoUserName are all required to validate"
+            ));
+        }
+        var ctx = new HonchoContext(
+            body.apiKey(),
+            body.baseUrl(),
+            body.workspaceId(),
+            body.honchoUserName()
+        );
+        try {
+            honcho.testConnection(ctx);
+            return ResponseEntity.ok(Map.of("ok", true, "message", "reachable"));
+        } catch (HonchoCallException e) {
+            return ResponseEntity.status(e.status() >= 500 ? 502 : e.status())
+                .body(Map.of("ok", false, "error", e.getMessage()));
+        }
+    }
+
     private AuthService.CurrentUser currentUser(HttpServletRequest req) {
         return (AuthService.CurrentUser) req.getAttribute(SessionAuthFilter.CURRENT_USER_ATTR);
     }
