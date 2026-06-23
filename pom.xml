@@ -70,6 +70,35 @@
             <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
             <version>2.6.0</version>
         </dependency>
+        <!--
+             Actuator exposes per-endpoint metrics (request count,
+             average latency, status code distribution) over HTTP.
+             The operator-facing /actuator/metrics/http.server.requests
+             endpoint gives stats grouped by URI and HTTP method, which
+             is what the README's "frequency and average time per
+             endpoint" requirement asks for — without hand-rolling a
+             stats layer in the UI dev server's proxy. Default Spring
+             Boot Actuator behavior is fine; we keep the security
+             profile tight (only /health, /info, /metrics exposed by
+             default; everything else requires explicit opt-in) and
+             the loopback bind in the systemd unit means the metrics
+             surface is only reachable from the same host.
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <!--
+             Prometheus scrape format. The base Actuator dependency
+             gives JSON metrics; this one adds the /actuator/prometheus
+             text format that Prometheus servers (or ad-hoc ngrep
+             pipelines) can scrape. ~50KB jar, no runtime cost
+             beyond the endpoint.
+        -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
         <dependency>
             <groupId>net.logstash.logback</groupId>
             <artifactId>logstash-logback-encoder</artifactId>

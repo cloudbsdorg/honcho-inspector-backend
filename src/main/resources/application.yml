@@ -72,3 +72,38 @@ logging:
   level:
     com.revytechinc.honchoinspector: INFO
     org.springframework.web: INFO
+
+# Actuator. The /actuator/metrics/http.server.requests endpoint
+# gives per-URI request count + latency histograms — the operator's
+# "frequency and average time per endpoint" stat. We expose only the
+# minimum needed for that:
+#   - health: liveness/readiness for systemd + future load balancers
+#   - info: build/git info
+#   - metrics: the per-endpoint frequency + latency stats
+#   - prometheus: scrape-friendly format (handy for monitoring)
+# Everything else (env, beans, mappings, threaddump, heapdump, etc.)
+# is intentionally NOT exposed — they leak secrets and config.
+# The backend binds to 127.0.0.1 (see systemd unit), so the metrics
+# surface is only reachable from the same host, never the public
+# network. The /actuator/metrics endpoint can be hit directly by the
+# operator for ad-hoc checks, or scraped by Prometheus on the same
+# host.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: when_authorized
+    metrics:
+      tags:
+        application: ${spring.application.name}
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+      percentiles:
+        http.server.requests: 0.5, 0.95, 0.99
+      slo:
+        http.server.requests: 50ms, 100ms, 250ms, 500ms, 1s, 2s
