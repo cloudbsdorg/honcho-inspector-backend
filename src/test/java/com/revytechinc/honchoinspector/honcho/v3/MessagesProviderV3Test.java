@@ -30,6 +30,7 @@ import static org.mockito.Mockito.mock;
 class MessagesProviderV3Test {
 
     private static final String MESSAGES_PATH = "workspaces/{ws}/sessions/{sessionId}/messages";
+    private static final String MESSAGES_LIST_PATH = "workspaces/{ws}/sessions/{sessionId}/messages/list";
     private static final String SEARCH_PATH   = "workspaces/{ws}/sessions/{sessionId}/search";
 
     private static MessagesProviderV3 newProvider() {
@@ -37,7 +38,7 @@ class MessagesProviderV3Test {
     }
 
     @Test
-    void listSessionMessagesIsDeclaredGetOnMessagesPath() {
+    void listSessionMessagesIsDeclaredPostOnMessagesListPath() {
         MessagesProviderV3 provider = newProvider();
 
         assertThat(provider.operations())
@@ -48,13 +49,16 @@ class MessagesProviderV3Test {
             .as("MessagesProviderV3 is a v3-only provider")
             .containsExactly(HonchoApiVersion.V3);
 
+        // v3 has no GET endpoint for session messages — the only method
+        // registered on /messages is POST (batch-create). Listing goes
+        // through /messages/list with a {filters:{}} body.
         assertThat(provider.pathTemplate(HonchoOperation.LIST_SESSION_MESSAGES))
-            .as("LIST_SESSION_MESSAGES path is the v3 session-messages collection")
-            .isEqualTo(MESSAGES_PATH);
+            .as("LIST_SESSION_MESSAGES path is the v3 messages-list sub-path")
+            .isEqualTo(MESSAGES_LIST_PATH);
 
         assertThat(provider.httpMethod(HonchoOperation.LIST_SESSION_MESSAGES))
-            .as("LIST_SESSION_MESSAGES stayed a GET in v3 (unlike other list endpoints)")
-            .isEqualTo(HttpMethod.GET);
+            .as("LIST_SESSION_MESSAGES is a POST in v3 (no GET allowed on /messages)")
+            .isEqualTo(HttpMethod.POST);
     }
 
     @Test

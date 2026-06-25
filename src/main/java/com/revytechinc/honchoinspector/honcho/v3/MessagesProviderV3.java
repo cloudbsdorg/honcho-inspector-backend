@@ -24,7 +24,7 @@ import java.util.Set;
  * participants of a Honcho session exchange:
  * <ul>
  *   <li>{@link HonchoOperation#LIST_SESSION_MESSAGES} — paginated history
- *       read with query parameters.</li>
+ *       read with a POST+filter body.</li>
  *   <li>{@link HonchoOperation#ADD_MESSAGE} — append one or more messages
  *       to a session.</li>
  *   <li>{@link HonchoOperation#SEARCH_SESSION_MESSAGES} — semantic search
@@ -38,15 +38,16 @@ import java.util.Set;
  * cohesion in a single class — splitting one-op-per-file would scatter
  * the dispatch across three nearly-identical files with no reuse.
  *
- * <h2>v2 → v3 contract change</h2>
- * The legacy {@code HonchoController} exposed these as
- * {@code GET /api/sessions/{id}/messages} (list) and
- * {@code POST /api/sessions/{id}/messages} (add). Honcho v3 keeps both
- * paths and adds {@code POST .../search} (workspace-relative search was
- * the only NEW path). {@code LIST_SESSION_MESSAGES} stayed a {@code GET}
- * in v3 — unlike the peer / session list endpoints, which flipped to
- * {@code POST .../list}. This provider preserves that distinction on
- * purpose.
+ * <h2>v2 → v3 contract change (LIST_SESSION_MESSAGES)</h2>
+ * The legacy v2 path {@code GET /workspaces/{ws}/sessions/{sessionId}/messages}
+ * returns {@code 405 Method Not Allowed} on v3 with
+ * {@code Allow: POST}. The only method registered on that path is the
+ * batch-create endpoint ({@link HonchoOperation#ADD_MESSAGE}). To list
+ * messages we have to POST to the dedicated
+ * {@code /messages/list} sub-path with a {@code {filters:{}}} body.
+ * This provider now translates {@code LIST_SESSION_MESSAGES} into that
+ * POST and the dispatcher's {@link HonchoOperation#LIST_SESSION_MESSAGES}
+ * contract stays unchanged for upstream callers.
  *
  * <h2>Path templates</h2>
  * Templates are workspace-relative: the dispatcher (built in T15)
@@ -86,7 +87,8 @@ public class MessagesProviderV3 implements HonchoProvider {
     @Override
     public String pathTemplate(HonchoOperation op) {
         return switch (op) {
-            case LIST_SESSION_MESSAGES, ADD_MESSAGE -> "workspaces/{ws}/sessions/{sessionId}/messages";
+            case LIST_SESSION_MESSAGES -> "workspaces/{ws}/sessions/{sessionId}/messages/list";
+            case ADD_MESSAGE -> "workspaces/{ws}/sessions/{sessionId}/messages";
             case SEARCH_SESSION_MESSAGES -> "workspaces/{ws}/sessions/{sessionId}/search";
             default -> throw new UnsupportedOperationException(
                 "MessagesProviderV3 has no path template for " + op);
@@ -96,9 +98,7 @@ public class MessagesProviderV3 implements HonchoProvider {
     @Override
     public HttpMethod httpMethod(HonchoOperation op) {
         return switch (op) {
-            case LIST_SESSION_MESSAGES -> HttpMethod.GET;
-            case ADD_MESSAGE -> HttpMethod.POST;
-            case SEARCH_SESSION_MESSAGES -> HttpMethod.POST;
+            case LIST_SESSION_MESSAGES, ADD_MESSAGE, SEARCH_SESSION_MESSAGES -> HttpMethod.POST;
             default -> throw new UnsupportedOperationException(
                 "MessagesProviderV3 has no HTTP method for " + op);
         };
@@ -113,6 +113,16 @@ public class MessagesProviderV3 implements HonchoProvider {
         Map<String, String> pathVars,
         Map<String, ?> queryParams
     ) throws HonchoCallException {
+        // LIST_SESSION_MESSAGES in v3 has no GET endpoint — translate to
+        // POST /messages/list with an empty filter envelope. Upstream
+        // callers pass a `filters` map as the request body; the v3 API
+        // requires it nested under a `filters` key, so we wrap it here.
+        Object effectiveBody = requestBody;
+        if (op == HonchoOperation.LIST_SESSION_MESSAGES) {
+            Map<String, ?> filterMap = requestBody instanceof Map ? (Map<String, ?>) requestBody : Map.of();
+            effectiveBody = Map.of("filters", filterMap);
+        }
+
         String substituted = V3ProviderSupport.substitutePath(pathTemplate(op), ctx, pathVars);
         String url = V3ProviderSupport.buildUrl(ctx.baseUrl(), ctx.apiVersion().pathPrefix(), substituted, queryParams);
         try {
@@ -121,8 +131,8 @@ public class MessagesProviderV3 implements HonchoProvider {
                 .headers(h -> V3ProviderSupport.applyAuth(h, ctx))
                 .contentType(MediaType.APPLICATION_JSON);
             ResponseEntity<Object> response;
-            if (requestBody != null) {
-                response = spec.body(requestBody).retrieve().toEntity(Object.class);
+            if (effectiveBody != null) {
+                response = spec.body(effectiveBody).retrieve().toEntity(Object.class);
             } else {
                 response = spec.retrieve().toEntity(Object.class);
             }
