@@ -93,7 +93,7 @@ public class HonchoV3Client implements HonchoClient {
 
     @Override
     public Object listPeers(HonchoContext ctx, Map<String, ?> filters) throws HonchoCallException {
-        return call(HonchoOperation.LIST_PEERS, ctx, null, null, filters);
+        return call(HonchoOperation.LIST_PEERS, ctx, filters, null, null);
     }
 
     @Override
@@ -132,12 +132,12 @@ public class HonchoV3Client implements HonchoClient {
 
     @Override
     public Object listPeerConclusions(HonchoContext ctx, String peerId, Map<String, ?> filters) throws HonchoCallException {
-        return call(HonchoOperation.LIST_PEER_CONCLUSIONS, ctx, null, pathVars("peerId", peerId), filters);
+        return call(HonchoOperation.LIST_PEER_CONCLUSIONS, ctx, filters, pathVars("peerId", peerId), null);
     }
 
     @Override
     public Object listPeerSessions(HonchoContext ctx, String peerId, Map<String, ?> filters) throws HonchoCallException {
-        return call(HonchoOperation.LIST_PEER_SESSIONS, ctx, null, pathVars("peerId", peerId), filters);
+        return call(HonchoOperation.LIST_PEER_SESSIONS, ctx, filters, pathVars("peerId", peerId), null);
     }
 
     @Override
@@ -151,7 +151,7 @@ public class HonchoV3Client implements HonchoClient {
 
     @Override
     public Object listSessions(HonchoContext ctx, Map<String, ?> filters) throws HonchoCallException {
-        return call(HonchoOperation.LIST_SESSIONS, ctx, null, null, filters);
+        return call(HonchoOperation.LIST_SESSIONS, ctx, filters, null, null);
     }
 
     @Override
@@ -190,7 +190,7 @@ public class HonchoV3Client implements HonchoClient {
 
     @Override
     public Object listSessionMessages(HonchoContext ctx, String sessionId, Map<String, ?> filters) throws HonchoCallException {
-        return call(HonchoOperation.LIST_SESSION_MESSAGES, ctx, null, pathVars("sessionId", sessionId), filters);
+        return call(HonchoOperation.LIST_SESSION_MESSAGES, ctx, filters, pathVars("sessionId", sessionId), null);
     }
 
     @Override
