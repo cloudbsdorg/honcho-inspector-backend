@@ -95,7 +95,7 @@ class PeersProviderV3Test {
     }
 
     @Test
-    void updatePeerCard_isDeclaredAsPostOnPeerCardEndpoint() {
+    void updatePeerCard_isDeclaredAsPutOnPeerCardEndpoint() {
         PeersProviderV3 provider = newProvider();
 
         assertThat(provider.operations())
@@ -105,7 +105,7 @@ class PeersProviderV3Test {
         assertThat(provider.pathTemplate(HonchoOperation.UPDATE_PEER_CARD))
             .isEqualTo("workspaces/{ws}/peers/{peerId}/card");
         assertThat(provider.httpMethod(HonchoOperation.UPDATE_PEER_CARD))
-            .isEqualTo(HttpMethod.POST);
+            .isEqualTo(HttpMethod.PUT);
         assertThat(urlFor(HonchoOperation.UPDATE_PEER_CARD, PEER_PATH_VARS))
             .as("URL must include both {ws} and {peerId} placeholders")
             .isEqualTo("https://api.honcho.dev/v3/workspaces/ws-42/peers/p-99/card");
