@@ -54,7 +54,7 @@
 #     honcho-inspector-backend:builder-suse
 
 # ====== base + label ==============================================
-FROM docker.io/library/opensuse/leap:16.0
+FROM docker.io/opensuse/leap:16.0
 
 ARG HOST_UID=0
 ARG HOST_GID=0
@@ -110,8 +110,15 @@ RUN set -eux \
 # its runtime deps from rubygems.org. We do this in its own layer
 # so the gem install is cached across Maven dep changes and re-
 # runs of the entrypoint.
+#
+# Leap 16's /etc/gemrc has --format-executable on by default,
+# which renames the installed binary from `fpm` to `fpm.ruby3.4`
+# (a SUSE convention so multiple Ruby versions can co-exist).
+# We pass --no-format-executable to install the binary as plain
+# `fpm`, matching the other distros' fpm invocation in the
+# entrypoint. --bindir /usr/bin puts the binary on PATH.
 RUN set -eux \
-    && gem install --no-document fpm \
+    && gem install --no-document --no-format-executable --bindir /usr/bin fpm \
     && fpm --version
 
 # ====== entrypoint ================================================

@@ -56,7 +56,7 @@
 # the entrypoint can read the host's working copy.
 
 # ====== base + label ==============================================
-FROM docker.io/library/rockylinux:10-minimal
+FROM docker.io/rockylinux/rockylinux:10-minimal
 
 ARG HOST_UID=0
 ARG HOST_GID=0
@@ -108,7 +108,6 @@ RUN set -eux \
         ruby-devel \
         rpm-build \
         rpm-devel \
-        rpmlint \
         libffi-devel \
         openssl-devel \
         zlib-devel \
