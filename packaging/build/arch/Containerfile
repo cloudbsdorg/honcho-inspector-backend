@@ -129,7 +129,7 @@ ENV GEM_HOME=/usr/local \
     BUNDLE_PATH=/usr/local/bundle \
     PATH=/usr/local/bin:/usr/bin:/usr/sbin:/sbin:/bin
 RUN set -eux \
-    && gem install --no-document --no-format-executable fpm \
+    && gem install --no-document --no-format-executable --bindir /usr/bin fpm \
     && fpm --version
 
 # ====== entrypoint ================================================
