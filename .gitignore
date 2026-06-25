@@ -6,3 +6,10 @@ login-page.png
 *.log
 .DS_Store
 /opencode-session.txt
+
+# Debian package build artifacts
+/debian/stage/
+/dist/
+
+# Container build artifacts
+/packaging/container/stage/

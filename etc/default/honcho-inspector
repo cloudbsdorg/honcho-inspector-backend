@@ -1,0 +1,24 @@
+# Honcho Inspector backend environment file.
+#
+# This file is sourced by the launcher (`/usr/local/bin/honcho-inspector`)
+# and by the systemd unit (EnvironmentFile=) to override defaults.
+# Mode is 0640 root:www-data so the service user can read it but other
+# users cannot.
+#
+# The two required values are listed below. Set HONCHO_CRYPTO_KEY to a
+# stable secret; if it changes, every encrypted profile API key in the
+# database becomes unreadable. Generate one with:
+#
+#   openssl rand -base64 32
+#
+# HONCHO_BOOTSTRAP_ADMIN_USERNAME / HONCHO_BOOTSTRAP_ADMIN_PASSWORD are
+# OPTIONAL. Set both on a fresh install to have AdminBootstrap create
+# the first admin on startup; leave blank and use the UI first-run
+# wizard or the emergency CLI instead.
+
+#HONCHO_CRYPTO_KEY=
+#HONCHO_BOOTSTRAP_ADMIN_USERNAME=
+#HONCHO_BOOTSTRAP_ADMIN_PASSWORD=
+#HONCHO_BOOTSTRAP_ADMIN_FIRSTNAME=
+#HONCHO_BOOTSTRAP_ADMIN_LASTNAME=
+#HONCHO_BOOTSTRAP_ADMIN_EMAIL=
