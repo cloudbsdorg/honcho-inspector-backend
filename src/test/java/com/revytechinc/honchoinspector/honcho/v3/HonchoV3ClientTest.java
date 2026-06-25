@@ -130,7 +130,7 @@ class HonchoV3ClientTest {
     // ------------------------------------------------------------------
 
     @Test
-    void listPeers_forwardsFiltersAndNoPathVars() {
+    void listPeers_forwardsFiltersAsBody() {
         CapturingProvider provider = newFixture();
         Map<String, Object> filters = Map.of("limit", 5);
 
@@ -140,8 +140,8 @@ class HonchoV3ClientTest {
         assertThat(provider.lastOp).isEqualTo(HonchoOperation.LIST_PEERS);
         assertThat(provider.lastCtx).isSameAs(CTX);
         assertThat(provider.lastPathVars).isNull();
-        assertThat(provider.lastQueryParams).isSameAs(filters);
-        assertThat(provider.lastBody).isNull();
+        assertThat(provider.lastQueryParams).isNull();
+        assertThat(provider.lastBody).isSameAs(filters);
     }
 
     @Test
@@ -231,7 +231,7 @@ class HonchoV3ClientTest {
     }
 
     @Test
-    void listPeerConclusions_forwardsPeerIdAndFilters() {
+    void listPeerConclusions_forwardsPeerIdAndFiltersAsBody() {
         CapturingProvider provider = newFixture();
         Map<String, Object> filters = Map.of("limit", 10);
 
@@ -241,12 +241,12 @@ class HonchoV3ClientTest {
         assertThat(provider.lastPathVars)
             .containsOnlyKeys("peerId")
             .containsEntry("peerId", "p-99");
-        assertThat(provider.lastQueryParams).isSameAs(filters);
-        assertThat(provider.lastBody).isNull();
+        assertThat(provider.lastQueryParams).isNull();
+        assertThat(provider.lastBody).isSameAs(filters);
     }
 
     @Test
-    void listPeerSessions_forwardsPeerIdAndFilters() {
+    void listPeerSessions_forwardsPeerIdAndFiltersAsBody() {
         CapturingProvider provider = newFixture();
         Map<String, Object> filters = Map.of("limit", 5);
 
@@ -256,8 +256,8 @@ class HonchoV3ClientTest {
         assertThat(provider.lastPathVars)
             .containsOnlyKeys("peerId")
             .containsEntry("peerId", "p-99");
-        assertThat(provider.lastQueryParams).isSameAs(filters);
-        assertThat(provider.lastBody).isNull();
+        assertThat(provider.lastQueryParams).isNull();
+        assertThat(provider.lastBody).isSameAs(filters);
     }
 
     @Test
@@ -279,7 +279,7 @@ class HonchoV3ClientTest {
     // ------------------------------------------------------------------
 
     @Test
-    void listSessions_forwardsFilters() {
+    void listSessions_forwardsFiltersAsBody() {
         CapturingProvider provider = newFixture();
         Map<String, Object> filters = Map.of("limit", 20);
 
@@ -287,8 +287,8 @@ class HonchoV3ClientTest {
 
         assertThat(provider.lastOp).isEqualTo(HonchoOperation.LIST_SESSIONS);
         assertThat(provider.lastPathVars).isNull();
-        assertThat(provider.lastQueryParams).isSameAs(filters);
-        assertThat(provider.lastBody).isNull();
+        assertThat(provider.lastQueryParams).isNull();
+        assertThat(provider.lastBody).isSameAs(filters);
     }
 
     @Test
@@ -389,7 +389,7 @@ class HonchoV3ClientTest {
     // ------------------------------------------------------------------
 
     @Test
-    void listSessionMessages_forwardsSessionIdAndFilters() {
+    void listSessionMessages_forwardsSessionIdAndFiltersAsBody() {
         CapturingProvider provider = newFixture();
         Map<String, Object> filters = Map.of("limit", 50);
 
@@ -399,8 +399,8 @@ class HonchoV3ClientTest {
         assertThat(provider.lastPathVars)
             .containsOnlyKeys("sessionId")
             .containsEntry("sessionId", "s-7");
-        assertThat(provider.lastQueryParams).isSameAs(filters);
-        assertThat(provider.lastBody).isNull();
+        assertThat(provider.lastQueryParams).isNull();
+        assertThat(provider.lastBody).isSameAs(filters);
     }
 
     @Test

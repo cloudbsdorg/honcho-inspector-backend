@@ -87,8 +87,9 @@ public class PeersProviderV3 implements HonchoProvider {
     @Override
     public HttpMethod httpMethod(HonchoOperation op) {
         return switch (op) {
-            case LIST_PEERS, CREATE_PEER, UPDATE_PEER_CARD -> HttpMethod.POST;
-            case GET_PEER_CARD, GET_REPRESENTATION         -> HttpMethod.GET;
+            case LIST_PEERS, CREATE_PEER                    -> HttpMethod.POST;
+            case UPDATE_PEER_CARD                          -> HttpMethod.PUT;
+            case GET_PEER_CARD, GET_REPRESENTATION          -> HttpMethod.GET;
             default -> throw new UnsupportedOperationException(
                 "PeersProviderV3 has no HTTP method for " + op);
         };
