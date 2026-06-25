@@ -27,10 +27,12 @@ import static org.mockito.Mockito.mock;
  *   <li>{@code httpMethod(op)} returns the expected HTTP verb.</li>
  * </ol>
  *
- * <p>Note that {@code LIST_SESSION_MESSAGES} stayed a {@code GET} in v3
- * (unlike {@code LIST_PEERS} / {@code LIST_SESSIONS}, which flipped to
- * {@code POST .../list}). The v3 contract preserved the legacy GET
- * semantics for the messages endpoint on purpose.
+ * <p>Note that {@code LIST_SESSION_MESSAGES} flipped to {@code POST}
+ * in v3 (same as {@code LIST_PEERS} / {@code LIST_SESSIONS}). The bare
+ * {@code /messages} path only accepts {@code POST} for batch-create;
+ * listing goes through the dedicated {@code /messages/list} sub-path
+ * with a {@code {filters:{}}} body. The bare {@code GET /messages}
+ * path returns {@code 405 Method Not Allowed}.
  *
  * <p>T27 is structural-only by design: it does NOT call {@code execute()}
  * or exercise HTTP. Behaviour integration tests live in T12's
@@ -40,6 +42,7 @@ import static org.mockito.Mockito.mock;
 class MessagesProviderV3UnitTest {
 
     private static final String MESSAGES_PATH = "workspaces/{ws}/sessions/{sessionId}/messages";
+    private static final String MESSAGES_LIST_PATH = "workspaces/{ws}/sessions/{sessionId}/messages/list";
     private static final String SEARCH_PATH   = "workspaces/{ws}/sessions/{sessionId}/search";
 
     private static MessagesProviderV3 newProvider() {
@@ -47,7 +50,7 @@ class MessagesProviderV3UnitTest {
     }
 
     @Test
-    void listSessionMessages_advertisesV3GetOnMessagesPath() {
+    void listSessionMessages_advertisesV3PostOnMessagesListPath() {
         MessagesProviderV3 provider = newProvider();
 
         assertThat(provider.operations()).contains(HonchoOperation.LIST_SESSION_MESSAGES);
@@ -55,10 +58,11 @@ class MessagesProviderV3UnitTest {
             .as("MessagesProviderV3 is v3-only")
             .isEqualTo(Set.of(HonchoApiVersion.V3));
         assertThat(provider.pathTemplate(HonchoOperation.LIST_SESSION_MESSAGES))
-            .isEqualTo(MESSAGES_PATH);
+            .as("LIST_SESSION_MESSAGES routes to the v3 messages-list sub-path")
+            .isEqualTo(MESSAGES_LIST_PATH);
         assertThat(provider.httpMethod(HonchoOperation.LIST_SESSION_MESSAGES))
-            .as("LIST_SESSION_MESSAGES stayed GET in v3 (unlike other list endpoints)")
-            .isEqualTo(HttpMethod.GET);
+            .as("LIST_SESSION_MESSAGES is a POST in v3 (bare /messages is POST-only)")
+            .isEqualTo(HttpMethod.POST);
     }
 
     @Test

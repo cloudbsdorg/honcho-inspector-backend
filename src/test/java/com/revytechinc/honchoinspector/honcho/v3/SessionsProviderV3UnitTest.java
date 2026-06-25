@@ -66,16 +66,19 @@ class SessionsProviderV3UnitTest {
     }
 
     @Test
-    void getSession_advertisesV3GetOnSessionIdEndpoint() {
+    void getSession_advertisesV3PostOnSessionsListEndpoint() {
         SessionsProviderV3 provider = newProvider();
 
         assertThat(provider.operations()).contains(HonchoOperation.GET_SESSION);
         assertThat(provider.supportedVersions())
             .isEqualTo(Set.of(HonchoApiVersion.V3));
+        // v3 has no GET-by-id for sessions — GET_SESSION POSTs to
+        // /sessions/list with a {filters:{id:...}} body and unwraps
+        // the single matching item.
         assertThat(provider.pathTemplate(HonchoOperation.GET_SESSION))
-            .isEqualTo("workspaces/{ws}/sessions/{sessionId}");
+            .isEqualTo("workspaces/{ws}/sessions/list");
         assertThat(provider.httpMethod(HonchoOperation.GET_SESSION))
-            .isEqualTo(HttpMethod.GET);
+            .isEqualTo(HttpMethod.POST);
     }
 
     @Test

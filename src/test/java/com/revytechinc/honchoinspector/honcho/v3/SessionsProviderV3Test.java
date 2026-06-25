@@ -9,10 +9,12 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.client.RestClient;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.atLeastOnce;
@@ -92,19 +94,18 @@ class SessionsProviderV3Test {
     }
 
     @Test
-    void getSession_usesGetAndIncludesSessionId() {
+    void getSession_usesPostToListEndpoint() {
         SessionsProviderV3 provider = providerWithMockedClient();
 
         assertThat(provider.operations()).contains(HonchoOperation.GET_SESSION);
         assertThat(provider.supportedVersions()).containsExactly(HonchoApiVersion.V3);
+        // v3 has no GET-by-id for sessions — GET_SESSION POSTs to
+        // /sessions/list with a {filters:{id:...}} body and unwraps
+        // the single matching item.
         assertThat(provider.pathTemplate(HonchoOperation.GET_SESSION))
-            .isEqualTo("workspaces/{ws}/sessions/{sessionId}");
+            .isEqualTo("workspaces/{ws}/sessions/list");
         assertThat(provider.httpMethod(HonchoOperation.GET_SESSION))
-            .isEqualTo(HttpMethod.GET);
-        String template = provider.pathTemplate(HonchoOperation.GET_SESSION);
-        String substituted = V3ProviderSupport.substitutePath(template, CTX, SESSION_PATH_VARS);
-        String url = V3ProviderSupport.buildUrl(CTX.baseUrl(), CTX.apiVersion().pathPrefix(), substituted, Map.of());
-        assertThat(url).isEqualTo("https://api.honcho.dev/v3/workspaces/ws-42/sessions/sess-abc");
+            .isEqualTo(HttpMethod.POST);
     }
 
     @Test
@@ -174,10 +175,19 @@ class SessionsProviderV3Test {
     @Test
     void execute_callsRestClientWithCorrectUrlAndMethod() {
         // One full integration test: drive execute() through a mocked
-        // RestClient chain and verify the URL captured by the mock.
+        // RestClient chain and verify the URL + body captured by the mock.
         // The RestClient.Builder pattern is exercised by constructing
         // the provider with a mocked client; this confirms the wiring
-        // between pathTemplate, httpMethod, and the actual HTTP call.
+        // between pathTemplate, httpMethod, request body, and the actual
+        // HTTP call. v3 GET_SESSION POSTs to /sessions/list with
+        // {filters:{id:"<sessionId>"}}.
+        //
+        // We mock the two halves of the body() chain separately because
+        // RequestBodyUriSpec and RequestBodySpec are different interfaces
+        // but mockUriSpec must play both roles (Mockito accepts the cast
+        // because RequestBodyUriSpec extends RequestBodySpec). The body()
+        // mock returns the same mockUriSpec instance so .retrieve() on
+        // it can be stubbed and resolved through the parent mock.
         RestClient mockClient = mock(RestClient.class);
         RestClient.RequestBodyUriSpec mockUriSpec = mock(RestClient.RequestBodyUriSpec.class);
         RestClient.ResponseSpec mockResponseSpec = mock(RestClient.ResponseSpec.class);
@@ -186,13 +196,17 @@ class SessionsProviderV3Test {
         when(mockUriSpec.uri((String) any())).thenReturn(mockUriSpec);
         when(mockUriSpec.headers(any())).thenReturn(mockUriSpec);
         when(mockUriSpec.contentType(any())).thenReturn(mockUriSpec);
+        when(mockUriSpec.body((Object) any())).thenReturn(mockUriSpec);
         when(mockUriSpec.retrieve()).thenReturn(mockResponseSpec);
         when(mockResponseSpec.toEntity(any(Class.class)))
-            .thenReturn(ResponseEntity.ok("ok"));
+            .thenReturn(ResponseEntity.ok(Map.of(
+                "items", List.of(Map.of("id", "sess-abc", "created_at", "2026-06-25T00:00:00Z")),
+                "total", 1, "page", 1, "size", 50, "pages", 1
+            )));
 
         SessionsProviderV3 provider = new SessionsProviderV3(mockClient);
 
-        provider.execute(
+        Object result = provider.execute(
             HonchoOperation.GET_SESSION,
             CTX,
             null,
@@ -201,12 +215,26 @@ class SessionsProviderV3Test {
             new HashMap<>()
         );
 
-        // URL captured by the mock must match the buildUrl() output exactly.
-        String expectedUrl = "https://api.honcho.dev/v3/workspaces/ws-42/sessions/sess-abc";
-        verify(mockClient, atLeastOnce()).method(argThat(m -> m == HttpMethod.GET));
+        String expectedUrl = "https://api.honcho.dev/v3/workspaces/ws-42/sessions/list";
+        verify(mockClient, atLeastOnce()).method(argThat(m -> m == HttpMethod.POST));
         verify(mockUriSpec, atLeastOnce()).uri(
             argThat((String url) -> url != null && url.equals(expectedUrl))
         );
+        verify(mockUriSpec, atLeastOnce()).body(
+            argThat((Object body) -> body instanceof Map<?, ?> m
+                && m.get("filters") instanceof Map<?, ?> f
+                && "sess-abc".equals(f.get("id")))
+        );
+        assertThat(result).isInstanceOf(Map.class);
+        assertThat(((Map<?, ?>) result).get("id")).isEqualTo("sess-abc");
+    }
+
+    @Test
+    void execute_getSession_missingSessionIdThrows() {
+        SessionsProviderV3 provider = providerWithMockedClient();
+        assertThatThrownBy(() -> provider.execute(
+            HonchoOperation.GET_SESSION, CTX, null, null, new HashMap<>(), new HashMap<>()
+        )).isInstanceOf(com.revytechinc.honchoinspector.honcho.HonchoCallException.class);
     }
 
     /**

@@ -14,6 +14,7 @@ import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestClient;
 
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -35,6 +36,15 @@ import java.util.Set;
  *   list endpoints so a richer filter / pagination body can be sent.
  *   The {@link HonchoOperation} javadoc documents the same change for
  *   the peer list endpoint.</li>
+ *   <li>{@link HonchoOperation#GET_SESSION} has no direct GET endpoint
+ *   in v3 — {@code GET /workspaces/{ws}/sessions/{sessionId}} returns
+ *   {@code 405 Method Not Allowed} with {@code Allow: PUT} (the only
+ *   method registered on that path is the metadata-update PUT). To
+ *   fetch a single session's metadata we POST to the
+ *   {@code /sessions/list} endpoint with
+ *   {@code {filters:{id:"<sessionId>"}}} and unwrap {@code items[0]}.
+ *   The dispatcher returns the unwrapped session so callers can keep
+ *   treating it as a single-session GET.</li>
  * </ul>
  */
 @Component
@@ -69,7 +79,10 @@ public class SessionsProviderV3 implements HonchoProvider {
         return switch (op) {
             case LIST_SESSIONS -> "workspaces/{ws}/sessions/list";
             case CREATE_SESSION -> "workspaces/{ws}/sessions";
-            case GET_SESSION, DELETE_SESSION -> "workspaces/{ws}/sessions/{sessionId}";
+            case DELETE_SESSION -> "workspaces/{ws}/sessions/{sessionId}";
+            // GET_SESSION shares LIST_SESSIONS's path so we can use the
+            // list-then-filter endpoint to look up a single session.
+            case GET_SESSION -> "workspaces/{ws}/sessions/list";
             case GET_SESSION_CONTEXT -> "workspaces/{ws}/sessions/{sessionId}/context";
             case GET_SESSION_SUMMARIES -> "workspaces/{ws}/sessions/{sessionId}/summaries";
             case GET_SESSION_PEERS -> "workspaces/{ws}/sessions/{sessionId}/peers";
@@ -82,9 +95,10 @@ public class SessionsProviderV3 implements HonchoProvider {
     public HttpMethod httpMethod(HonchoOperation op) {
         return switch (op) {
             // v2→v3 contract change: LIST_SESSIONS is now POST.
-            case LIST_SESSIONS, CREATE_SESSION -> HttpMethod.POST;
-            case GET_SESSION,
-                 GET_SESSION_CONTEXT,
+            // GET_SESSION also POSTs to the list endpoint with a
+            // single-id filter (v3 has no GET-by-id for sessions).
+            case LIST_SESSIONS, CREATE_SESSION, GET_SESSION -> HttpMethod.POST;
+            case GET_SESSION_CONTEXT,
                  GET_SESSION_SUMMARIES,
                  GET_SESSION_PEERS -> HttpMethod.GET;
             case DELETE_SESSION -> HttpMethod.DELETE;
@@ -102,6 +116,22 @@ public class SessionsProviderV3 implements HonchoProvider {
         Map<String, String> pathVars,
         Map<String, ?> queryParams
     ) throws HonchoCallException {
+        // GET_SESSION has no GET endpoint in v3 — translate the call to
+        // POST /sessions/list with a {filters:{id:"..."}} body and unwrap
+        // the single matching item so callers see a session-shaped object.
+        Object effectiveBody = requestBody;
+        if (op == HonchoOperation.GET_SESSION) {
+            String sessionId = pathVars == null ? null : pathVars.get("sessionId");
+            if (sessionId == null || sessionId.isBlank()) {
+                throw new HonchoCallException(
+                    "missing sessionId path variable for GET_SESSION",
+                    400,
+                    ctx.baseUrl() + "/" + pathTemplate(op)
+                );
+            }
+            effectiveBody = Map.of("filters", Map.of("id", sessionId));
+        }
+
         String substituted = V3ProviderSupport.substitutePath(pathTemplate(op), ctx, pathVars);
         String url = V3ProviderSupport.buildUrl(ctx.baseUrl(), ctx.apiVersion().pathPrefix(), substituted, queryParams);
         try {
@@ -110,12 +140,21 @@ public class SessionsProviderV3 implements HonchoProvider {
                 .headers(h -> V3ProviderSupport.applyAuth(h, ctx))
                 .contentType(MediaType.APPLICATION_JSON);
             ResponseEntity<Object> response;
-            if (requestBody != null) {
-                response = spec.body(requestBody).retrieve().toEntity(Object.class);
+            if (effectiveBody != null) {
+                response = spec.body(effectiveBody).retrieve().toEntity(Object.class);
             } else {
                 response = spec.retrieve().toEntity(Object.class);
             }
-            return response.getBody();
+            Object body = response.getBody();
+
+            if (op == HonchoOperation.GET_SESSION && body instanceof Map<?, ?> envelope) {
+                Object items = envelope.get("items");
+                if (items instanceof List<?> list && !list.isEmpty()) {
+                    return list.get(0);
+                }
+                return null;
+            }
+            return body;
         } catch (HttpStatusCodeException e) {
             throw V3ProviderSupport.toHonchoCallException(e);
         } catch (Exception e) {
