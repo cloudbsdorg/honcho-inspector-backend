@@ -100,6 +100,7 @@ RUN set -eux \
         openssh \
         jre25-openjdk-headless \
         jdk25-openjdk \
+        maven \
         nodejs-lts-krypton \
         npm \
         ruby \

@@ -146,7 +146,7 @@ VOID_RUNTIME="docker.io/voidlinux/voidlinux:latest"
 # sleeps + probes. -y assumes yes to all xbps prompts.
 # nodejs/npm are only needed for UI but installed unconditionally
 # per the debian pattern.
-VOID_INSTALL='echo "repository=https://repo-default.voidlinux.org/current" > /usr/share/xbps.d/00-repository-main.conf && xbps-install -Syu xbps >/dev/null 2>&1; xbps-install -y /tmp/ARTIFACT openjdk25-jre nodejs npm shadow curl ca-certificates runit && (setsid runsvdir -P /var/service </dev/null >/var/log/runsvdir.log 2>&1 &)'
+VOID_INSTALL='echo "repository=https://repo-default.voidlinux.org/current" > /usr/share/xbps.d/00-repository-main.conf && xbps-install -Sy xbps >/dev/null 2>&1; xbps-install -y /tmp/ARTIFACT openjdk25-jre nodejs npm shadow curl ca-certificates runit && (setsid runsvdir -P /var/service </dev/null >/var/log/runsvdir.log 2>&1 &)'
 VOID_BACKEND_START='sleep 5'
 VOID_UI_START='sleep 5'
 VOID_BACKEND_HEALTH="$DEBIAN_BACKEND_HEALTH"

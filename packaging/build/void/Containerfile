@@ -108,11 +108,16 @@ LABEL org.opencontainers.image.title="honcho-inspector-backend (builder-void)" \
 # VOID_REPO unset here and fall back to the stock URL in the
 # RUN; mirrors should be configured via the host's xbps.d/ drop-
 # in, not baked into the image.
-ARG VOID_REPO=
+ARG VOID_REPO=https://repo-default.voidlinux.org/current
+# Void's xbps-install -Syu fails on a fresh container because the
+# on-disk xbps binary is older than the repo requires; the
+# "self-update" pattern is to run `xbps-install -Sy xbps` first
+# to bootstrap a working xbps, then run a full -Syu, then install.
+# The default VOID_REPO=repo-default.voidlinux.org points at the
+# CDN-backed mirror; the operator can override via --build-arg.
 RUN set -eux \
-    && if [ -n "${VOID_REPO}" ]; then \
-         echo "repository=${VOID_REPO}" > /usr/share/xbps.d/00-repository-main.conf; \
-       fi \
+    && echo "repository=${VOID_REPO}" > /usr/share/xbps.d/00-repository-main.conf \
+    && xbps-install -Sy xbps \
     && xbps-install -Syu \
     && xbps-install -y \
         ca-certificates \
@@ -141,8 +146,15 @@ RUN set -eux \
 # we keep fpm installed because:
 #   1. parity with the other build images (consistent toolset),
 #   2. a future task might want fpm as a fallback path.
+#
+# Void's gem install drops the fpm binary in
+# /usr/lib/ruby/gems/X.Y.Z/bin/ which is NOT on PATH. We pass
+# --bindir /usr/bin to put fpm on PATH. The Void /etc/gemrc
+# also has --format-executable on by default, which renames
+# the binary to fpm-1.17; we pass --no-format-executable to
+# install the binary as plain `fpm`.
 RUN set -eux \
-    && gem install --no-document fpm \
+    && gem install --no-document --no-format-executable --bindir /usr/bin fpm \
     && fpm --version
 
 # ====== entrypoint ================================================

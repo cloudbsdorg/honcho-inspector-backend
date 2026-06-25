@@ -114,6 +114,7 @@ RUN set -eux \
         zstd-dev \
         linux-headers \
         openjdk25 \
+        maven \
         nodejs \
         npm \
         yarn \
@@ -137,7 +138,7 @@ RUN chmod 0755 /usr/local/bin/entrypoint.sh
 
 # Alpine's openjdk25 lands at /usr/lib/jvm/default-jdk (a
 # symlink the package creates). JAVA_HOME points there.
-ENV JAVA_HOME=/usr/lib/jvm/default-jdk
+ENV JAVA_HOME=/usr/lib/jvm/java-25-openjdk
 
 WORKDIR /src
 
