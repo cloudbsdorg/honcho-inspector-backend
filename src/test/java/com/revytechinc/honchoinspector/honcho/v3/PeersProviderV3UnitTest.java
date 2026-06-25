@@ -18,9 +18,10 @@ import static org.mockito.Mockito.mock;
 
 /**
  * Structural unit tests for {@link PeersProviderV3} and
- * {@link PeerQueryProviderV3}. Ten per-op tests (5 + 5) plus one
- * parameterized aggregator asserting every peer-cluster provider is
- * v3-only and advertises at least one operation.
+ * {@link PeerQueryProviderV3}. Eight per-op tests (5 + 3, after
+ * {@code LIST_PEER_CONCLUSIONS} moved to {@code ConclusionsProviderV3})
+ * plus one parameterized aggregator asserting every peer-cluster
+ * provider is v3-only and advertises at least one operation.
  *
  * <p>Each per-op test verifies the four metadata points the
  * {@code HonchoProviderRegistry} relies on:
@@ -108,7 +109,7 @@ class PeersProviderV3UnitTest {
     }
 
     @Test
-    void getRepresentation_advertisesV3GetOnRepresentationEndpoint() {
+    void getRepresentation_advertisesV3PostOnRepresentationEndpoint() {
         PeersProviderV3 provider = newPeersProvider();
 
         assertThat(provider.operations()).contains(HonchoOperation.GET_REPRESENTATION);
@@ -117,7 +118,8 @@ class PeersProviderV3UnitTest {
         assertThat(provider.pathTemplate(HonchoOperation.GET_REPRESENTATION))
             .isEqualTo("workspaces/{ws}/peers/{peerId}/representation");
         assertThat(provider.httpMethod(HonchoOperation.GET_REPRESENTATION))
-            .isEqualTo(HttpMethod.GET);
+            .as("Honcho v3 disallows GET on /representation (returns 405); the proxy uses POST with {} body")
+            .isEqualTo(HttpMethod.POST);
     }
 
     @Test
@@ -144,19 +146,6 @@ class PeersProviderV3UnitTest {
             .isEqualTo("workspaces/{ws}/peers/{peerId}/search");
         assertThat(provider.httpMethod(HonchoOperation.SEARCH_PEERS))
             .isEqualTo(HttpMethod.POST);
-    }
-
-    @Test
-    void listPeerConclusions_advertisesV3GetOnConclusionsEndpoint() {
-        PeerQueryProviderV3 provider = newPeerQueryProvider();
-
-        assertThat(provider.operations()).contains(HonchoOperation.LIST_PEER_CONCLUSIONS);
-        assertThat(provider.supportedVersions())
-            .isEqualTo(Set.of(HonchoApiVersion.V3));
-        assertThat(provider.pathTemplate(HonchoOperation.LIST_PEER_CONCLUSIONS))
-            .isEqualTo("workspaces/{ws}/peers/{peerId}/conclusions");
-        assertThat(provider.httpMethod(HonchoOperation.LIST_PEER_CONCLUSIONS))
-            .isEqualTo(HttpMethod.GET);
     }
 
     @Test

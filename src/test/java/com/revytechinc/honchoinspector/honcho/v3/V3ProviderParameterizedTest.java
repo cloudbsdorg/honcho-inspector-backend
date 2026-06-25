@@ -18,14 +18,14 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * Aggregator test for all 8 V3 {@link HonchoProvider} beans. Iterates
+ * Aggregator test for all 9 V3 {@link HonchoProvider} beans. Iterates
  * the providers through a {@code @ParameterizedTest} and asserts the
  * cross-cutting invariants the registry depends on, then asserts the
  * registry itself:
  * <ul>
- *   <li>{@code providerCount() == 8} — exactly the eight V3 provider
+ *   <li>{@code providerCount() == 9} — exactly the nine V3 provider
  *       beans contribute to the V3 registry.</li>
- *   <li>Sum of {@code operations().size()} across all 8 providers is
+ *   <li>Sum of {@code operations().size()} across all 9 providers is
  *       {@code 24} — every {@link HonchoOperation} is covered.</li>
  *   <li>{@code coveredOperations()} returns all 24 enum constants.</li>
  * </ul>
@@ -47,6 +47,7 @@ class V3ProviderParameterizedTest {
         return List.of(
             new PeersProviderV3(client),
             new PeerQueryProviderV3(client),
+            new ConclusionsProviderV3(client),
             new SessionsProviderV3(client),
             new MessagesProviderV3(client),
             new WorkspaceProviderV3(builder),
@@ -80,13 +81,13 @@ class V3ProviderParameterizedTest {
     }
 
     @Test
-    void registry_withAllEightProvidersHasProviderCountEight() {
+    void registry_withAllNineProvidersHasProviderCountNine() {
         HonchoProviderRegistry registry =
             new HonchoProviderRegistry(HonchoApiVersion.V3, allV3Providers());
 
         assertThat(registry.providerCount())
-            .as("Registry must register all 8 distinct V3 provider instances")
-            .isEqualTo(8);
+            .as("Registry must register all 9 distinct V3 provider instances")
+            .isEqualTo(9);
         assertThat(registry.version())
             .as("Registry is built for V3")
             .isEqualTo(HonchoApiVersion.V3);
@@ -100,7 +101,7 @@ class V3ProviderParameterizedTest {
             .sum();
 
         assertThat(totalOps)
-            .as("8 providers must collectively cover all 24 HonchoOperation constants")
+            .as("9 providers must collectively cover all 24 HonchoOperation constants")
             .isEqualTo(24);
         assertThat(HonchoOperation.values())
             .as("HonchoOperation enum sanity check — 24 constants")

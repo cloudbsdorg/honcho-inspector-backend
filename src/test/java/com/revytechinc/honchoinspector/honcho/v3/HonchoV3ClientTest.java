@@ -186,16 +186,17 @@ class HonchoV3ClientTest {
     }
 
     @Test
-    void getPeerRepresentation_forwardsPeerId() {
+    void getPeerRepresentation_forwardsPeerIdAndBody() {
         CapturingProvider provider = newFixture();
+        Object body = Map.of();
 
-        clientOf(provider).getPeerRepresentation(CTX, "p-99");
+        clientOf(provider).getPeerRepresentation(CTX, "p-99", body);
 
         assertThat(provider.lastOp).isEqualTo(HonchoOperation.GET_REPRESENTATION);
         assertThat(provider.lastPathVars)
             .containsOnlyKeys("peerId")
             .containsEntry("peerId", "p-99");
-        assertThat(provider.lastBody).isNull();
+        assertThat(provider.lastBody).isSameAs(body);
     }
 
     // ------------------------------------------------------------------
@@ -231,18 +232,18 @@ class HonchoV3ClientTest {
     }
 
     @Test
-    void listPeerConclusions_forwardsPeerIdAndFiltersAsBody() {
+    void listPeerConclusions_forwardsBodyAndNoPathVars() {
+        // Honcho v3 moved /conclusions to the workspace level (POST
+        // /v3/workspaces/{ws}/conclusions/list); there is no {peerId}
+        // placeholder in the upstream template.
         CapturingProvider provider = newFixture();
-        Map<String, Object> filters = Map.of("limit", 10);
+        Map<String, Object> body = Map.of("filters", Map.of("observed_id", "p-99", "size", 10));
 
-        clientOf(provider).listPeerConclusions(CTX, "p-99", filters);
+        clientOf(provider).listPeerConclusions(CTX, "p-99", body);
 
         assertThat(provider.lastOp).isEqualTo(HonchoOperation.LIST_PEER_CONCLUSIONS);
-        assertThat(provider.lastPathVars)
-            .containsOnlyKeys("peerId")
-            .containsEntry("peerId", "p-99");
-        assertThat(provider.lastQueryParams).isNull();
-        assertThat(provider.lastBody).isSameAs(filters);
+        assertThat(provider.lastPathVars).isNull();
+        assertThat(provider.lastBody).isSameAs(body);
     }
 
     @Test

@@ -130,10 +130,10 @@ public class HonchoController {
         return call(req, (ctx, ws) -> honcho.updatePeerCard(ctx, peerId, body));
     }
 
-    @GetMapping("/peers/{peerId}/representation")
+    @PostMapping("/peers/{peerId}/representation")
     @Operation(
         summary = "Get a peer's representation",
-        description = "Proxies `GET /v3/workspaces/{workspaceId}/peers/{peerId}/representation`. Returns a Honcho-formatted text representation of what the peer knows/believes."
+        description = "Proxies `POST /v3/workspaces/{workspaceId}/peers/{peerId}/representation` (Honcho v3 disallows GET on this endpoint). The peer provider sends an empty `{}` body when the request omits one. Returns a Honcho-formatted text representation of what the peer knows/believes."
     )
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Honcho representation string"),
@@ -145,9 +145,10 @@ public class HonchoController {
     public ResponseEntity<?> peerRepresentation(
         HttpServletRequest req,
         @Parameter(description = "Honcho peer id", example = "alice")
-        @PathVariable String peerId
+        @PathVariable String peerId,
+        @RequestBody(required = false) Object body
     ) {
-        return call(req, (ctx, ws) -> honcho.getPeerRepresentation(ctx, peerId));
+        return call(req, (ctx, ws) -> honcho.getPeerRepresentation(ctx, peerId, body));
     }
 
     @PostMapping("/peers/{peerId}/chat")
@@ -192,10 +193,10 @@ public class HonchoController {
         return call(req, (ctx, ws) -> honcho.searchPeers(ctx, peerId, body));
     }
 
-    @GetMapping("/peers/{peerId}/conclusions")
+    @PostMapping("/peers/{peerId}/conclusions")
     @Operation(
         summary = "List a peer's conclusions",
-        description = "Proxies `GET /v3/workspaces/{workspaceId}/peers/{peerId}/conclusions`. Query params forwarded to Honcho."
+        description = "Proxies `POST /v3/workspaces/{workspaceId}/conclusions/list` (Honcho v3 dropped the per-peer `/conclusions` endpoint). The body should be Honcho's `ConclusionGet` envelope: `{filters: {observed_id, size, ...}}`. The controller forwards it verbatim and also fills `observed_id` from the path variable when the body omits it, so a UI can simply POST `{}` and get the peer's full list."
     )
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Page of conclusions from Honcho"),
@@ -208,10 +209,9 @@ public class HonchoController {
         HttpServletRequest req,
         @Parameter(description = "Honcho peer id", example = "alice")
         @PathVariable String peerId,
-        @Parameter(description = "Forwarded as query string to Honcho (e.g. `limit`, `page`)")
-        @RequestParam(required = false) Map<String, String> allParams
+        @RequestBody(required = false) Object body
     ) {
-        return call(req, (ctx, ws) -> honcho.listPeerConclusions(ctx, peerId, allParams));
+        return call(req, (ctx, ws) -> honcho.listPeerConclusions(ctx, peerId, body));
     }
 
     @GetMapping("/peers/{peerId}/sessions")

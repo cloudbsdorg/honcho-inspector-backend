@@ -203,16 +203,18 @@ class HonchoWorkflowIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    @DisplayName("GET /api/peers/{peerId}/representation returns the GET_REPRESENTATION fixture")
+    @DisplayName("POST /api/peers/{peerId}/representation returns the GET_REPRESENTATION fixture (Honcho v3 disallows GET on this endpoint)")
     void getPeerRepresentation() throws Exception {
-        mvc.perform(withAuth(get("/api/peers/alice/representation"), sessionId, profileId))
+        mvc.perform(withAuth(post("/api/peers/alice/representation"), sessionId, profileId)
+                .contentType(JSON)
+                .content("{}"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.representation").value(org.hamcrest.Matchers.containsString("backend engineer")));
 
         JsonNode meta = readFixtureMeta("get-peer-representation.json");
         assertThat(meta.get("method").asText())
-            .as("GET_REPRESENTATION upstream contract is GET")
-            .isEqualTo("GET");
+            .as("GET_REPRESENTATION upstream contract is POST (Honcho v3 disallows GET; returns 405)")
+            .isEqualTo("POST");
         assertThat(meta.get("endpoint").asText())
             .as("upstream path includes /representation")
             .endsWith("/representation");

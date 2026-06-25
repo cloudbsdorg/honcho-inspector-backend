@@ -29,10 +29,10 @@ class HonchoClientFactoryTest {
         @Override public Object createPeer(HonchoContext ctx, Object createPeerRequest) { return null; }
         @Override public Object getPeerCard(HonchoContext ctx, String peerId) { return null; }
         @Override public Object updatePeerCard(HonchoContext ctx, String peerId, Object cardData) { return null; }
-        @Override public Object getPeerRepresentation(HonchoContext ctx, String peerId) { return null; }
+        @Override public Object getPeerRepresentation(HonchoContext ctx, String peerId, Object body) { return null; }
         @Override public Object peerChat(HonchoContext ctx, String peerId, Object chatRequest) { return null; }
         @Override public Object searchPeers(HonchoContext ctx, String peerId, Object searchRequest) { return null; }
-        @Override public Object listPeerConclusions(HonchoContext ctx, String peerId, Map<String, ?> filters) { return null; }
+        @Override public Object listPeerConclusions(HonchoContext ctx, String peerId, Object body) { return null; }
         @Override public Object listPeerSessions(HonchoContext ctx, String peerId, Map<String, ?> filters) { return null; }
         @Override public Object queryPeerConclusions(HonchoContext ctx, String peerId, Object queryRequest) { return null; }
         @Override public Object listSessions(HonchoContext ctx, Map<String, ?> filters) { return null; }

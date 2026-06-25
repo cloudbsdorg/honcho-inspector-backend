@@ -31,16 +31,17 @@ import com.revytechinc.honchoinspector.model.HonchoContext;
  *       /v3/workspaces/{ws}/peers</code>.</li>
  *   <li>{@link HonchoOperation#GET_PEER_CARD} &mdash; <code>GET
  *       /v3/workspaces/{ws}/peers/{peerId}/card</code>.</li>
- *   <li>{@link HonchoOperation#UPDATE_PEER_CARD} &mdash; <code>POST
+ *   <li>{@link HonchoOperation#UPDATE_PEER_CARD} &mdash; <code>PUT
  *       /v3/workspaces/{ws}/peers/{peerId}/card</code>.</li>
- *   <li>{@link HonchoOperation#GET_REPRESENTATION} &mdash; <code>GET
- *       /v3/workspaces/{ws}/peers/{peerId}/representation</code>.</li>
+ *   <li>{@link HonchoOperation#GET_REPRESENTATION} &mdash; <code>POST
+ *       /v3/workspaces/{ws}/peers/{peerId}/representation</code> with an
+ *       empty {@code {}} body (Honcho v3 disallows GET on this endpoint).</li>
  * </ul>
  *
- * <p>Peer <em>query</em> operations (chat, search, conclusions list, sessions
- * list, conclusions query) live in {@link PeerQueryProviderV3} &mdash; they
- * share the same resource prefix but belong to a logically distinct cluster
- * (semantic-search / agentic-query endpoints).
+ * <p>Peer <em>query</em> operations (chat, search, sessions list, conclusions
+ * query) live in {@link PeerQueryProviderV3}; the workspace-level
+ * {@code /conclusions/list} lives in {@link ConclusionsProviderV3}. The split
+ * keeps each provider focused on a single resource cluster.
  *
  * <p>All plumbing (path-variable substitution, URL building, auth headers,
  * error translation) is delegated to {@link V3ProviderSupport}.
@@ -87,9 +88,9 @@ public class PeersProviderV3 implements HonchoProvider {
     @Override
     public HttpMethod httpMethod(HonchoOperation op) {
         return switch (op) {
-            case LIST_PEERS, CREATE_PEER                    -> HttpMethod.POST;
-            case UPDATE_PEER_CARD                          -> HttpMethod.PUT;
-            case GET_PEER_CARD, GET_REPRESENTATION          -> HttpMethod.GET;
+            case LIST_PEERS, CREATE_PEER, GET_REPRESENTATION -> HttpMethod.POST;
+            case UPDATE_PEER_CARD                             -> HttpMethod.PUT;
+            case GET_PEER_CARD                                -> HttpMethod.GET;
             default -> throw new UnsupportedOperationException(
                 "PeersProviderV3 has no HTTP method for " + op);
         };
@@ -115,14 +116,26 @@ public class PeersProviderV3 implements HonchoProvider {
                 .uri(url)
                 .headers(h -> V3ProviderSupport.applyAuth(h, ctx))
                 .contentType(MediaType.APPLICATION_JSON);
-            ResponseEntity<Object> response = (requestBody != null)
-                ? spec.body(requestBody).retrieve().toEntity(Object.class)
-                : spec.retrieve().toEntity(Object.class);
+            Object body = (requestBody != null) ? requestBody : defaultBody(op);
+            ResponseEntity<Object> response = spec.body(body).retrieve().toEntity(Object.class);
             return response.getBody();
         } catch (HttpStatusCodeException e) {
             throw V3ProviderSupport.toHonchoCallException(e);
         } catch (Exception e) {
             throw V3ProviderSupport.transportFailure(ctx.baseUrl(), e);
         }
+    }
+
+    /**
+     * Per-operation default body for POST endpoints whose controller
+     * doesn't supply one. Honcho v3 requires a JSON body on every POST
+     * even when all options are absent; sending {@code {}} keeps the
+     * contract satisfied without forcing every controller to remember.
+     */
+    private static Object defaultBody(HonchoOperation op) {
+        return switch (op) {
+            case GET_REPRESENTATION -> java.util.Map.of();
+            default -> "";
+        };
     }
 }

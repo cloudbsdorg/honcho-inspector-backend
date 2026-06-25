@@ -112,7 +112,7 @@ class PeersProviderV3Test {
     }
 
     @Test
-    void getRepresentation_isDeclaredAsGetOnRepresentationEndpoint() {
+    void getRepresentation_isDeclaredAsPostOnRepresentationEndpoint() {
         PeersProviderV3 provider = newProvider();
 
         assertThat(provider.operations())
@@ -122,7 +122,8 @@ class PeersProviderV3Test {
         assertThat(provider.pathTemplate(HonchoOperation.GET_REPRESENTATION))
             .isEqualTo("workspaces/{ws}/peers/{peerId}/representation");
         assertThat(provider.httpMethod(HonchoOperation.GET_REPRESENTATION))
-            .isEqualTo(HttpMethod.GET);
+            .as("Honcho v3 disallows GET on /representation (returns 405); the proxy uses POST with {} body")
+            .isEqualTo(HttpMethod.POST);
         assertThat(urlFor(HonchoOperation.GET_REPRESENTATION, PEER_PATH_VARS))
             .as("URL must include the {peerId} placeholder and the /representation suffix")
             .isEqualTo("https://api.honcho.dev/v3/workspaces/ws-42/peers/p-99/representation");
