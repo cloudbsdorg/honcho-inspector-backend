@@ -19,7 +19,8 @@ pair="${repo}-${distro}"
 log="$LOGS_DIR/${pair}.log"
 artifact_var="ARTIFACT_${repo}_${distro}"
 eval "artifact=\"\$$artifact_var\""
-artifact_path="$ARTIFACTS_DIR/$artifact"
+pair_dir="$ARTIFACTS_DIR/$pair"
+artifact_path="$pair_dir/$artifact"
 
 if [ ! -f "$artifact_path" ]; then
     {
@@ -49,7 +50,11 @@ if [ -z "$runtime" ]; then
 fi
 
 artifact_basename="$(basename "$artifact")"
-install_cmd=$(printf '%s' "$install_tmpl" | sed "s|/tmp/ARTIFACT|/tmp/${artifact_basename}|g")
+# Substitute the bare token ARTIFACT anywhere in the install
+# template. Void templates stage to /var/localrepo and reference
+# the file there; deb/rpm/apk templates reference /tmp/ARTIFACT.
+# Both need the real artifact basename, not the placeholder.
+install_cmd=$(printf '%s' "$install_tmpl" | sed "s|ARTIFACT|${artifact_basename}|g")
 
 # Try sudo first; fall back to user podman. Most distros need root in
 # the container to install packages.

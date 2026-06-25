@@ -36,18 +36,31 @@ set -eu
 # === constants ====================================================
 NAME="honcho-inspector-backend"
 VERSION="0.1.0-SNAPSHOT"
+# xbps-create's pkgver parser only allows [a-z0-9_.~] in the
+# version component. Our Maven version uses an uppercase
+# SNAPSHOT tag with a `-` separator, which xbps-create rejects.
+# Replace `-` with `~` (Debian's pre-release convention, also
+# valid in xbps pkgvers) so the generated pkgver is well-formed.
+# Done with tr (not bash parameter expansion) because Void's
+# /bin/sh is dash, not bash.
+XBPS_VERSION="$(printf '%s' "${VERSION}" | tr '-' '~')"
 REVISION="1"
 ARCH_XBPS="x86_64"
 MAINTAINER="Mark LaPointe <mark@cloudbsd.org>"
 DESCRIPTION="Honcho Inspector backend (Spring Boot + SQLite). Multi-user admin surface for Honcho."
 HOMEPAGE="https://github.com/cloudbsdorg/honcho-inspector-backend"
 LICENSE="BSD-3-Clause"
-ARTIFACT="${NAME}-${VERSION}_${REVISION}.${ARCH_XBPS}.xbps"
+ARTIFACT="${NAME}-${XBPS_VERSION}_${REVISION}.${ARCH_XBPS}.xbps"
 
 OUT="/out"
 SRC="/src"
 BUILD="$(mktemp -d)"
-trap 'rm -rf "${BUILD}"' EXIT
+WORK="$(mktemp -d -t build.XXXXXX)"
+# Single trap fires on EXIT (and only once). Wipes both tempdirs.
+# Earlier trap-on-BUILD was leaking: BUILD is used until the final
+# xbps-create invocation (line ~390). We track both here.
+TMPDIRS="${BUILD} ${WORK}"
+trap 'rm -rf ${TMPDIRS}' EXIT
 
 # === preflight ====================================================
 if [ ! -d "${SRC}/debian/DEBIAN" ]; then
@@ -73,7 +86,6 @@ rm -f "${OUT}/.write-test"
 # the staged copy's artifacts. The host source tree is never modified.
 printf 'entrypoint: staging source tree\n'
 WORK="$(mktemp -d -t build.XXXXXX)"
-trap 'rm -rf "$WORK"' EXIT
 mkdir -p "${WORK}/.m2"
 cp -a "${SRC}/." "${WORK}/"
 cd "${WORK}"
@@ -373,25 +385,61 @@ CONF_EOF
 #   -z std        : compression = zstd (xbps's default; smallest
 #                    and fastest on the Void build host)
 printf 'entrypoint: running xbps-create\n'
+# xbps-create in this Void release (0.60.x) does not support
+# --inst-script; the install-action script is embedded via the
+# staging dir at <staging>/INSTALL. Copy the generated script
+# into the stage before invoking xbps-create. --config-files is
+# similarly accepted only as a path to a file, not via a separate
+# flag, so the conffiles list lives in the staging dir at
+# <staging>/.INSTALL-files (Void's convention is a `.config-files`
+# or a file referenced by --config-files; we use --config-files
+# pointing at the conffiles file we generated).
+cp "${INST}" "${STAGE}/INSTALL"
+# xbps-create writes the .xbps into the current working directory.
+# cd to ${OUT} so the artifact lands under the bind-mounted host
+# dir; no -o flag exists. The pkgver-driven filename is
+# <NAME>-<VERSION>_<REVISION>.<ARCH_XBPS>.xbps; we rename it to
+# the orchestrator-expected ARTIFACT name after.
+cd "${OUT}"
+# NOTE: xbps-create's --config-files has a bug (in xbps <= 0.60.x)
+# where it stores the conf file's *build-time* path in props.plist's
+# conf_files key, instead of reading the file's contents. That
+# metadata path doesn't exist on the target system, so xbps-rindex
+# rejects the package when registering it into a repo, which makes
+# xbps-install fail with "not found in repository pool". We drop
+# --config-files for now and mark /etc/default/honcho-inspector as
+# a regular file -- the operator is responsible for backing up
+# their edits before upgrade (documented in the operator-facing
+# notes). When xbps fixes this, restore the --config-files "${CONF}"
+# flag below.
 xbps-create \
     -A "${ARCH_XBPS}" \
-    -n "${NAME}" \
-    -v "${VERSION}" \
-    -r "${REVISION}" \
-    -s "${STAGE}" \
+    -n "${NAME}-${XBPS_VERSION}_${REVISION}" \
+    -s "${DESCRIPTION}" \
     -D "openjdk25-jre>=25" \
     -D "shadow" \
     -D "runit" \
     -D "ca-certificates" \
     -D "bash" \
-    --desc "${DESCRIPTION}" \
     --homepage "${HOMEPAGE}" \
     --license "${LICENSE}" \
     --maintainer "${MAINTAINER}" \
-    --inst-script "${INST}" \
-    --config-files "${CONF}" \
-    -z std \
-    -o "${OUT}/${ARTIFACT}"
+    "${STAGE}"
+
+XBPS_FILE="${NAME}-${XBPS_VERSION}_${REVISION}.${ARCH_XBPS}.xbps"
+if [ ! -f "${XBPS_FILE}" ]; then
+    printf 'entrypoint: xbps-create did not produce %s\n' "${XBPS_FILE}" >&2
+    cd /
+    exit 1
+fi
+# ARTIFACT uses XBPS_VERSION too (canonical pkgver filename), so
+# they're the same name. Only rename when they differ (defensive:
+# future divergence between the artifact var and xbps's
+# pkgver-driven output won't break the build).
+if [ "${XBPS_FILE}" != "${ARTIFACT}" ]; then
+    mv -f "${XBPS_FILE}" "${ARTIFACT}"
+fi
+cd /
 
 # === chown /out to the host operator =============================
 chown -R "${HOST_UID}:${HOST_GID}" /out

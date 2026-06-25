@@ -28,10 +28,16 @@ set -eu
 # === constants ====================================================
 NAME="honcho-inspector-backend"
 VERSION="0.1.0-SNAPSHOT"
+# makepkg's pkgver parser disallows colons, slashes, hyphens, and
+# whitespace. Our Maven version has `-SNAPSHOT` which is rejected.
+# Replace `-` with `_` (Arch's pre-release convention) so pkgver
+# is well-formed. Done with tr (not bash parameter expansion)
+# because the entrypoint's /bin/sh is dash running in POSIX mode.
+PKGVER="$(printf '%s' "${VERSION}" | tr '-' '_')"
 RELEASE="1"
 ARCH_PKG="x86_64"
 MAINTAINER="Mark LaPointe <mark@cloudbsd.org>"
-ARTIFACT="${NAME}-${VERSION}-${RELEASE}-${ARCH_PKG}.pkg.tar.zst"
+ARTIFACT="${NAME}-${PKGVER}-${RELEASE}-${ARCH_PKG}.pkg.tar.zst"
 # PKG_DESC, PKG_URL -- substituted into the PKGBUILD template below.
 PKG_DESC="Honcho Inspector backend (Spring Boot + SQLite). Multi-user admin surface for Honcho."
 PKG_URL="https://github.com/cloudbsdorg/honcho-inspector-backend"
@@ -39,7 +45,13 @@ PKG_URL="https://github.com/cloudbsdorg/honcho-inspector-backend"
 OUT="/out"
 SRC="/src"
 BUILD="$(mktemp -d)"
-trap 'rm -rf "${BUILD}"' EXIT
+WORK="$(mktemp -d -t build.XXXXXX)"
+# Single trap fires on EXIT (and only once). Wipes both tempdirs.
+# The earlier trap-on-BUILD was leaking: the script uses BUILD all
+# the way to the install line, so the BUILD cleanup needs to wait
+# until after that. We track both here.
+TMPDIRS="${BUILD} ${WORK}"
+trap 'rm -rf ${TMPDIRS}' EXIT
 
 # === preflight ====================================================
 if [ ! -d "${SRC}/debian/DEBIAN" ]; then
@@ -65,8 +77,6 @@ rm -f "${OUT}/.write-test"
 # makepkg-driven package() function uses the staged copy's artifacts.
 # The host source tree is never modified.
 printf 'entrypoint: staging source tree\n'
-WORK="$(mktemp -d -t build.XXXXXX)"
-trap 'rm -rf "$WORK"' EXIT
 mkdir -p "${WORK}/.m2"
 cp -a "${SRC}/." "${WORK}/"
 cd "${WORK}"
@@ -188,7 +198,7 @@ PKGBUILD_EOF
 # to use sed -i with a delimiter that doesn't appear in any of
 # the values. Pipe character is safe in all of the constants.
 sed -i \
-    -e "s|__PKGVER__|${VERSION}|g" \
+    -e "s|__PKGVER__|${PKGVER}|g" \
     -e "s|__PKGREL__|${RELEASE}|g" \
     -e "s|__ARCH_PKG__|${ARCH_PKG}|g" \
     -e "s|__PKG_DESC__|${PKG_DESC}|g" \
@@ -294,9 +304,12 @@ if ! id nobody >/dev/null 2>&1; then
     useradd -m -s /bin/bash nobody
 fi
 
-# makepkg refuses to run as root. We can't `su -s /bin/bash -c`
-# because of the dash's argv handling, so use `setpriv` which
-# is in util-linux (always installed on Arch).
+# makepkg refuses to run as root AND requires the build dir to be
+# writable by the effective uid. The orchestrator runs this
+# container WITHOUT --userns=keep-id for arch specifically, so we
+# ARE real root here. chown the entire tree to nobody, then drop
+# privileges. nobody's home dir (/nonexistent on minimal images)
+# isn't used because we don't write to ~.
 chown -R nobody:nobody "${BUILD}"
 setpriv --reuid=nobody --regid=nobody --init-groups -- \
     env \

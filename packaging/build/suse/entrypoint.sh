@@ -55,7 +55,12 @@ ARTIFACT="${NAME}-${VERSION}-${RELEASE}.${ARCH}.rpm"
 OUT="/out"
 SRC="/src"
 WORK="$(mktemp -d)"
-trap 'rm -rf "${WORK}"' EXIT
+BUILD="$(mktemp -d)"
+# Single trap fires on EXIT (and only once). Wipes both tempdirs.
+# Earlier trap-on-WORK was leaking: the script uses BUILD to stage
+# postinst/prerm/postrm scripts until just before fpm. Consolidate.
+TMPDIRS="${BUILD} ${WORK}"
+trap 'rm -rf ${TMPDIRS}' EXIT
 
 # === preflight ====================================================
 if [ ! -d "${SRC}/debian/DEBIAN" ]; then
@@ -191,7 +196,6 @@ chmod 0755 "${POSTRM}"
 # the staged copy's artifacts. The host source tree is never modified.
 printf 'entrypoint: staging source tree\n'
 WORK="$(mktemp -d -t build.XXXXXX)"
-trap 'rm -rf "$WORK"' EXIT
 mkdir -p "${WORK}/.m2"
 cp -a "${SRC}/." "${WORK}/"
 cd "${WORK}"
@@ -215,6 +219,9 @@ fi
 
 # === fpm -t rpm ===================================================
 printf 'entrypoint: running fpm -t rpm\n'
+mkdir -p "${WORK}/var/lib/honcho-inspector" \
+         "${WORK}/var/log/honcho-inspector" \
+         "${WORK}/etc/honcho-inspector"
 fpm -s dir -t rpm \
     -p "${OUT}/${ARTIFACT}" \
     -n "${NAME}" \
@@ -226,9 +233,6 @@ fpm -s dir -t rpm \
     --depends "java-25-openjdk >= 25" \
     --depends "shadow" \
     --config-files /etc/default/honcho-inspector \
-    --directories /var/lib/honcho-inspector \
-    --directories /var/log/honcho-inspector \
-    --directories /etc/honcho-inspector \
     --rpm-digest sha256 \
     --rpm-compression gzip \
     --after-install "${POSTINST}" \

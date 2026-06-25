@@ -22,14 +22,27 @@ pair="${repo}-${distro}"
 log="$LOGS_DIR/${pair}.log"
 artifact_var="ARTIFACT_${repo}_${distro}"
 eval "artifact=\"\$$artifact_var\""
-artifact_path="$ARTIFACTS_DIR/$artifact"
+# Per-pair subdir under ARTIFACTS_DIR. We mount it as /out so two
+# pairs running in parallel (e.g. backend-rocky + backend-suse)
+# don't collide on the artifact filename -- fpm/xbps refuse to
+# overwrite an existing file at /out/<artifact>.
+pair_dir="$ARTIFACTS_DIR/$pair"
+artifact_path="$pair_dir/$artifact"
+mkdir -p "$pair_dir"
 
 # Per-distro build args. VOID_REPO override (the default
 # alpha.de.repo.voidlinux.org has SSL issues from many host networks;
 # the CDN-backed repo-default.voidlinux.org works everywhere).
 BUILD_ARGS=""
+USERNS_ARGS="--userns=keep-id"
 case "$distro" in
     void) BUILD_ARGS="--build-arg VOID_REPO=https://repo-default.voidlinux.org/current" ;;
+    # Arch's makepkg refuses to run as the real root, and
+    # setpriv/fakeroot can't switch uids under --userns=keep-id
+    # (no uid mapping for `nobody`). Run the container as the
+    # real root; we chown /out to HOST_UID inside the entrypoint
+    # via `install` (not chown).
+    arch) USERNS_ARGS="" ;;
 esac
 
 {
@@ -46,8 +59,8 @@ esac
     if ! podman run --rm \
         --env HOST_UID=$(id -u) --env HOST_GID=$(id -g) \
         -v "$REPO_ROOT:/src:ro" \
-        -v "$ARTIFACTS_DIR:/out:rw" \
-        --userns=keep-id \
+        -v "$pair_dir:/out:rw" \
+        $USERNS_ARGS \
         "honcho-${repo}:builder-${distro}" 2>&1; then
         printf 'BUILD RUN FAILED  %s\n' "$pair"
         exit 1
