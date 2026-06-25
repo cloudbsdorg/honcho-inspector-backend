@@ -24,10 +24,19 @@ artifact_var="ARTIFACT_${repo}_${distro}"
 eval "artifact=\"\$$artifact_var\""
 artifact_path="$ARTIFACTS_DIR/$artifact"
 
+# Per-distro build args. VOID_REPO override (the default
+# alpha.de.repo.voidlinux.org has SSL issues from many host networks;
+# the CDN-backed repo-default.voidlinux.org works everywhere).
+BUILD_ARGS=""
+case "$distro" in
+    void) BUILD_ARGS="--build-arg VOID_REPO=https://repo-default.voidlinux.org/current" ;;
+esac
+
 {
     printf '\n=== phase 1: build %s (ts=%s) ===\n' "$pair" "$TS"
     if ! podman build \
         -t "honcho-${repo}:builder-${distro}" \
+        $BUILD_ARGS \
         -f "$REPO_ROOT/packaging/build/${distro}/Containerfile" \
         "$REPO_ROOT" 2>&1; then
         printf 'BUILD FAILED  %s\n' "$pair"
