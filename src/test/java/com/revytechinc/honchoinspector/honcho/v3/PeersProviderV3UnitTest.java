@@ -95,7 +95,7 @@ class PeersProviderV3UnitTest {
     }
 
     @Test
-    void updatePeerCard_advertisesV3PostOnCardEndpoint() {
+    void updatePeerCard_advertisesV3PutOnCardEndpoint() {
         PeersProviderV3 provider = newPeersProvider();
 
         assertThat(provider.operations()).contains(HonchoOperation.UPDATE_PEER_CARD);
@@ -104,7 +104,7 @@ class PeersProviderV3UnitTest {
         assertThat(provider.pathTemplate(HonchoOperation.UPDATE_PEER_CARD))
             .isEqualTo("workspaces/{ws}/peers/{peerId}/card");
         assertThat(provider.httpMethod(HonchoOperation.UPDATE_PEER_CARD))
-            .isEqualTo(HttpMethod.POST);
+            .isEqualTo(HttpMethod.PUT);
     }
 
     @Test

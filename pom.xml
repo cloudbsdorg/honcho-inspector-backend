@@ -21,6 +21,15 @@
         <java.version>25</java.version>
         <maven.compiler.source>25</maven.compiler.source>
         <maven.compiler.target>25</maven.compiler.target>
+        <!--
+            Build-time identifiers baked into application.yml (Spring Boot
+            always filters application.yml through maven-resources-plugin)
+            and read at startup by BuildInfoFilter. Override at build time
+            with -Dbuild.commit=abc123 -Dbuild.timestamp=2026-06-25T13:00:00Z.
+            Default values are safe for a developer machine.
+        -->
+        <build.commit>local</build.commit>
+        <build.timestamp></build.timestamp>
     </properties>
 
     <dependencies>
@@ -128,6 +137,63 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
             </plugin>
+            <!--
+                Generate target/classes/build-info.properties from git rev-parse
+                before the jar is packaged. Spring imports this via
+                spring.config.import (see application.yml) and BuildInfoFilter
+                reads the values. Default values from -Dbuild.commit=... are
+                passed through; if -Dbuild.commit is unset, we fall back to
+                git rev-parse (short HEAD), then "local" if git fails. The exec
+                is bounded to prepare-package so it does not fire during tests.
+            -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>write-build-info</id>
+                        <phase>prepare-package</phase>
+                        <goals><goal>exec</goal></goals>
+                        <configuration>
+                            <executable>bash</executable>
+                            <arguments>
+                                <argument>-c</argument>
+                                <argument><![CDATA[
+                                    set +e
+                                    COMMIT="$build_commit"
+                                    if [ -z "$COMMIT" ]; then
+                                      COMMIT="$(git rev-parse --short HEAD 2>/dev/null)"
+                                    fi
+                                    if [ -z "$COMMIT" ]; then
+                                      COMMIT="local"
+                                    fi
+                                    TS="$build_timestamp"
+                                    if [ -z "$TS" ]; then
+                                      TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+                                    fi
+                                    mkdir -p "$project_build_outputDirectory"
+                                    {
+                                      echo "build.commit=${COMMIT}"
+                                      echo "build.timestamp=${TS}"
+                                    } > "$project_build_outputDirectory/build-info.properties"
+                                    echo "[build-info] wrote $(cat "$project_build_outputDirectory/build-info.properties")"
+                                ]]></argument>
+                            </arguments>
+                            <!--
+                                Forward Maven properties to the script's env so
+                                -Dbuild.commit=$GIT_SHA -Dbuild.timestamp=$TS at
+                                the mvn command line actually flow through.
+                            -->
+                            <environmentVariables>
+                                <build_commit>${build.commit}</build_commit>
+                                <build_timestamp>${build.timestamp}</build_timestamp>
+                                <project_build_outputDirectory>${project.build.outputDirectory}</project_build_outputDirectory>
+                            </environmentVariables>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
             <!--
                  Surefire: activate the `test` Spring profile for every
                  test run. logback-spring.xml uses <springProfile name="test">
