@@ -115,8 +115,20 @@ RUN set -eux \
 # makepkg is the native arch tool. We keep fpm installed because
 # the entrypoint could fall back to fpm -t pacman if a future
 # task requires it; for now, makepkg is the chosen path.
+#
+# Arch's gem install drops the fpm binary in ~/.local/share/gem/...
+# which isn't on PATH by default. Set GEM_HOME=/usr/local so the
+# binary lands in /usr/local/bin/fpm, which IS on PATH.
+#
+# Arch's /etc/gemrc has --format-executable on by default, which
+# renames the binary to fpm-3.4 (a "format_executable" idiom that
+# lets multiple Ruby versions co-exist). We pass
+# --no-format-executable to install the binary as plain `fpm`.
+ENV GEM_HOME=/usr/local \
+    BUNDLE_PATH=/usr/local/bundle \
+    PATH=/usr/local/bin:/usr/bin:/usr/sbin:/sbin:/bin
 RUN set -eux \
-    && gem install --no-document fpm \
+    && gem install --no-document --no-format-executable fpm \
     && fpm --version
 
 # ====== entrypoint ================================================

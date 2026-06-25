@@ -68,7 +68,7 @@
 #     honcho-inspector-backend:builder-void
 
 # ====== base + label ==============================================
-FROM docker.io/voidlinux/voidlinux:glibc
+FROM docker.io/voidlinux/voidlinux:latest
 
 ARG HOST_UID=0
 ARG HOST_GID=0
@@ -99,7 +99,20 @@ LABEL org.opencontainers.image.title="honcho-inspector-backend (builder-void)" \
 # `-y` answers yes to all prompts; `-S` is sync (not used here
 # since `xbps-install` is the all-in-one install command).
 # We pin to the current repo with `-R` (refresh) first.
+#
+# Void's default repo URL (alpha.de.repo.voidlinux.org) has an
+# SSL cert subject mismatch on some networks; the operator can
+# override VOID_REPO to a mirror that works for them
+# (repo-default.voidlinux.org is the CDN-backed default; some
+# regions use alpha.us.repo.voidlinux.org etc.). We leave
+# VOID_REPO unset here and fall back to the stock URL in the
+# RUN; mirrors should be configured via the host's xbps.d/ drop-
+# in, not baked into the image.
+ARG VOID_REPO=
 RUN set -eux \
+    && if [ -n "${VOID_REPO}" ]; then \
+         echo "repository=${VOID_REPO}" > /usr/share/xbps.d/00-repository-main.conf; \
+       fi \
     && xbps-install -Syu \
     && xbps-install -y \
         ca-certificates \
