@@ -65,8 +65,12 @@ FROM docker.io/library/debian:13-slim
 # HOST_UID / HOST_GID are read by entrypoint.sh's final
 # `chown -R $HOST_UID:$HOST_GID /out` so the produced .deb is
 # owned by the operator on the host (not root inside the container).
-ARG HOST_UID=0
-ARG HOST_GID=0
+# HOST_UID / HOST_GID are RUNTIME env vars set via `podman run --env`,
+# not build-args. Defaulting them to 0 here means "leave the artifact
+# owned by root" if the operator forgets to pass them -- better than
+# failing the build. The README documents the `--env` invocation.
+ENV HOST_UID=0
+ENV HOST_GID=0
 
 LABEL org.opencontainers.image.title="honcho-inspector-backend (builder-debian)" \
       org.opencontainers.image.description="Build container for the honcho-inspector-backend .deb on Debian 13 trixie. Installs openjdk-25, nodejs24 (Nodesource), ruby+dev, and fpm. Produces honcho-inspector-backend_0.1.0-SNAPSHOT_all.deb under /out." \
@@ -106,6 +110,7 @@ RUN set -eux \
         libzstd-dev \
         zlib1g-dev \
         openjdk-25-jdk-headless \
+        maven \
     && rm -rf /var/lib/apt/lists/*
 
 # ====== Node 24 via Nodesource (modern keyring) ===================
