@@ -73,8 +73,12 @@ LockPersonality=true
 SystemCallArchitectures=native
 
 # Writable paths. The config dir is read-only at runtime; the data
-# dir holds the SQLite DB and the log dir holds the JSONL log.
-ReadWritePaths=/var/lib/honcho-inspector /var/log/honcho-inspector
+# dir holds the SQLite DB and the log dir holds the JSONL log. The
+# config dir IS writable for the auto-generated bootstrap files
+# (honcho.crypto-key, honcho.bootstrap.admin) that AdminBootstrap
+# creates on first boot when the operator has not set HONCHO_CRYPTO_KEY
+# in the env file.
+ReadWritePaths=/var/lib/honcho-inspector /var/log/honcho-inspector /etc/honcho-inspector
 
 # Network: bind to loopback only. The reverse proxy (nginx / Apache /
 # Caddy) is the public listener.
