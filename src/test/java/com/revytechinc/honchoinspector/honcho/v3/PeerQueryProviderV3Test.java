@@ -14,7 +14,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
 /**
- * Contract test for {@link PeerQueryProviderV3}. Five tests, one per
+ * Contract test for {@link PeerQueryProviderV3}. Four tests, one per
  * operation the provider owns. Each test verifies the four things the
  * registry will rely on for that op, plus the absolute URL that
  * {@link V3ProviderSupport#substitutePath} +
@@ -23,12 +23,14 @@ import static org.mockito.Mockito.mock;
  *   <li>{@code operations()} advertises the op under test.</li>
  *   <li>{@code supportedVersions()} returns exactly {@code {V3}}.</li>
  *   <li>{@code pathTemplate(op)} returns the right v3 template.</li>
- *   <li>{@code httpMethod(op)} returns the right verb (the two LIST
- *       endpoints are GET; chat, search, and the conclusions query are
- *       POST).</li>
+ *   <li>{@code httpMethod(op)} returns the right verb (peerChat / searchPeers /
+ *       queryPeerConclusions are POST; listPeerSessions is GET).</li>
  *   <li>URL construction produces the right absolute URL for the supplied
  *       {@code {ws}} and {@code {peerId}} placeholders.</li>
  * </ol>
+ *
+ * <p>{@code LIST_PEER_CONCLUSIONS} moved to {@link ConclusionsProviderV3};
+ * its contract is covered there.
  */
 class PeerQueryProviderV3Test {
 
@@ -77,20 +79,15 @@ class PeerQueryProviderV3Test {
     }
 
     @Test
-    void listPeerConclusions_isDeclaredAsGetOnConclusionsEndpoint() {
+    void listPeerConclusions_isNoLongerHandledByPeerQueryProvider() {
+        // Honcho v3 moved the conclusions resource up one level. The
+        // workspace-level POST /v3/workspaces/{ws}/conclusions/list endpoint
+        // is now owned by ConclusionsProviderV3 — see
+        // ConclusionsProviderV3Test for the contract coverage.
         PeerQueryProviderV3 provider = newProvider();
-
         assertThat(provider.operations())
-            .contains(HonchoOperation.LIST_PEER_CONCLUSIONS);
-        assertThat(provider.supportedVersions())
-            .containsExactly(HonchoApiVersion.V3);
-        assertThat(provider.pathTemplate(HonchoOperation.LIST_PEER_CONCLUSIONS))
-            .isEqualTo("workspaces/{ws}/peers/{peerId}/conclusions");
-        assertThat(provider.httpMethod(HonchoOperation.LIST_PEER_CONCLUSIONS))
-            .isEqualTo(HttpMethod.GET);
-        assertThat(urlFor(HonchoOperation.LIST_PEER_CONCLUSIONS, PEER_PATH_VARS))
-            .as("URL must include both {ws} and {peerId} placeholders and the /conclusions suffix")
-            .isEqualTo("https://api.honcho.dev/v3/workspaces/ws-42/peers/p-99/conclusions");
+            .as("LIST_PEER_CONCLUSIONS must have moved out of PeerQueryProviderV3")
+            .doesNotContain(HonchoOperation.LIST_PEER_CONCLUSIONS);
     }
 
     @Test

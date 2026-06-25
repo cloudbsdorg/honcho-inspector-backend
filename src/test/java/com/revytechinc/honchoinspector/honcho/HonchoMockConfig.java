@@ -176,10 +176,10 @@ public class HonchoMockConfig {
         @Override public Object createPeer(HonchoContext ctx, Object createPeerRequest)                       { return load(CREATE_PEER); }
         @Override public Object getPeerCard(HonchoContext ctx, String peerId)                                 { return load(GET_PEER_CARD); }
         @Override public Object updatePeerCard(HonchoContext ctx, String peerId, Object cardData)             { return load(UPDATE_PEER_CARD); }
-        @Override public Object getPeerRepresentation(HonchoContext ctx, String peerId)                       { return load(GET_REPRESENTATION); }
+        @Override public Object getPeerRepresentation(HonchoContext ctx, String peerId, Object body)         { return load(GET_REPRESENTATION); }
         @Override public Object peerChat(HonchoContext ctx, String peerId, Object chatRequest)                { return load(PEER_CHAT); }
         @Override public Object searchPeers(HonchoContext ctx, String peerId, Object searchRequest)            { return load(SEARCH_PEERS); }
-        @Override public Object listPeerConclusions(HonchoContext ctx, String peerId, Map<String, ?> filters) { return load(LIST_PEER_CONCLUSIONS); }
+        @Override public Object listPeerConclusions(HonchoContext ctx, String peerId, Object body)           { return load(LIST_PEER_CONCLUSIONS); }
         @Override public Object listPeerSessions(HonchoContext ctx, String peerId, Map<String, ?> filters)    { return load(LIST_PEER_SESSIONS); }
         @Override public Object queryPeerConclusions(HonchoContext ctx, String peerId, Object queryRequest)   { return load(QUERY_PEER_CONCLUSIONS); }
         @Override public Object listSessions(HonchoContext ctx, Map<String, ?> filters)                       { return load(LIST_SESSIONS); }

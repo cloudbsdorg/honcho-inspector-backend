@@ -107,18 +107,21 @@ class HonchoProviderRegistryTest {
     }
 
     /**
-     * Build the 8 V3 providers matching the layout the real T10–T13
-     * implementations will produce. 5 + 5 + 4 + 2 + 4 + 2 + 1 + 1 = 24 ops,
-     * matching {@link HonchoOperation#values()} count.
+     * Build the 9 V3 providers matching the layout the real T10–T13
+     * implementations will produce. 5 + 4 + 1 + 4 + 2 + 4 + 2 + 1 + 1 = 24 ops,
+     * matching {@link HonchoOperation#values()} count. {@code LIST_PEER_CONCLUSIONS}
+     * moved to its own single-op provider (ConclusionsProviderV3) because the
+     * v3 endpoint is at the workspace level.
      */
-    private static List<HonchoProvider> eightV3ProvidersCoveringAll24Ops() {
+    private static List<HonchoProvider> nineV3ProvidersCoveringAll24Ops() {
         return List.of(
             v3(EnumSet.of(HonchoOperation.LIST_PEERS, HonchoOperation.CREATE_PEER,
                 HonchoOperation.GET_PEER_CARD, HonchoOperation.UPDATE_PEER_CARD,
                 HonchoOperation.GET_REPRESENTATION)),
             v3(EnumSet.of(HonchoOperation.PEER_CHAT, HonchoOperation.SEARCH_PEERS,
-                HonchoOperation.LIST_PEER_CONCLUSIONS, HonchoOperation.LIST_PEER_SESSIONS,
+                HonchoOperation.LIST_PEER_SESSIONS,
                 HonchoOperation.QUERY_PEER_CONCLUSIONS)),
+            v3(EnumSet.of(HonchoOperation.LIST_PEER_CONCLUSIONS)),
             v3(EnumSet.of(HonchoOperation.LIST_SESSIONS, HonchoOperation.CREATE_SESSION,
                 HonchoOperation.GET_SESSION, HonchoOperation.DELETE_SESSION)),
             v3(EnumSet.of(HonchoOperation.LIST_SESSION_MESSAGES, HonchoOperation.ADD_MESSAGE)),
@@ -132,9 +135,9 @@ class HonchoProviderRegistryTest {
 
     @Test
     void filtersByVersion() {
-        // Mix 8 V3 providers (covering all 24 ops) with one V4-only provider.
+        // Mix 9 V3 providers (covering all 24 ops) with one V4-only provider.
         // A V3 registry must include only the V3 ones.
-        List<HonchoProvider> all = new ArrayList<>(eightV3ProvidersCoveringAll24Ops());
+        List<HonchoProvider> all = new ArrayList<>(nineV3ProvidersCoveringAll24Ops());
         all.add(v4(EnumSet.of(HonchoOperation.GET_WORKSPACE_INFO)));
 
         HonchoProviderRegistry v3Registry = new HonchoProviderRegistry(HonchoApiVersion.V3, all);
@@ -142,7 +145,7 @@ class HonchoProviderRegistryTest {
         assertThat(v3Registry.version()).isEqualTo(HonchoApiVersion.V3);
         assertThat(v3Registry.providerCount())
             .as("V3 registry should count only V3 providers")
-            .isEqualTo(8);
+            .isEqualTo(9);
         assertThat(v3Registry.coveredOperations())
             .as("V3 registry should cover every HonchoOperation")
             .containsExactlyInAnyOrder(HonchoOperation.values());

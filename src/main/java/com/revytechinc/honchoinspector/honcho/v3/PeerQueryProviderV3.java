@@ -19,28 +19,31 @@ import com.revytechinc.honchoinspector.honcho.HonchoProvider;
 import com.revytechinc.honchoinspector.model.HonchoContext;
 
 /**
- * Honcho v3 implementation of the five peer <em>query</em> operations &mdash;
+ * Honcho v3 implementation of the four peer <em>query</em> operations &mdash;
  * the agentic / semantic-search endpoints that share the
  * {@code /v3/workspaces/{ws}/peers/{peerId}/...} prefix but don't manage
  * peer objects themselves.
  *
- * <p>The five operations and their v3 upstream paths are:
+ * <p>The four operations and their v3 upstream paths are:
  * <ul>
  *   <li>{@link HonchoOperation#PEER_CHAT} &mdash; <code>POST
  *       /v3/workspaces/{ws}/peers/{peerId}/chat</code>.</li>
  *   <li>{@link HonchoOperation#SEARCH_PEERS} &mdash; <code>POST
  *       /v3/workspaces/{ws}/peers/{peerId}/search</code>.</li>
- *   <li>{@link HonchoOperation#LIST_PEER_CONCLUSIONS} &mdash; <code>GET
- *       /v3/workspaces/{ws}/peers/{peerId}/conclusions</code>.</li>
  *   <li>{@link HonchoOperation#LIST_PEER_SESSIONS} &mdash; <code>GET
  *       /v3/workspaces/{ws}/peers/{peerId}/sessions</code>.</li>
  *   <li>{@link HonchoOperation#QUERY_PEER_CONCLUSIONS} &mdash; <code>POST
  *       /v3/workspaces/{ws}/peers/{peerId}/conclusions/query</code>.</li>
  * </ul>
  *
+ * <p>{@link HonchoOperation#LIST_PEER_CONCLUSIONS} moved to
+ * {@link ConclusionsProviderV3} because Honcho v3 exposes it at the
+ * workspace level (POST {@code /v3/workspaces/{ws}/conclusions/list})
+ * with the peer filter as a body field rather than a path segment.
+ *
  * <p>Peer <em>CRUD</em> operations (list, create, card, representation) live
- * in {@link PeersProviderV3}. The split keeps the v3 provider set to two
- * files per the "one builder per logical operation, ~7-9 files" directive.
+ * in {@link PeersProviderV3}. The split keeps each provider focused on a
+ * single resource cluster.
  *
  * <p>All plumbing (path-variable substitution, URL building, auth headers,
  * error translation) is delegated to {@link V3ProviderSupport}.
@@ -51,7 +54,6 @@ public class PeerQueryProviderV3 implements HonchoProvider {
     private static final Set<HonchoOperation> OPS = EnumSet.of(
         HonchoOperation.PEER_CHAT,
         HonchoOperation.SEARCH_PEERS,
-        HonchoOperation.LIST_PEER_CONCLUSIONS,
         HonchoOperation.LIST_PEER_SESSIONS,
         HonchoOperation.QUERY_PEER_CONCLUSIONS
     );
@@ -77,7 +79,6 @@ public class PeerQueryProviderV3 implements HonchoProvider {
         return switch (op) {
             case PEER_CHAT              -> "workspaces/{ws}/peers/{peerId}/chat";
             case SEARCH_PEERS           -> "workspaces/{ws}/peers/{peerId}/search";
-            case LIST_PEER_CONCLUSIONS  -> "workspaces/{ws}/peers/{peerId}/conclusions";
             case LIST_PEER_SESSIONS     -> "workspaces/{ws}/peers/{peerId}/sessions";
             case QUERY_PEER_CONCLUSIONS -> "workspaces/{ws}/peers/{peerId}/conclusions/query";
             default -> throw new UnsupportedOperationException(
@@ -89,7 +90,7 @@ public class PeerQueryProviderV3 implements HonchoProvider {
     public HttpMethod httpMethod(HonchoOperation op) {
         return switch (op) {
             case PEER_CHAT, SEARCH_PEERS, QUERY_PEER_CONCLUSIONS -> HttpMethod.POST;
-            case LIST_PEER_CONCLUSIONS, LIST_PEER_SESSIONS        -> HttpMethod.GET;
+            case LIST_PEER_SESSIONS                              -> HttpMethod.GET;
             default -> throw new UnsupportedOperationException(
                 "PeerQueryProviderV3 has no HTTP method for " + op);
         };

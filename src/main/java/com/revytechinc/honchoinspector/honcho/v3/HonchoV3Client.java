@@ -112,8 +112,8 @@ public class HonchoV3Client implements HonchoClient {
     }
 
     @Override
-    public Object getPeerRepresentation(HonchoContext ctx, String peerId) throws HonchoCallException {
-        return call(HonchoOperation.GET_REPRESENTATION, ctx, null, pathVars("peerId", peerId), null);
+    public Object getPeerRepresentation(HonchoContext ctx, String peerId, Object body) throws HonchoCallException {
+        return call(HonchoOperation.GET_REPRESENTATION, ctx, body, pathVars("peerId", peerId), null);
     }
 
     // ------------------------------------------------------------------
@@ -131,8 +131,8 @@ public class HonchoV3Client implements HonchoClient {
     }
 
     @Override
-    public Object listPeerConclusions(HonchoContext ctx, String peerId, Map<String, ?> filters) throws HonchoCallException {
-        return call(HonchoOperation.LIST_PEER_CONCLUSIONS, ctx, filters, pathVars("peerId", peerId), null);
+    public Object listPeerConclusions(HonchoContext ctx, String peerId, Object body) throws HonchoCallException {
+        return call(HonchoOperation.LIST_PEER_CONCLUSIONS, ctx, body, null, null);
     }
 
     @Override

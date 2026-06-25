@@ -138,8 +138,8 @@ public class HonchoProxyService {
         return call(HonchoOperation.UPDATE_PEER_CARD, ctx, cardData, pathVar("peerId", peerId), null);
     }
 
-    public Object getPeerRepresentation(HonchoContext ctx, String peerId) throws HonchoCallException {
-        return call(HonchoOperation.GET_REPRESENTATION, ctx, null, pathVar("peerId", peerId), null);
+    public Object getPeerRepresentation(HonchoContext ctx, String peerId, Object body) throws HonchoCallException {
+        return call(HonchoOperation.GET_REPRESENTATION, ctx, body, pathVar("peerId", peerId), null);
     }
 
     public Object peerChat(HonchoContext ctx, String peerId, Object chatRequest) throws HonchoCallException {
@@ -150,8 +150,32 @@ public class HonchoProxyService {
         return call(HonchoOperation.SEARCH_PEERS, ctx, searchRequest, pathVar("peerId", peerId), null);
     }
 
-    public Object listPeerConclusions(HonchoContext ctx, String peerId, Map<String, ?> filters) throws HonchoCallException {
-        return call(HonchoOperation.LIST_PEER_CONCLUSIONS, ctx, null, pathVar("peerId", peerId), filters);
+    public Object listPeerConclusions(HonchoContext ctx, String peerId, Object body) throws HonchoCallException {
+        // Honcho v3 expects {filters:{...}}. If the caller supplied a
+        // pre-wrapped envelope, pass it through verbatim. Otherwise build
+        // a fresh envelope and fall back on the path-variable peerId.
+        Map<String, Object> envelope = new LinkedHashMap<>();
+        Map<String, Object> filterMap = new LinkedHashMap<>();
+        if (body instanceof Map<?, ?> raw) {
+            if (raw.get("filters") instanceof Map<?, ?> supplied) {
+                for (Map.Entry<?, ?> e : supplied.entrySet()) {
+                    if (e.getValue() != null && e.getKey() != null) {
+                        filterMap.put(e.getKey().toString(), e.getValue());
+                    }
+                }
+            } else {
+                for (Map.Entry<?, ?> e : raw.entrySet()) {
+                    if (e.getValue() != null && e.getKey() != null) {
+                        filterMap.put(e.getKey().toString(), e.getValue());
+                    }
+                }
+            }
+        }
+        if (peerId != null && !peerId.isBlank()) {
+            filterMap.putIfAbsent("observed_id", peerId);
+        }
+        envelope.put("filters", filterMap);
+        return call(HonchoOperation.LIST_PEER_CONCLUSIONS, ctx, envelope, null, null);
     }
 
     public Object listPeerSessions(HonchoContext ctx, String peerId, Map<String, ?> filters) throws HonchoCallException {

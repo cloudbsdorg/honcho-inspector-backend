@@ -28,7 +28,7 @@ public enum HonchoOperation {
     /** POST {@code /api/peers/{id}/card} → POST {@code /v3/workspaces/{ws}/peers/{id}/card}. */
     UPDATE_PEER_CARD,
 
-    /** GET {@code /api/peers/{id}/representation} → GET {@code /v3/workspaces/{ws}/peers/{id}/representation}. */
+    /** POST {@code /api/peers/{id}/representation} → POST {@code /v3/workspaces/{ws}/peers/{id}/representation}. */
     GET_REPRESENTATION,
 
     /** POST {@code /api/peers/{id}/chat} → POST {@code /v3/workspaces/{ws}/peers/{id}/chat}. */
@@ -37,7 +37,7 @@ public enum HonchoOperation {
     /** POST {@code /api/peers/{id}/search} → POST {@code /v3/workspaces/{ws}/peers/{id}/search}. */
     SEARCH_PEERS,
 
-    /** GET {@code /api/peers/{id}/conclusions} → GET {@code /v3/workspaces/{ws}/peers/{id}/conclusions}. */
+    /** POST {@code /api/peers/{id}/conclusions} → POST {@code /v3/workspaces/{ws}/conclusions/list} (workspace-level; peer filter is in the body). */
     LIST_PEER_CONCLUSIONS,
 
     /** GET {@code /api/peers/{id}/sessions} → GET {@code /v3/workspaces/{ws}/peers/{id}/sessions}. */

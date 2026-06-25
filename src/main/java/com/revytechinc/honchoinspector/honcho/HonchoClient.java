@@ -63,8 +63,11 @@ public interface HonchoClient {
     /**
      * Fetch the textual representation for {@code peerId}.
      * Corresponds to {@link HonchoOperation#GET_REPRESENTATION}.
+     *
+     * @param body optional request body; Honcho v3 accepts an empty
+     *             {@code {}} when no options are needed
      */
-    Object getPeerRepresentation(HonchoContext ctx, String peerId) throws HonchoCallException;
+    Object getPeerRepresentation(HonchoContext ctx, String peerId, Object body) throws HonchoCallException;
 
     /**
      * Issue a natural-language chat query against {@code peerId}.
@@ -81,8 +84,12 @@ public interface HonchoClient {
     /**
      * List conclusions (derived facts) about {@code peerId}.
      * Corresponds to {@link HonchoOperation#LIST_PEER_CONCLUSIONS}.
+     *
+     * @param body Honcho v3 {@code ConclusionGet} envelope: {@code {filters: {...}}}.
+     *             Implementations forward it to the workspace-level
+     *             {@code POST /conclusions/list} endpoint verbatim.
      */
-    Object listPeerConclusions(HonchoContext ctx, String peerId, Map<String, ?> filters) throws HonchoCallException;
+    Object listPeerConclusions(HonchoContext ctx, String peerId, Object body) throws HonchoCallException;
 
     /**
      * List sessions the peer {@code peerId} participates in.

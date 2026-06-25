@@ -161,7 +161,7 @@ class HonchoControllerTest {
         when(honchoProxy.createPeer(any(), any())).thenReturn(marker);
         when(honchoProxy.getPeerCard(any(), any())).thenReturn(marker);
         when(honchoProxy.updatePeerCard(any(), any(), any())).thenReturn(marker);
-        when(honchoProxy.getPeerRepresentation(any(), any())).thenReturn(marker);
+        when(honchoProxy.getPeerRepresentation(any(), any(), any())).thenReturn(marker);
         when(honchoProxy.peerChat(any(), any(), any())).thenReturn(marker);
         when(honchoProxy.searchPeers(any(), any(), any())).thenReturn(marker);
         when(honchoProxy.listPeerConclusions(any(), any(), any())).thenReturn(marker);
@@ -266,12 +266,14 @@ class HonchoControllerTest {
 
     @Test
     void peerRepresentation_delegatesToHonchoGetPeerRepresentation() throws Exception {
-        when(honchoProxy.getPeerRepresentation(any(), eq("p-1"))).thenReturn("rep text");
+        when(honchoProxy.getPeerRepresentation(any(), eq("p-1"), any())).thenReturn("rep text");
 
-        mvc.perform(withHeaders(get("/api/peers/p-1/representation")))
+        mvc.perform(withHeaders(post("/api/peers/p-1/representation")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}")))
             .andExpect(status().isOk());
 
-        verify(honchoProxy).getPeerRepresentation(any(), eq("p-1"));
+        verify(honchoProxy).getPeerRepresentation(any(), eq("p-1"), any());
     }
 
     @Test
@@ -303,13 +305,16 @@ class HonchoControllerTest {
 
     @Test
     void peerConclusions_delegatesToHonchoListPeerConclusions() throws Exception {
-        when(honchoProxy.listPeerConclusions(any(), eq("p-1"), eq(Map.of("limit", "10"))))
+        Object body = Map.of("filters", Map.of("size", 10));
+        when(honchoProxy.listPeerConclusions(any(), eq("p-1"), eq(body)))
             .thenReturn(Map.of("items", "c"));
 
-        mvc.perform(withHeaders(get("/api/peers/p-1/conclusions").param("limit", "10")))
+        mvc.perform(withHeaders(post("/api/peers/p-1/conclusions")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsBytes(body))))
             .andExpect(status().isOk());
 
-        verify(honchoProxy).listPeerConclusions(any(), eq("p-1"), eq(Map.of("limit", "10")));
+        verify(honchoProxy).listPeerConclusions(any(), eq("p-1"), eq(body));
     }
 
     @Test

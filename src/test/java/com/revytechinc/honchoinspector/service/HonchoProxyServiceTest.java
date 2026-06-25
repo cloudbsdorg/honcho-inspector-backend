@@ -277,14 +277,15 @@ class HonchoProxyServiceTest {
     }
 
     @Test
-    void typed_getPeerRepresentation_passesPeerId() {
+    void typed_getPeerRepresentation_passesPeerIdAndBody() {
         HonchoClientFactory factory = v3Factory();
         HonchoProxyService svc = service(factory);
+        Object body = Map.of();
 
-        svc.getPeerRepresentation(CTX_V3, "p-1");
+        svc.getPeerRepresentation(CTX_V3, "p-1", body);
 
         verify(clientOf(factory)).call(
-            HonchoOperation.GET_REPRESENTATION, CTX_V3, null, Map.of("peerId", "p-1"), null
+            HonchoOperation.GET_REPRESENTATION, CTX_V3, body, Map.of("peerId", "p-1"), null
         );
     }
 
@@ -315,16 +316,30 @@ class HonchoProxyServiceTest {
     }
 
     @Test
-    void typed_listPeerConclusions_passesPeerIdAndFilters() {
+    void typed_listPeerConclusions_wrapsFiltersInEnvelopeAndSetsObservedId() {
         HonchoClientFactory factory = v3Factory();
         HonchoProxyService svc = service(factory);
 
-        svc.listPeerConclusions(CTX_V3, "p-1", Map.of("limit", 10));
+        svc.listPeerConclusions(CTX_V3, "p-1", Map.of("size", 10));
 
+        ArgumentCaptor<Object> bodyCap = ArgumentCaptor.forClass(Object.class);
         verify(clientOf(factory)).call(
-            HonchoOperation.LIST_PEER_CONCLUSIONS, CTX_V3, null,
-            Map.of("peerId", "p-1"), Map.of("limit", 10)
+            org.mockito.ArgumentMatchers.eq(HonchoOperation.LIST_PEER_CONCLUSIONS),
+            org.mockito.ArgumentMatchers.eq(CTX_V3),
+            bodyCap.capture(),
+            org.mockito.ArgumentMatchers.isNull(),
+            org.mockito.ArgumentMatchers.isNull()
         );
+        @SuppressWarnings("unchecked")
+        Map<String, Object> body = (Map<String, Object>) bodyCap.getValue();
+        assertThat(body)
+            .as("listPeerConclusions must wrap the inbound filters in Honcho's {filters:{...}} envelope")
+            .containsOnlyKeys("filters");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> filters = (Map<String, Object>) body.get("filters");
+        assertThat(filters)
+            .containsEntry("size", 10)
+            .containsEntry("observed_id", "p-1");
     }
 
     @Test

@@ -1,11 +1,11 @@
 {
   "_meta": {
-    "captured_at": "2026-06-18T07:14:43Z",
+    "captured_at": "2026-06-25T18:45:00Z",
     "honcho_version": "3.0.7",
-    "endpoint": "GET /v3/workspaces/{ws}/peers/{peerId}/representation",
-    "method": "GET",
+    "endpoint": "POST /v3/workspaces/{ws}/peers/{peerId}/representation",
+    "method": "POST",
     "synthetic": true,
-    "synthetic_reason": "real call failed"
+    "synthetic_reason": "Honcho v3 disallows GET on this endpoint (returns 405); the proxy uses POST with an empty {} body."
   },
   "data": {
     "representation": "User is a backend engineer working on honcho-inspector.\nRecent focus: Phase 1 OpenAPI + workflow tests."

@@ -1,11 +1,11 @@
 {
   "_meta": {
-    "captured_at": "2026-06-18T07:14:43Z",
+    "captured_at": "2026-06-25T18:45:00Z",
     "honcho_version": "3.0.7",
-    "endpoint": "GET /v3/workspaces/{ws}/peers/{peerId}/conclusions",
-    "method": "GET",
+    "endpoint": "POST /v3/workspaces/{ws}/conclusions/list",
+    "method": "POST",
     "synthetic": true,
-    "synthetic_reason": "real call failed"
+    "synthetic_reason": "Honcho v3 dropped the per-peer /conclusions endpoint (404). The proxy now uses the workspace-level POST /conclusions/list with {filters:{observed_id:...}} body."
   },
   "data": {
     "items": [
