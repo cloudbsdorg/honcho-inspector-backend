@@ -55,6 +55,7 @@ JAR          = target/$(PROJECT_NAME)-0.1.0-SNAPSHOT.jar
         lint format outdated \
         install install-only install-linux install-freebsd install-macos \
         install-launcher install-config-only \
+        deb deb-clean deb-stage \
         clean distclean
 
 # === Default goal ===
@@ -236,11 +237,75 @@ install-config-only: ## Drop the application.yml at the OS-appropriate config di
 		*) printf "unsupported OS: %s\n" "$$(uname -s)" >&2; exit 1 ;; \
 	esac
 
+# === Debian package ===
+# `make deb` builds a .deb package from the source tree, the built jar,
+# and the debian/ directory's maintainer scripts. The output lands in
+# dist/honcho-inspector-backend-VERSION_all.deb. Requires:
+#   - dpkg-deb (in dpkg package; install with `apt install dpkg`)
+#   - fakeroot (install with `apt install fakeroot`)
+# On a clean box: `make build && make deb`.
+#
+# The deb depends on a Java 25 JRE (openjdk-25-jre-headless) plus
+# adduser (for the www-data system account). The postinst script
+# creates the user, the data/log/config dirs, and the env-file
+# placeholder. The conffiles list protects the operator's
+# application.yml and env-file from being clobbered on upgrade.
+
+DEB_NAME      = honcho-inspector-backend
+# Version is parsed at recipe time (in the deb target) so the
+# Makefile stays portable to bmake. See the deb-stage target.
+DEB_STAGE     = debian/stage
+DEB_OUT       = dist/$(DEB_NAME)_0.1.0-SNAPSHOT_all.deb
+
+deb: build ## Build a .deb package (requires dpkg-deb + fakeroot)
+	@if [ -z "$$(command -v dpkg-deb)" ]; then printf "dpkg-deb not found in PATH -- apt install dpkg\n" >&2; exit 1; fi
+	@if [ -z "$$(command -v fakeroot)" ]; then printf "fakeroot not found in PATH -- apt install fakeroot\n" >&2; exit 1; fi
+	@if [ ! -f "$(JAR)" ]; then \
+		printf "jar not found: %s (run 'make build' first)\n" "$(JAR)" >&2; exit 1; \
+	fi
+	@$(MAKE) --no-print-directory deb-stage
+	@printf "packing %s ...\n" "$(DEB_OUT)"
+	@install -d dist
+	@fakeroot dpkg-deb --build --root-owner-group "$(DEB_STAGE)" "$(DEB_OUT)"
+	@printf "built %s\n" "$(DEB_OUT)"
+	@printf "install:  sudo dpkg -i %s && sudo apt -f install\n" "$(DEB_OUT)"
+
+deb-stage: ## Populate debian/stage with the jar + assets (called by deb)
+	@printf "staging debian/stage ...\n"
+	@rm -rf "$(DEB_STAGE)"
+	@install -d "$(DEB_STAGE)/DEBIAN"
+	@install -d "$(DEB_STAGE)/usr/local/lib/honcho-inspector"
+	@install -d "$(DEB_STAGE)/usr/local/bin"
+	@install -d "$(DEB_STAGE)/usr/local/share/honcho-inspector/etc/honcho-inspector"
+	@install -d "$(DEB_STAGE)/usr/local/share/man/man1"
+	@install -d "$(DEB_STAGE)/usr/local/share/doc/honcho-inspector-backend"
+	@install -d "$(DEB_STAGE)/etc/systemd/system"
+	@install -d "$(DEB_STAGE)/etc/default"
+	@install -m 0755 debian/DEBIAN/postinst "$(DEB_STAGE)/DEBIAN/postinst"
+	@install -m 0755 debian/DEBIAN/postrm  "$(DEB_STAGE)/DEBIAN/postrm"
+	@install -m 0755 debian/DEBIAN/prerm   "$(DEB_STAGE)/DEBIAN/prerm"
+	@install -m 0644 debian/DEBIAN/conffiles "$(DEB_STAGE)/DEBIAN/conffiles"
+	@install -m 0644 debian/DEBIAN/control "$(DEB_STAGE)/DEBIAN/control"
+	@install -m 0644 "$(JAR)" "$(DEB_STAGE)/usr/local/lib/honcho-inspector/honcho-inspector-backend.jar"
+	@install -m 0755 bin/honcho-inspector "$(DEB_STAGE)/usr/local/bin/honcho-inspector"
+	@install -m 0644 etc/honcho-inspector/application.yml.example "$(DEB_STAGE)/usr/local/share/honcho-inspector/etc/honcho-inspector/application.yml.example"
+	@install -m 0644 etc/systemd/honcho-inspector.service "$(DEB_STAGE)/etc/systemd/system/honcho-inspector.service"
+	@install -m 0644 docs/honcho-inspector.1 "$(DEB_STAGE)/usr/local/share/man/man1/honcho-inspector.1"
+	@gzip -9nf "$(DEB_STAGE)/usr/local/share/man/man1/honcho-inspector.1"
+	@install -m 0644 debian/DEBIAN/changelog "$(DEB_STAGE)/usr/local/share/doc/honcho-inspector-backend/changelog.Debian"
+	@gzip -9nf "$(DEB_STAGE)/usr/local/share/doc/honcho-inspector-backend/changelog.Debian"
+	@install -m 0640 etc/default/honcho-inspector "$(DEB_STAGE)/etc/default/honcho-inspector"
+	@printf "stage built\n"
+
+deb-clean: ## Remove the deb build artifacts
+	@rm -rf "$(DEB_STAGE)" dist/*.deb
+	@printf "removed debian/stage and dist/*.deb\n"
+
 # === Cleanup ===
 clean: ## Remove build artifacts
 	@if [ -z "$$(command -v mvn)" ]; then printf "mvn not found in PATH\n" >&2; exit 1; fi
 	mvn -B -ntp clean
 	@printf "removed target/\n"
 
-distclean: clean db-reset ## Remove build artifacts + dev db
-	@printf "removed build artifacts + dev db\n"
+distclean: clean db-reset deb-clean ## Remove build artifacts + dev db + deb artifacts
+	@printf "removed build artifacts + dev db + deb artifacts\n"

@@ -1,0 +1,11 @@
+#!/bin/sh
+set -e
+
+if [ -d /run/systemd/system ]; then
+    systemctl --quiet is-enabled honcho-inspector.service && \
+        systemctl stop honcho-inspector.service || true
+fi
+
+#DEBHELPER#
+
+exit 0

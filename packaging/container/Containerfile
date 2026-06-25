@@ -1,0 +1,142 @@
+# Containerfile for honcho-inspector-backend.
+#
+# Two stages:
+#   1. builder -- runs `mvn package` against the full source tree to
+#      produce the Spring Boot fat jar.
+#   2. runtime -- slim Ubuntu + OpenJDK 25 JRE + the jar + the systemd
+#      unit. systemd is PID 1 so the service runs the same way it does
+#      on a real Linux host.
+#
+# Build:
+#   podman build -t honcho-inspector-backend:dev -f packaging/container/Containerfile .
+#
+# Run (the compose file brings this up alongside the UI):
+#   podman run --rm --name=honcho-inspector-backend \
+#       --systemd=always -p 127.0.0.1:8080:8080 \
+#       -v honcho-inspector-data:/var/lib/honcho-inspector \
+#       -v honcho-inspector-logs:/var/log/honcho-inspector \
+#       -v honcho-inspector-cfg:/etc/honcho-inspector \
+#       honcho-inspector-backend:dev
+#
+# The `-p 127.0.0.1:8080:8080` keeps the backend on the loopback
+# interface -- the browser reaches it through the UI's Vite proxy.
+# Drop the `127.0.0.1:` if you want to expose the backend directly
+# (not recommended outside of dev).
+#
+# The three named volumes persist the SQLite DB, the JSONL log, and
+# the operator's application.yml/env-file across container restarts.
+
+# ====== builder ==================================================
+FROM docker.io/library/maven:3.9-eclipse-temurin-25 AS builder
+
+WORKDIR /build
+
+# Copy the project metadata first so Docker can cache the dependency
+# layer when only source files change.
+COPY pom.xml ./
+COPY src ./src
+COPY docs ./docs
+
+# Build the fat jar. Skip tests -- the test suite is run by `make test`
+# in CI; the container image is a deployable artifact, not a verifier.
+RUN mvn -B -ntp -DskipTests package
+
+# Pull the fat jar out of the target/ tree by its known name.
+RUN cp target/honcho-inspector-backend-*.jar /build/honcho-inspector-backend.jar \
+ && rm -f /build/honcho-inspector-backend-*.jar.original
+
+# ====== runtime ===================================================
+# eclipse-temurin:25-jre-alpine is the official Temurin JRE on Alpine
+# -- small, self-contained, and ships Java 25. systemd is PID 1 via
+# the `init: true` flag in compose.yml; the systemd binary itself
+# isn't needed in this image because we're running the Spring Boot
+# jar directly under `docker --init` semantics. We do still install
+# the jar + service file + env file at the same paths the .deb would.
+#
+# If you need systemd-style restart policy inside the container,
+# swap this for `quay.io/rockylinux/rockylinux:9-minimal` and the
+# system-unit semantics below.
+FROM docker.io/eclipse-temurin:25-jre-alpine AS runtime
+
+LABEL org.opencontainers.image.title="honcho-inspector-backend" \
+      org.opencontainers.image.description="Spring Boot admin surface for Honcho" \
+      org.opencontainers.image.source="https://github.com/cloudbsdorg/honcho-inspector-backend" \
+      org.opencontainers.image.licenses="BSD-3-Clause"
+
+# sqlite + a few utilities for ad-hoc operator inspection. curl
+# powers the HEALTHCHECK below.
+RUN apk add --no-cache \
+        sqlite \
+        curl \
+        shadow \
+        tini \
+    && rm -rf /var/cache/apk/*
+
+# Use tini as PID 1 so signal forwarding to the JVM works correctly
+# (Ctrl-C in `podman exec` should kill the JVM, not be dropped). Tini
+# is a tiny (~30KB) init replacement that reaps zombies and forwards
+# signals. The Spring Boot jar is launched by the entrypoint command
+# directly -- no systemd in this image.
+STOPSIGNAL SIGTERM
+ENTRYPOINT ["/sbin/tini", "--"]
+
+# Bake the jar, the unit file, the env-file template, and the man
+# page into the image at the same paths the .deb would install them.
+COPY --from=builder /build/honcho-inspector-backend.jar /usr/local/lib/honcho-inspector/honcho-inspector-backend.jar
+COPY bin/honcho-inspector                                          /usr/local/bin/honcho-inspector
+COPY etc/systemd/honcho-inspector.service                          /etc/systemd/system/honcho-inspector.service
+COPY etc/default/honcho-inspector                                  /etc/default/honcho-inspector
+COPY etc/honcho-inspector/application.yml.example                  /usr/local/share/honcho-inspector/etc/honcho-inspector/application.yml.example
+COPY docs/honcho-inspector.1                                       /usr/local/share/man/man1/honcho-inspector.1
+
+# Create the runtime state, log, and config directories with the
+# correct ownership and mode. Alpine's adduser/addgroup are provided
+# by the `shadow` package; `install -o` works the same as on glibc.
+#
+# The group may already exist in the base image (Alpine ships with
+# www-data at gid 82). `addgroup` returns nonzero in that case, which
+# short-circuits `&& adduser` and leaves us with a group but no user.
+# We explicitly tolerate that and continue.
+RUN ( addgroup -S www-data 2>/dev/null || true ) \
+ && ( adduser -S -G www-data -h /var/lib/honcho-inspector \
+        -s /sbin/nologin -H -D www-data 2>/dev/null || true ) \
+ && install -d -m 0750 -o www-data -g www-data /var/lib/honcho-inspector \
+ && install -d -m 0750 -o www-data -g www-data /var/log/honcho-inspector \
+ && install -d -m 0750 -o root    -g www-data /etc/honcho-inspector \
+ && install -d -m 0750 -o root    -g www-data /etc/honcho-inspector/logs \
+ && chmod 0640 /etc/default/honcho-inspector \
+ && chown root:www-data /etc/default/honcho-inspector \
+ && gzip -9nf /usr/local/share/man/man1/honcho-inspector.1 || true
+
+# The systemd unit is shipped for reference (so operators running
+# this image under systemd-nspawn or in a host systemd tree can
+# install it), but it is NOT enabled here -- the entrypoint launches
+# the JVM directly.
+COPY etc/systemd/honcho-inspector.service /etc/systemd/honcho-inspector.service
+
+# HEALTHCHECK -- probe the backend's /api/health endpoint.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD curl -fsS http://127.0.0.1:8080/api/health || exit 1
+
+# CMD launches the JVM directly. The same hardening flags the systemd
+# unit uses are applied here: loopback bind (-Dserver.address=127.0.0.1),
+# config dir (-Dhoncho.config.dir), explicit log path (-Dlogging.file.name).
+# JVM runs as www-data (handled by the operator's `podman run --user`
+# or by the named volume's existing ownership). `exec` form so the
+# JVM is PID 1's child and gets signal forwarding from tini.
+#
+# HONCHO_DB_PATH is set via env (not -D) because Spring reads it via
+# relaxed binding to the `honcho.db-path` property, and
+# spring-boot's command-line -D doesn't override environment-set
+# property values reliably. The env var pins the SQLite file to
+# /var/lib/honcho-inspector/honcho-inspector.db (a mounted volume in
+# the compose stack) so it's persistent.
+ENV HONCHO_DB_PATH=jdbc:sqlite:/var/lib/honcho-inspector/honcho-inspector.db
+CMD ["java", \
+     "-Xms64m", "-Xmx256m", \
+     "-Dserver.address=127.0.0.1", \
+     "-Dhoncho.config.dir=/etc/honcho-inspector", \
+     "-Dlogging.file.name=/var/log/honcho-inspector/honcho-inspector-backend.log", \
+     "-jar", "/usr/local/lib/honcho-inspector/honcho-inspector-backend.jar"]
+
+EXPOSE 8080
