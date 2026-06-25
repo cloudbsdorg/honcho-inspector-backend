@@ -55,14 +55,30 @@ if ! : >"${OUT}/.write-test" 2>/dev/null; then
 fi
 rm -f "${OUT}/.write-test"
 
+# === stage source to a writable working copy ====================
+# /src is read-only (mounted :ro). Maven needs to write both its
+# local repo (~/.m2) AND its build output (./target) here. We copy
+# the source to a writable working dir first, build there, and fpm
+# uses that copy's artifacts (debian/DEBIAN/scripts, bin/, etc/,
+# docs/) for the package contents. The host source tree is never
+# modified; the working copy lives in the container's writable layer.
+printf 'entrypoint: staging source tree\n'
+WORK="$(mktemp -d -t build.XXXXXX)"
+trap 'rm -rf "$WORK"' EXIT
+mkdir -p "${WORK}/.m2"
+cp -a "${SRC}/." "${WORK}/"
+cd "${WORK}"
+
 # === maven build ==================================================
 # Build the fat jar. Skip tests: the test suite is exercised by
 # `make test` in CI; the build container produces a deployable
 # artifact, not a verifier. The output path is `target/<name>.jar`
-# (relative to /src) and is required to exist before fpm runs.
+# (relative to the working copy). First run downloads the dep
+# tree (~80MB of Spring + Hibernate + JDBC + Tomcat jars).
 printf 'entrypoint: running mvn package (this may take several minutes on first run)\n'
-cd "${SRC}"
-mvn -B -ntp -DskipTests package
+mvn -B -ntp -DskipTests \
+    -Dmaven.repo.local="${WORK}/.m2" \
+    package
 
 JAR="target/${NAME}-${VERSION}.jar"
 if [ ! -f "${JAR}" ]; then

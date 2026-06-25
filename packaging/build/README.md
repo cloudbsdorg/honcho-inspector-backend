@@ -26,14 +26,10 @@ need `sudo chown`).
 
 ```bash
 # Pick the distro you want to target. Repeat for each distro you want to ship.
-podman build --build-arg HOST_UID=$(id -u) --build-arg HOST_GID=$(id -g) \
+podman build \
     -t honcho-inspector-backend:builder-<distro> \
     -f packaging/build/<distro>/Containerfile .
 ```
-
-The `--build-arg HOST_UID` and `--build-arg HOST_GID` are forwarded into the
-entrypoint, which runs `chown -R $HOST_UID:$HOST_GID /out` at the end. Without
-them, the artifact lands in your `dist/` directory owned by root (uid 0 / gid 0).
 
 ### Each build: run the build container, capture the artifact
 
@@ -44,10 +40,16 @@ them, the artifact lands in your `dist/` directory owned by root (uid 0 / gid 0)
 # side by side for distribution):
 mkdir -p ../dist
 podman run --rm \
+    --env HOST_UID=$(id -u) --env HOST_GID=$(id -g) \
     -v $PWD:/src:ro \
     -v $PWD/../dist:/out:rw \
     honcho-inspector-backend:builder-<distro>
 ```
+
+The `--env HOST_UID=$(id -u)` and `--env HOST_GID=$(id -g)` flags are
+forwarded into the entrypoint as environment variables, which runs
+`chown -R $HOST_UID:$HOST_GID /out` at the end. Without them, the artifact
+lands in your `dist/` directory owned by root (uid 0 / gid 0).
 
 The entrypoint prints `BUILT: /out/<artifact>` on success. Common artifacts:
 
