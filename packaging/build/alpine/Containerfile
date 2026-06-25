@@ -1,0 +1,147 @@
+# Containerfile: honcho-inspector-backend builder for Alpine 3.22.
+#
+# (a) Base image choice
+# ---------------------
+# docker.io/library/alpine:3.22 is the official Alpine 3.22
+# minimal rootfs. It ships musl libc, busybox, apk, and the
+# bare minimum POSIX userland. It does NOT ship a JDK, NOT a
+# Node, NOT a Ruby toolchain, NOT fpm, NOT git (we add git
+# because Maven's git-commit-id plugin prefers a real git
+# binary; this is belt-and-suspenders for the build).
+#
+# Why not alpine:edge? edge is the rolling branch; pinning to
+# 3.22 (the current stable as of 2026) keeps the base image
+# reproducible. We pull the packages we need (openjdk25,
+# nodejs24) from the edge/community repo (see (b)) but the
+# base image stays on a tagged release.
+#
+# Why musl, not glibc? musl is the Alpine default. Some JNI
+# libraries (e.g. lz4 native) have musl-specific quirks, but
+# the honcho-inspector-backend has no JNI dependencies beyond
+# sqlite-jdbc's pure-Java implementation; musl is fine.
+#
+# (b) Third-party repos added
+# ---------------------------
+# Alpine 3.22's main has ruby + ruby-dev + sqlite + fpm-deps but
+# NOT openjdk25 (only openjdk22) and NOT nodejs24 (only nodejs22
+# LTS in main; nodejs-current is older). The task research
+# confirms:
+#   openjdk25  -> available in edge/community
+#   nodejs24   -> available in edge/community
+# We add `https://dl-cdn.alpinelinux.org/alpine/edge/community`
+# to /etc/apk/repositories with lower priority (appended after
+# the v3.22 entries) so the v3.22 packages still win when both
+# repos have a candidate. This is the pattern the Alpine wiki
+# recommends for "use a specific newer package from edge on a
+# stable base".
+#
+# fpm is not in Alpine (it's a Ruby gem); we install it via
+# `gem install --no-document fpm`.
+#
+# (c) Artifact produced and where it lands
+# ----------------------------------------
+# The entrypoint.sh builds the fat jar via
+#   mvn -B -ntp -DskipTests package
+# then runs `fpm -s dir -t apk` to produce
+#   honcho-inspector-backend-0.1.0-SNAPSHOT.apk
+# written to /out. The operator binds
+#   -v $PWD:/src:ro
+#   -v $PWD/../dist:/out:rw
+# so the .apk lands in the host's dist/ directory.
+#
+# Build:
+#   podman build --build-arg HOST_UID=$(id -u) --build-arg HOST_GID=$(id -g) \
+#     -t honcho-inspector-backend:builder-alpine -f packaging/build/alpine/Containerfile .
+# Run:
+#   podman run --rm \
+#     -v $PWD:/src:ro \
+#     -v $PWD/../dist:/out:rw \
+#     honcho-inspector-backend:builder-alpine
+
+# ====== base + label ==============================================
+FROM docker.io/library/alpine:3.22
+
+ARG HOST_UID=0
+ARG HOST_GID=0
+
+LABEL org.opencontainers.image.title="honcho-inspector-backend (builder-alpine)" \
+      org.opencontainers.image.description="Build container for the honcho-inspector-backend .apk on Alpine 3.22 (with edge/community for openjdk25+nodejs24). Installs ruby+dev, fpm, and the JDK/Node toolchain. Produces honcho-inspector-backend-0.1.0-SNAPSHOT.apk under /out." \
+      org.opencontainers.image.source="https://github.com/cloudbsdorg/honcho-inspector-backend" \
+      org.opencontainers.image.licenses="BSD-3-Clause"
+
+# ====== add edge/community for openjdk25 + nodejs24 ===============
+# Append the edge/community repo at the end of /etc/apk/repositories
+# so it has lower priority than the v3.22 main/community entries.
+# When both repos have a candidate for the same name, the v3.22
+# one wins. This is what we want -- we ONLY want the specific
+# packages (openjdk25, nodejs24) from edge; everything else
+# (ruby, sqlite, curl, etc.) stays on 3.22.
+RUN set -eux \
+    && echo "https://dl-cdn.alpinelinux.org/alpine/edge/community" \
+        >> /etc/apk/repositories
+
+# ====== toolchain =================================================
+# apk is the package manager. We install in a few groups:
+#   - core: bash, curl, ca-certificates, git, make, gcc, g++,
+#           libc-dev, file, libffi-dev, openssl-dev, zlib-dev,
+#           libsodium-dev, zstd-dev, openssh-keygen (for
+#           ssh-keygen used by some Maven plugins)
+#   - JDK25: openjdk25 (Alpine's prebuilt OpenJDK 25 package).
+#            alpine's openjdk25 ships the JRE + JDK in one
+#            package (no separate -headless subpackage).
+#   - Node 24: nodejs24 + npm
+#   - Ruby: ruby + ruby-dev + ruby-libs + ruby-bundler
+#   - fpm runtime deps: rpm (for fpm -t rpm detection), tar
+#                       (for fpm -t tar archive), etc.
+#
+# We pull `bash` so the `set -e` failures from a multi-line
+# command have cleaner reporting. (BusyBox ash does the right
+# thing too, but bash is the de-facto build shell.)
+RUN set -eux \
+    && apk update \
+    && apk add --no-cache \
+        bash \
+        curl \
+        ca-certificates \
+        git \
+        make \
+        gcc \
+        g++ \
+        musl-dev \
+        file \
+        libffi-dev \
+        openssl-dev \
+        zlib-dev \
+        libsodium-dev \
+        zstd-dev \
+        linux-headers \
+        openjdk25 \
+        nodejs24 \
+        npm \
+        yarn \
+        ruby \
+        ruby-dev \
+        ruby-bundler \
+        rpm \
+        tar \
+    && rm -rf /var/cache/apk/*
+
+# ====== fpm via gem ===============================================
+# fpm is not in Alpine. Install the gem and its native dep
+# pre-installed (libffi-dev, openssl-dev, zlib-dev are above).
+RUN set -eux \
+    && gem install --no-document fpm \
+    && fpm --version
+
+# ====== entrypoint ================================================
+COPY packaging/build/alpine/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod 0755 /usr/local/bin/entrypoint.sh
+
+# Alpine's openjdk25 lands at /usr/lib/jvm/default-jdk (a
+# symlink the package creates). JAVA_HOME points there.
+ENV JAVA_HOME=/usr/lib/jvm/default-jdk
+
+WORKDIR /src
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD []

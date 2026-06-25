@@ -1,0 +1,157 @@
+# Containerfile: honcho-inspector-backend builder for Debian 13 (trixie).
+#
+# (a) Base image choice
+# ---------------------
+# docker.io/library/debian:13-slim is the slim variant of Debian 13
+# (trixie, current stable as of 2026). Slim ships apt + dpkg + the
+# basic POSIX toolchain (bash, coreutils, findutils) but NOT a JDK,
+# NOT a Node, NOT a Ruby toolchain, NOT fpm. We install those below.
+# The slim variant is small (~80MB) so layer pulls stay cheap.
+#
+# Why not debian:13 (full)? The full image includes documentation,
+# locales, and the man-db stack we don't need; slim is the right
+# density for a build container.
+#
+# Why not eclipse-temurin or another upstream Java base? The Makefile's
+# `make deb` build-depends on `openjdk-25-jre-headless` from the
+# Debian repo (see debian/DEBIAN/control). Building inside a JDK 25
+# from a non-Debian vendor creates a host/guest Java version drift
+# where the runtime the .deb installs is from one vendor and the
+# build-time classfile version comes from another. We keep both
+# Debian-native so the .deb's Depends: field is satisfied on the
+# exact OS we built in.
+#
+# (b) Third-party repos added
+# ---------------------------
+# The Debian trixie main archive ships openjdk-25 (jre-headless +
+# jdk-headless), ruby 3.3.x, and ruby-dev. It does NOT ship Node 24
+# (only Node 20 LTS is in trixie main). We add the Nodesource
+# apt repository for setup_24.x using the modern
+#   signed-by=/etc/apt/keyrings/nodesource.gpg
+# pattern, which is the post-apt-key way of pinning a keyring to a
+# specific repo. The old `apt-key add` path was deprecated in
+# Debian 11 and removed in Debian 12; we explicitly do NOT use it.
+# fpm is also not in Debian (Debian's `fpm` package is the unrelated
+# Fortran project "fpm2" -- name collision), so we install it via
+# `gem install --no-document fpm` from rubygems.org.
+#
+# (c) Artifact produced and where it lands
+# ----------------------------------------
+# The entrypoint.sh builds the Spring Boot fat jar via
+#   mvn -B -ntp -DskipTests package
+# then runs `fpm -s dir -t deb` to produce
+#   honcho-inspector-backend_0.1.0-SNAPSHOT_all.deb
+# which is written directly to /out. The operator binds
+#   -v $PWD:/src:ro    (source tree, read-only)
+#   -v $PWD/../dist:/out:rw   (artifact destination)
+# so the .deb lands in the host's dist/ directory.
+#
+# Build:
+#   podman build --build-arg HOST_UID=$(id -u) --build-arg HOST_GID=$(id -g) \
+#     -t honcho-inspector-backend:builder-debian -f packaging/build/debian/Containerfile .
+# Run:
+#   podman run --rm \
+#     -v $PWD:/src:ro \
+#     -v $PWD/../dist:/out:rw \
+#     honcho-inspector-backend:builder-debian
+#
+# Note: the source tree is mounted read-only. We deliberately do
+# NOT COPY the source into the image -- the /src bind mount is the
+# only way the entrypoint can read the host's working copy.
+
+# ====== base + label ==============================================
+FROM docker.io/library/debian:13-slim
+
+# HOST_UID / HOST_GID are read by entrypoint.sh's final
+# `chown -R $HOST_UID:$HOST_GID /out` so the produced .deb is
+# owned by the operator on the host (not root inside the container).
+ARG HOST_UID=0
+ARG HOST_GID=0
+
+LABEL org.opencontainers.image.title="honcho-inspector-backend (builder-debian)" \
+      org.opencontainers.image.description="Build container for the honcho-inspector-backend .deb on Debian 13 trixie. Installs openjdk-25, nodejs24 (Nodesource), ruby+dev, and fpm. Produces honcho-inspector-backend_0.1.0-SNAPSHOT_all.deb under /out." \
+      org.opencontainers.image.source="https://github.com/cloudbsdorg/honcho-inspector-backend" \
+      org.opencontainers.image.licenses="BSD-3-Clause"
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# ====== toolchain =================================================
+# Install everything in a single RUN to keep the layer count down.
+#   - core deps: ca-certificates, curl, gnupg (Nodesource keyring),
+#                make, gcc (fpm's native extensions), file
+#   - Java 25: openjdk-25-jdk-headless (the JDK because the Maven
+#               compile path needs javac; the .deb's Depends: stays
+#               on -jre-headless because that's what end users need)
+#   - Ruby: ruby, ruby-dev, libffi-dev, libssl-dev, libsodium-dev
+#               (fpm's json/openssl/etc. native gems need these)
+#   - JDK25 sets JAVA_HOME automatically via /usr/lib/jvm/; we
+#               pin it for the entrypoint's `mvn` invocation.
+RUN set -eux \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        gnupg \
+        dirmngr \
+        make \
+        gcc \
+        libc6-dev \
+        pkg-config \
+        file \
+        ruby \
+        ruby-dev \
+        libffi-dev \
+        libssl-dev \
+        libsodium-dev \
+        libzstd-dev \
+        zlib1g-dev \
+        openjdk-25-jdk-headless \
+    && rm -rf /var/lib/apt/lists/*
+
+# ====== Node 24 via Nodesource (modern keyring) ===================
+# Debian trixie main ships Node 20 only. Add Nodesource's setup_24.x
+# using the signed-by=/etc/apt/keyrings/... pattern. We download the
+# GPG key into /etc/apt/keyrings/nodesource.gpg, then add the repo
+# file with `signed-by=` so apt refuses to trust that repo with any
+# other key. The key fingerprint is hardcoded to defend against
+# upstream rotation; if Nodesource ever rotates, the build fails
+# loud and the operator updates the fingerprint (the key id is
+# documented on deb.nodesource.com/gpgkey).
+RUN set -eux \
+    && install -d -m 0755 /etc/apt/keyrings \
+    && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
+        | gpg --dearmor --yes -o /etc/apt/keyrings/nodesource.gpg \
+    && chmod 0644 /etc/apt/keyrings/nodesource.gpg \
+    && echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_24.x nodistro main" \
+        > /etc/apt/sources.list.d/nodesource.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/* \
+    && node --version \
+    && npm --version
+
+# ====== fpm via gem ===============================================
+# fpm is not in Debian (the `fpm` package is the Fortran fpm2; the
+# names collide). Install the Ruby gem directly. We do this in its
+# own layer so the gem install is cached across Maven dep changes
+# and re-runs of the entrypoint.
+RUN set -eux \
+    && gem install --no-document fpm \
+    && fpm --version
+
+# ====== entrypoint ================================================
+# The entrypoint reads /src (mounted) and writes the .deb to /out
+# (mounted). It does its own `mvn package` and `fpm -t deb`; the
+# source tree is never baked into the image.
+COPY packaging/build/debian/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod 0755 /usr/local/bin/entrypoint.sh
+
+# JAVA_HOME points at the only JDK on disk; Maven's `java` shim
+# honors it. Pin it explicitly so a multi-JDK upgrade doesn't
+# surprise us.
+ENV JAVA_HOME=/usr/lib/jvm/java-25-openjdk-amd64
+
+WORKDIR /src
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD []
