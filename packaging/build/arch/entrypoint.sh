@@ -1,0 +1,300 @@
+#!/bin/sh
+# entrypoint.sh -- honcho-inspector-backend .pkg.tar.zst builder (Arch Linux)
+#
+# The /src bind mount contains the honcho-inspector-backend source
+# tree (mounted read-only). This script:
+#   1. verifies /src and /out are mounted
+#   2. stages the build artifacts (jar, launcher, etc., man page)
+#      into a temp build dir at the install paths
+#   3. generates a PKGBUILD and a .install file dynamically
+#      (task research: "Don't ship a static one because version
+#      updates would drift")
+#   4. runs `makepkg -s --noconfirm` to produce the .pkg.tar.zst
+#   5. copies the artifact to /out
+#   6. chowns /out to the host's HOST_UID:HOST_GID
+#   7. prints the path of the produced artifact
+#
+# POSIX sh only -- no bashisms. The PKGBUILD itself is bash
+# (makepkg requires bash), but the entrypoint wrapper is /bin/sh.
+# /bin/sh on Arch is bash running in POSIX mode; we keep the
+# script portable to dash.
+#
+# Required env (set by the Containerfile's ARG/ENV):
+#   HOST_UID, HOST_GID -- the operator's uid:gid on the host, used
+#                          for the final `chown -R /out`.
+
+set -eu
+
+# === constants ====================================================
+NAME="honcho-inspector-backend"
+VERSION="0.1.0-SNAPSHOT"
+RELEASE="1"
+ARCH_PKG="x86_64"
+MAINTAINER="Mark LaPointe <mark@cloudbsd.org>"
+ARTIFACT="${NAME}-${VERSION}-${RELEASE}-${ARCH_PKG}.pkg.tar.zst"
+# PKG_DESC, PKG_URL -- substituted into the PKGBUILD template below.
+PKG_DESC="Honcho Inspector backend (Spring Boot + SQLite). Multi-user admin surface for Honcho."
+PKG_URL="https://github.com/cloudbsdorg/honcho-inspector-backend"
+
+OUT="/out"
+SRC="/src"
+BUILD="$(mktemp -d)"
+trap 'rm -rf "${BUILD}"' EXIT
+
+# === preflight ====================================================
+if [ ! -d "${SRC}/debian/DEBIAN" ]; then
+    printf 'entrypoint: %s is not the honcho-inspector-backend source tree (no debian/DEBIAN)\n' "${SRC}" >&2
+    printf '  did you forget: -v $PWD:/src:ro\n' >&2
+    exit 1
+fi
+if [ ! -d "${OUT}" ]; then
+    printf 'entrypoint: %s is not a directory; pass -v $PWD/../dist:/out:rw\n' "${OUT}" >&2
+    exit 1
+fi
+if ! : >"${OUT}/.write-test" 2>/dev/null; then
+    printf 'entrypoint: %s is not writable; pass -v $PWD/../dist:/out:rw\n' "${OUT}" >&2
+    rm -f "${OUT}/.write-test" 2>/dev/null || true
+    exit 1
+fi
+rm -f "${OUT}/.write-test"
+
+# === maven build ==================================================
+printf 'entrypoint: running mvn package (this may take several minutes on first run)\n'
+cd "${SRC}"
+mvn -B -ntp -DskipTests package
+
+JAR="target/${NAME}-${VERSION}.jar"
+if [ ! -f "${JAR}" ]; then
+    printf 'entrypoint: mvn did not produce %s\n' "${JAR}" >&2
+    exit 1
+fi
+
+# === stage the payload ============================================
+# Lay out the install tree at FHS-relative paths. makepkg's
+# `package()` function copies from ${srcdir} (default $startdir/src)
+# into ${pkgdir} (default $startdir/pkg). We pre-stage everything
+# at ${BUILD}/src/<install-path> and let the package() function
+# just install -m ... ${srcdir}/<file> ${pkgdir}<path>.
+SRCDIR="${BUILD}/src"
+mkdir -p "${SRCDIR}/usr/local/lib/honcho-inspector"
+mkdir -p "${SRCDIR}/usr/local/bin"
+mkdir -p "${SRCDIR}/usr/local/share/honcho-inspector/etc/honcho-inspector"
+mkdir -p "${SRCDIR}/usr/local/share/man/man1"
+mkdir -p "${SRCDIR}/usr/local/share/doc/honcho-inspector-backend"
+mkdir -p "${SRCDIR}/usr/lib/systemd/system"
+mkdir -p "${SRCDIR}/etc/default"
+
+install -m 0644 "${JAR}" \
+    "${SRCDIR}/usr/local/lib/honcho-inspector/honcho-inspector-backend.jar"
+install -m 0755 "bin/honcho-inspector" \
+    "${SRCDIR}/usr/local/bin/honcho-inspector"
+install -m 0644 "etc/default/honcho-inspector" \
+    "${SRCDIR}/etc/default/honcho-inspector"
+install -m 0644 "etc/honcho-inspector/application.yml.example" \
+    "${SRCDIR}/usr/local/share/honcho-inspector/etc/honcho-inspector/application.yml.example"
+install -m 0644 "docs/honcho-inspector.1" \
+    "${SRCDIR}/usr/local/share/man/man1/honcho-inspector.1"
+install -m 0644 "debian/DEBIAN/changelog" \
+    "${SRCDIR}/usr/local/share/doc/honcho-inspector-backend/changelog"
+install -m 0644 "etc/systemd/honcho-inspector.service" \
+    "${SRCDIR}/usr/lib/systemd/system/honcho-inspector.service"
+
+# === write PKGBUILD ===============================================
+# Task research: generate PKGBUILD programmatically. We write a
+# PKGBUILD that:
+#   - has empty source=() and sha256sums=() (no upstream tarball;
+#     all the payload is pre-staged in ${srcdir})
+#   - lists no makedepends (no compilation step; the jar is built
+#     outside the PKGBUILD)
+#   - has package() copy the staged files into $pkgdir at the
+#     FHS paths Arch's filesystem hierarchy expects
+#   - references an install script (.install file) that handles
+#     the systemd activation
+cat >"${BUILD}/PKGBUILD" <<'PKGBUILD_EOF'
+# Maintainer: Mark LaPointe <mark@cloudbsd.org>
+# Generated by packaging/build/arch/entrypoint.sh -- do not edit by hand.
+pkgname=honcho-inspector-backend
+pkgver=__PKGVER__
+pkgrel=__PKGREL__
+pkgdesc="__PKG_DESC__"
+arch=('__ARCH_PKG__')
+url="__PKG_URL__"
+license=('BSD3')
+depends=('jre25-openjdk-headless' 'sh' 'shadow')
+makedepends=()
+provides=('honcho-inspector')
+conflicts=('honcho-inspector-backend-git')
+backup=('etc/default/honcho-inspector')
+install=${pkgname}.install
+source=()
+sha256sums=()
+
+package() {
+    install -d -m 0750 "${pkgdir}/var/lib/honcho-inspector"
+    install -d -m 0750 "${pkgdir}/var/log/honcho-inspector"
+    install -d -m 0750 "${pkgdir}/etc/honcho-inspector"
+
+    install -d -m 0755 "${pkgdir}/usr/local/lib/honcho-inspector"
+    install -m 0644 "${srcdir}/usr/local/lib/honcho-inspector/honcho-inspector-backend.jar" \
+        "${pkgdir}/usr/local/lib/honcho-inspector/honcho-inspector-backend.jar"
+
+    install -d -m 0755 "${pkgdir}/usr/local/bin"
+    install -m 0755 "${srcdir}/usr/local/bin/honcho-inspector" \
+        "${pkgdir}/usr/local/bin/honcho-inspector"
+
+    install -d -m 0755 "${pkgdir}/etc/default"
+    install -m 0640 "${srcdir}/etc/default/honcho-inspector" \
+        "${pkgdir}/etc/default/honcho-inspector"
+
+    install -d -m 0755 "${pkgdir}/usr/local/share/honcho-inspector/etc/honcho-inspector"
+    install -m 0644 "${srcdir}/usr/local/share/honcho-inspector/etc/honcho-inspector/application.yml.example" \
+        "${pkgdir}/usr/local/share/honcho-inspector/etc/honcho-inspector/application.yml.example"
+
+    install -d -m 0755 "${pkgdir}/usr/local/share/man/man1"
+    install -m 0644 "${srcdir}/usr/local/share/man/man1/honcho-inspector.1" \
+        "${pkgdir}/usr/local/share/man/man1/honcho-inspector.1"
+    gzip -9nf "${pkgdir}/usr/local/share/man/man1/honcho-inspector.1" || true
+
+    install -d -m 0755 "${pkgdir}/usr/local/share/doc/honcho-inspector-backend"
+    install -m 0644 "${srcdir}/usr/local/share/doc/honcho-inspector-backend/changelog" \
+        "${pkgdir}/usr/local/share/doc/honcho-inspector-backend/changelog"
+
+    install -d -m 0755 "${pkgdir}/usr/lib/systemd/system"
+    install -m 0644 "${srcdir}/usr/lib/systemd/system/honcho-inspector.service" \
+        "${pkgdir}/usr/lib/systemd/system/honcho-inspector.service"
+}
+PKGBUILD_EOF
+
+# Substitute the placeholders. We do this in /bin/sh so we have
+# to use sed -i with a delimiter that doesn't appear in any of
+# the values. Pipe character is safe in all of the constants.
+sed -i \
+    -e "s|__PKGVER__|${VERSION}|g" \
+    -e "s|__PKGREL__|${RELEASE}|g" \
+    -e "s|__ARCH_PKG__|${ARCH_PKG}|g" \
+    -e "s|__PKG_DESC__|${PKG_DESC}|g" \
+    -e "s|__PKG_URL__|${PKG_URL}|g" \
+    "${BUILD}/PKGBUILD"
+
+# === write .install file ==========================================
+# pacman invokes functions from the .install file at install/remove
+# time:
+#   pre_install  -- before the package files are unpacked
+#   post_install -- after the package files are unpacked
+#   pre_upgrade  -- before the package files are replaced
+#   post_upgrade -- after the package files are replaced
+#   pre_remove   -- before the package files are removed
+#   post_remove  -- after the package files are removed
+#
+# We use shadow's useradd/groupadd (same as debian/ adduser/addgroup
+# equivalents on Arch). The systemd-detection arm mirrors
+# debian/DEBIAN/postinst.
+cat >"${BUILD}/${NAME}.install" <<'INSTALL_EOF'
+post_install() {
+    if ! getent group www-data >/dev/null 2>&1; then
+        groupadd -r www-data
+    fi
+    if ! getent passwd www-data >/dev/null 2>&1; then
+        useradd -r \
+            -d /var/lib/honcho-inspector \
+            -M \
+            -s /usr/sbin/nologin \
+            -g www-data \
+            -c "Honcho Inspector service account" \
+            www-data
+    fi
+
+    # /var/lib and /var/log ownership/mode is already correct from
+    # the package install. The backup file at /etc/default is
+    # already 0640 root:www-data. Just verify the dirs.
+    install -d -m 0750 -o www-data -g www-data /var/lib/honcho-inspector
+    install -d -m 0750 -o www-data -g www-data /var/log/honcho-inspector
+    install -d -m 0750 -o root    -g www-data /etc/honcho-inspector
+
+    # Seed application.yml drop-in only if missing.
+    if [ ! -f /etc/honcho-inspector/application.yml ]; then
+        install -m 0644 -o root -g www-data \
+            /usr/local/share/honcho-inspector/etc/honcho-inspector/application.yml.example \
+            /etc/honcho-inspector/application.yml || true
+    fi
+
+    if [ -d /run/systemd/system ]; then
+        systemctl daemon-reload
+        systemctl enable honcho-inspector.service || true
+        systemctl restart honcho-inspector.service || true
+    fi
+}
+
+post_upgrade() {
+    if [ -d /run/systemd/system ]; then
+        systemctl daemon-reload
+        systemctl try-restart honcho-inspector.service || true
+    fi
+}
+
+pre_remove() {
+    if [ -d /run/systemd/system ]; then
+        systemctl --quiet is-enabled honcho-inspector.service 2>/dev/null && \
+            systemctl stop honcho-inspector.service || true
+    fi
+}
+
+post_remove() {
+    if [ -d /run/systemd/system ]; then
+        systemctl daemon-reload 2>/dev/null || true
+    fi
+    # The data dirs are owned by the package only on first install
+    # (they were created by post_install). On a clean uninstall
+    # remove them; on an upgrade they're left intact.
+    if [ "$1" = "0" ]; then
+        rm -rf /var/lib/honcho-inspector
+        rm -rf /var/log/honcho-inspector
+        rm -rf /etc/honcho-inspector
+        rm -f  /etc/default/honcho-inspector
+        if getent passwd www-data >/dev/null 2>&1; then
+            userdel --quiet --system www-data 2>/dev/null || true
+        fi
+    fi
+}
+INSTALL_EOF
+
+# === makepkg ======================================================
+# -s  : sync missing deps via pacman (we've already installed
+#        them in the Containerfile, so this is a no-op)
+# -f  : force a rebuild (don't reuse a cached package)
+# --noconfirm : don't prompt
+# --skippgpcheck : we don't sign the package
+# We must run makepkg as a regular user (NOT root); makepkg
+# refuses to run as root by default for safety. We use the
+# `nobody` user that ships with the archlinux base image. If
+# `nobody` doesn't exist (shouldn't happen on archlinux:latest,
+# but belt-and-suspenders), fall back to a runtime-created
+# unprivileged user.
+printf 'entrypoint: running makepkg\n'
+if ! id nobody >/dev/null 2>&1; then
+    useradd -m -s /bin/bash nobody
+fi
+
+# makepkg refuses to run as root. We can't `su -s /bin/bash -c`
+# because of the dash's argv handling, so use `setpriv` which
+# is in util-linux (always installed on Arch).
+chown -R nobody:nobody "${BUILD}"
+setpriv --reuid=nobody --regid=nobody --init-groups -- \
+    env \
+        MAKEPKG_PACKAGER="${MAINTAINER}" \
+        PKGDEST="${BUILD}" \
+        BUILDDIR="${BUILD}" \
+        SRCDEST="${BUILD}" \
+    bash -c "cd '${BUILD}' && makepkg -s -f --noconfirm --skippgpcheck"
+
+# === copy artifact to /out =======================================
+# makepkg wrote the .pkg.tar.zst to ${PKGDEST} (= ${BUILD}); copy
+# it to /out so the bind mount delivers it to the host.
+install -m 0644 "${BUILD}/${ARTIFACT}" "${OUT}/${ARTIFACT}"
+
+# === chown /out to the host operator =============================
+chown -R "${HOST_UID}:${HOST_GID}" /out
+
+# === report ======================================================
+printf 'BUILT: /out/%s\n' "${ARTIFACT}"
+exit 0

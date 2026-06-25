@@ -1,0 +1,140 @@
+# Containerfile: honcho-inspector-backend builder for Rocky Linux 10.
+#
+# (a) Base image choice
+# ---------------------
+# docker.io/library/rockylinux:10-minimal is the Rocky Linux 10
+# minimal image. Rocky 10 ships the `microdnf` package manager
+# (a dnf-without-python rewrite, ~10MB) plus the basics: bash,
+# coreutils, findutils, gpg, rpm. It does NOT ship a JDK, NOT a
+# Node, NOT a Ruby toolchain, NOT fpm, NOT the rpm-build tooling
+# fpm needs to assemble the final .rpm. We install those below.
+#
+# Why Rocky 10 (not Rocky 9)? 10 is the current generation as of
+# 2026 and the only one whose AppStream has `java-25-openjdk-headless`
+# and `nodejs24` already in the base repo (no EPEL needed). Rocky 9's
+# AppStream still ships OpenJDK 21, which would force an EPEL install
+# for JDK 25 and complicate the supply chain. Stick with the version
+# the research confirmed.
+#
+# Why not RHEL UBI? UBI images are restricted to the Red Hat
+# customer-only repos; the open AppStream we need (nodejs24,
+# java-25-openjdk) is the community rebuild that Rocky ships, and
+# using the same image the operators deploy to keeps the build
+# environment aligned with the production target.
+#
+# (b) Third-party repos added
+# ---------------------------
+# The base Rocky 10 AppStream has everything we need. We do enable
+# the `crb` (CodeReady Builder) repo because `rpm-build` and the
+# -devel subpackages are there in Rocky. We do NOT add EPEL; the
+# verified package set is in AppStream + CRB. fpm is not in Rocky
+# (it's a Ruby gem, not an rpm) so we install it via
+# `gem install --no-document fpm`.
+#
+# (c) Artifact produced and where it lands
+# ----------------------------------------
+# The entrypoint.sh builds the fat jar via
+#   mvn -B -ntp -DskipTests package
+# then runs `fpm -s dir -t rpm` to produce
+#   honcho-inspector-backend-0.1.0-SNAPSHOT-1.noarch.rpm
+# written to /out. The operator binds
+#   -v $PWD:/src:ro    (source tree, read-only)
+#   -v $PWD/../dist:/out:rw   (artifact destination)
+# so the .rpm lands in the host's dist/ directory.
+#
+# Build:
+#   podman build --build-arg HOST_UID=$(id -u) --build-arg HOST_GID=$(id -g) \
+#     -t honcho-inspector-backend:builder-rocky -f packaging/build/rocky/Containerfile .
+# Run:
+#   podman run --rm \
+#     -v $PWD:/src:ro \
+#     -v $PWD/../dist:/out:rw \
+#     honcho-inspector-backend:builder-rocky
+#
+# The source tree is mounted read-only. We deliberately do NOT COPY
+# the source into the image -- the /src bind mount is the only way
+# the entrypoint can read the host's working copy.
+
+# ====== base + label ==============================================
+FROM docker.io/library/rockylinux:10-minimal
+
+ARG HOST_UID=0
+ARG HOST_GID=0
+
+LABEL org.opencontainers.image.title="honcho-inspector-backend (builder-rocky)" \
+      org.opencontainers.image.description="Build container for the honcho-inspector-backend .rpm on Rocky Linux 10. Installs java-25-openjdk, nodejs24, ruby+ruby-devel, and fpm. Produces honcho-inspector-backend-0.1.0-SNAPSHOT-1.noarch.rpm under /out." \
+      org.opencontainers.image.source="https://github.com/cloudbsdorg/honcho-inspector-backend" \
+      org.opencontainers.image.licenses="BSD-3-Clause"
+
+# ====== toolchain =================================================
+# microdnf is Rocky's dnf-replacement (C-implementation, no Python).
+# We install in a few groups:
+#   - core: curl, ca-certificates, gnupg2, make, gcc, file, which,
+#           tar, shadow-utils (useradd/groupadd), systemd (for the
+#           postinst's systemctl calls)
+#   - JDK25: java-25-openjdk-headless + java-25-openjdk-devel (Maven
+#            needs javac). End-user .rpm still depends on -headless.
+#   - Node 24: nodejs24 (AppStream)
+#   - Ruby: ruby + ruby-devel
+#   - rpm-build chain: rpm-build + rpm-devel + rpmlint (fpm's
+#                       rpm stage runs `rpmbuild -bb` internally
+#                       and needs the toolchain)
+#   - crb: CodeReady Builder repo for the -devel packages
+#
+# The `dnf config-manager --enable crb` command needs the
+# `dnf-plugin-config-manager` plugin first, which is why it's
+# installed in the same RUN.
+RUN set -eux \
+    && microdnf install -y \
+        dnf \
+        dnf-plugin-config-manager \
+    && dnf config-manager --enable crb \
+    && dnf install -y \
+        curl \
+        ca-certificates \
+        gnupg2 \
+        make \
+        gcc \
+        gcc-c++ \
+        file \
+        which \
+        tar \
+        shadow-utils \
+        systemd \
+        java-25-openjdk-headless \
+        java-25-openjdk-devel \
+        nodejs24 \
+        ruby \
+        ruby-devel \
+        rpm-build \
+        rpm-devel \
+        rpmlint \
+        libffi-devel \
+        openssl-devel \
+        zlib-devel \
+        libzstd-devel \
+    && dnf clean all \
+    && rm -rf /var/cache/dnf
+
+# ====== fpm via gem ===============================================
+# fpm is not in Rocky (it's a Ruby gem). Install the gem and its
+# runtime deps from rubygems.org. We do this in its own layer so
+# the gem install is cached across Maven dep changes and re-runs
+# of the entrypoint.
+RUN set -eux \
+    && gem install --no-document fpm \
+    && fpm --version
+
+# ====== entrypoint ================================================
+# The entrypoint reads /src (mounted) and writes the .rpm to /out
+# (mounted). It does its own `mvn package` and `fpm -t rpm`; the
+# source tree is never baked into the image.
+COPY packaging/build/rocky/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod 0755 /usr/local/bin/entrypoint.sh
+
+ENV JAVA_HOME=/usr/lib/jvm/java-25-openjdk
+
+WORKDIR /src
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD []

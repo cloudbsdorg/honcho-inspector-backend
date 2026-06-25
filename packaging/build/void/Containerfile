@@ -1,0 +1,146 @@
+# Containerfile: honcho-inspector-backend builder for Void Linux.
+#
+# (a) Base image choice
+# ---------------------
+# docker.io/voidlinux/voidlinux:glibc is the official Void glibc
+# image. Void ships both musl and glibc flavors; the default
+# `latest` tag is the musl build. The task research explicitly
+# says "glibc flavor, not musl -- musl is the default but glibc
+# has better Java support", so we pin to the glibc tag.
+#
+# Why glibc, not musl? OpenJDK 25 has JNI shim libraries that
+# are not always built against musl. Even though honcho-
+# inspector-backend has no JNI deps itself, the Spring Boot
+# fat jar references libzip / libzstd / libssl via the JDK,
+# and Void's musl JDK package has occasional symbol mismatches
+# with glibc-built native helpers. Glibc is the safer default.
+#
+# The image ships xbps-install + xbps-create + a basic POSIX
+# userland (bash, coreutils, findutils, gawk, grep, sed, tar,
+# xz, zstd). It does NOT ship a JDK, NOT a Node, NOT a Ruby
+# toolchain, NOT fpm, NOT the runit init. We install all of
+# those below.
+#
+# (b) Third-party repos added
+# ---------------------------
+# We do NOT add any third-party repos. The verified package set
+# (openjdk25, openjdk25-jre, nodejs, ruby, ruby-devel, xbps,
+# runit, shadow, ca-certificates, curl, make, gcc, file) is in
+# the stock glibc repo. fpm is not in Void (it's a Ruby gem);
+# we install it via `gem install --no-document fpm`. We don't
+# actually use fpm on Void -- the task research says to use
+# xbps-create directly because fpm has no Void target.
+#
+# (c) Artifact produced and where it lands
+# ----------------------------------------
+# The entrypoint.sh builds the fat jar via
+#   mvn -B -ntp -DskipTests package
+# then stages the install tree (jar + launcher + etc + man +
+# systemd unit + runit runscript tree), writes an XBPS
+# install-action script (post-install) with BOTH a runit
+# activation arm and a systemd activation arm, and runs
+#   xbps-create -A x86_64 -n <name> -v <ver> -s <staged-tree> \
+#               -D <deps> --inst-script <inst.sh> --config-files <cf> \
+#               <out>.xbps
+# to produce
+#   honcho-inspector-backend-0.1.0-SNAPSHOT_1.x86_64.xbps
+# written to /out. The operator binds
+#   -v $PWD:/src:ro
+#   -v $PWD/../dist:/out:rw
+# so the .xbps lands in the host's dist/ directory.
+#
+# The install-action script detects the init system at install
+# time and activates the matching service:
+#   - runit present (/etc/runit/runsvdir/default) ->
+#       symlink /etc/sv/honcho-inspector into the default
+#       runlevel and `sv up honcho-inspector`
+#   - systemd present (/run/systemd/system) ->
+#       systemctl daemon-reload + enable + restart
+# This mirrors the k3s pattern referenced in the task research.
+#
+# Build:
+#   podman build --build-arg HOST_UID=$(id -u) --build-arg HOST_GID=$(id -g) \
+#     -t honcho-inspector-backend:builder-void -f packaging/build/void/Containerfile .
+# Run:
+#   podman run --rm \
+#     -v $PWD:/src:ro \
+#     -v $PWD/../dist:/out:rw \
+#     honcho-inspector-backend:builder-void
+
+# ====== base + label ==============================================
+FROM docker.io/voidlinux/voidlinux:glibc
+
+ARG HOST_UID=0
+ARG HOST_GID=0
+
+LABEL org.opencontainers.image.title="honcho-inspector-backend (builder-void)" \
+      org.opencontainers.image.description="Build container for the honcho-inspector-backend .xbps on Void Linux (glibc). Installs openjdk25, nodejs (24), ruby+devel, runit, and fpm. Produces honcho-inspector-backend-0.1.0-SNAPSHOT_1.x86_64.xbps under /out via xbps-create, with both a runit runscript tree and a systemd unit (k3s pattern)." \
+      org.opencontainers.image.source="https://github.com/cloudbsdorg/honcho-inspector-backend" \
+      org.opencontainers.image.licenses="BSD-3-Clause"
+
+# ====== toolchain =================================================
+# xbps-install is the package manager. We install in a few groups:
+#   - core: ca-certificates, curl, make, gcc, file, tar, xz,
+#           zstd (the xbps default compression), shadow (useradd
+#           + groupadd; xbps doesn't have its own adduser),
+#           bash (for the post-install script's cleaner error
+#           handling on complex conditionals)
+#   - JDK25: openjdk25 (full JDK -- we need javac for Maven;
+#            openjdk25-jre is the JRE-only subpackage that the
+#            .xbps's run-time depends on)
+#   - Node: nodejs (one package, tracks current LTS = Node 24)
+#   - Ruby: ruby + ruby-devel (3.4.x)
+#   - xbps: xbps (the xbps-create tool)
+#   - runit: runit (we ship the runscript tree, but the package
+#            is needed at install time on the target system; we
+#            install it here so the build can reference the
+#            canonical /etc/sv layout)
+#
+# `-y` answers yes to all prompts; `-S` is sync (not used here
+# since `xbps-install` is the all-in-one install command).
+# We pin to the current repo with `-R` (refresh) first.
+RUN set -eux \
+    && xbps-install -Syu \
+    && xbps-install -y \
+        ca-certificates \
+        curl \
+        make \
+        gcc \
+        file \
+        tar \
+        xz \
+        zstd \
+        bash \
+        shadow \
+        openjdk25 \
+        openjdk25-jre \
+        nodejs \
+        ruby \
+        ruby-devel \
+        xbps \
+        runit \
+    && xbps-remove -yO
+
+# ====== fpm via gem (unused on Void, but kept for parity) ========
+# fpm is not in Void's official repos. Install the gem and
+# its native deps via `gem install --no-document fpm`. We don't
+# use fpm on Void -- xbps-create is the native builder -- but
+# we keep fpm installed because:
+#   1. parity with the other build images (consistent toolset),
+#   2. a future task might want fpm as a fallback path.
+RUN set -eux \
+    && gem install --no-document fpm \
+    && fpm --version
+
+# ====== entrypoint ================================================
+COPY packaging/build/void/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod 0755 /usr/local/bin/entrypoint.sh
+
+# /usr/lib/jvm/openjdk25 is the path xbps-install drops the
+# JDK to (a single canonical path on Void).
+ENV JAVA_HOME=/usr/lib/jvm/openjdk25
+
+WORKDIR /src
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD []

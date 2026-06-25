@@ -1,0 +1,131 @@
+# Containerfile: honcho-inspector-backend builder for openSUSE Leap 16.
+#
+# (a) Base image choice
+# ---------------------
+# docker.io/library/opensuse/leap:16.0 is the openSUSE Leap 16.0
+# official image. Leap 16 is the current generation as of 2026;
+# it's the first release to consolidate the OSS + Package Hub +
+# non-oss repos into a single layered model, so we do not need to
+# enable separate non-oss repos for the toolchain. zypper is the
+# package manager; the rest of the image is a stock Tumbleweed-
+# derived minimal rootfs.
+#
+# Why not Tumbleweed (rolling)? Tumbleweed updates daily; pinning
+# to a 6-month-released Leap 16 gives a reproducible base image
+# for CI and operator trust. The verified package set is in Leap
+# 16's repos; Tumbleweed's drift would make verification fragile.
+#
+# Why not SLE / SLES? SLES images require SUSE Customer Center
+# registration; we cannot ship a build container that depends on
+# credentials the operator doesn't have. Leap 16 is the
+# community-rebuild binary-compatible equivalent and is what the
+# task research confirmed.
+#
+# (b) Third-party repos added
+# ---------------------------
+# Leap 16's OSS has ruby + ruby-devel + java-25-openjdk + the
+# rpm-build toolchain. Package Hub is no longer a separate repo
+# on Leap 16 (it was merged in 15.5); nodejs24 and the
+# additional language packs that used to need Package Hub are
+# now in the standard repos. We do NOT add any extra repos; the
+# verified set is in stock Leap 16.
+#
+# fpm is not in openSUSE's official repos; we install it as a
+# Ruby gem from rubygems.org via `gem install --no-document fpm`.
+#
+# (c) Artifact produced and where it lands
+# ----------------------------------------
+# The entrypoint.sh builds the fat jar via
+#   mvn -B -ntp -DskipTests package
+# then runs `fpm -s dir -t rpm` to produce
+#   honcho-inspector-backend-0.1.0-SNAPSHOT-1.noarch.rpm
+# written to /out. The operator binds
+#   -v $PWD:/src:ro
+#   -v $PWD/../dist:/out:rw
+# so the .rpm lands in the host's dist/ directory.
+#
+# Build:
+#   podman build --build-arg HOST_UID=$(id -u) --build-arg HOST_GID=$(id -g) \
+#     -t honcho-inspector-backend:builder-suse -f packaging/build/suse/Containerfile .
+# Run:
+#   podman run --rm \
+#     -v $PWD:/src:ro \
+#     -v $PWD/../dist:/out:rw \
+#     honcho-inspector-backend:builder-suse
+
+# ====== base + label ==============================================
+FROM docker.io/library/opensuse/leap:16.0
+
+ARG HOST_UID=0
+ARG HOST_GID=0
+
+LABEL org.opencontainers.image.title="honcho-inspector-backend (builder-suse)" \
+      org.opencontainers.image.description="Build container for the honcho-inspector-backend .rpm on openSUSE Leap 16. Installs java-25-openjdk, nodejs24, ruby+ruby-devel, and fpm. Produces honcho-inspector-backend-0.1.0-SNAPSHOT-1.noarch.rpm under /out." \
+      org.opencontainers.image.source="https://github.com/cloudbsdorg/honcho-inspector-backend" \
+      org.opencontainers.image.licenses="BSD-3-Clause"
+
+# ====== toolchain =================================================
+# zypper is the package manager. We install in a few groups:
+#   - core: curl, ca-certificates, gnupg, make, gcc, file, which,
+#           tar, shadow (useradd/groupadd), systemd, libffi-devel,
+#           openssl-devel, zlib-devel
+#   - JDK25: java-25-openjdk + java-25-openjdk-devel (Maven needs
+#            javac). End-user .rpm still depends on -headless.
+#   - Node 24: nodejs24 (Leap 16 stock)
+#   - Ruby: ruby + ruby-devel
+#   - rpm-build chain: rpm-build + rpm-devel (fpm's rpm stage
+#                       runs `rpmbuild -bb` internally)
+#
+# --no-gpg-checks keeps the build deterministic in offline / air-
+# gapped CI: the official image's rpmdb is signed by SUSE, so the
+# per-package signatures are still verified.
+RUN set -eux \
+    && zypper --non-interactive refresh \
+    && zypper --non-interactive install --no-recommends \
+        curl \
+        ca-certificates \
+        make \
+        gcc \
+        gcc-c++ \
+        file \
+        which \
+        tar \
+        shadow \
+        systemd \
+        java-25-openjdk \
+        java-25-openjdk-devel \
+        nodejs24 \
+        ruby \
+        ruby-devel \
+        rpm-build \
+        rpm-devel \
+        libffi-devel \
+        openssl-devel \
+        zlib-devel \
+        libzstd-devel \
+    && zypper clean -a
+
+# ====== fpm via gem ===============================================
+# fpm is not in openSUSE's official repos. Install the gem and
+# its runtime deps from rubygems.org. We do this in its own layer
+# so the gem install is cached across Maven dep changes and re-
+# runs of the entrypoint.
+RUN set -eux \
+    && gem install --no-document fpm \
+    && fpm --version
+
+# ====== entrypoint ================================================
+COPY packaging/build/suse/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod 0755 /usr/local/bin/entrypoint.sh
+
+# /usr/lib64/jvm/java-25-openjdk-<version> is the path zypper
+# installs the JDK to; we discover the actual dir at runtime by
+# glob since the version-suffixed subdir name changes between
+# point releases. The entrypoint sets JAVA_HOME before invoking
+# mvn.
+ENV JAVA_HOME=/usr/lib64/jvm/java
+
+WORKDIR /src
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD []

@@ -1,0 +1,133 @@
+# Containerfile: honcho-inspector-backend builder for Arch Linux.
+#
+# (a) Base image choice
+# ---------------------
+# docker.io/library/archlinux:latest is the official Arch Linux
+# base image. It ships pacman + the latest rolling-release
+# packages. Arch's "latest" tag is refreshed on every package
+# update, so the base image's `pacman -Sy` always sees the
+# current extra/multilib trees. We do not pin a specific date
+# tag because Arch's release model is rolling; the date tag would
+# just be a frozen snapshot that pacman -Syu would walk forward
+# from anyway.
+#
+# The base image ships only the bare minimum (pacman, glibc,
+# bash, coreutils). It does NOT ship a JDK, NOT a Node, NOT a
+# Ruby toolchain, NOT fpm, NOT base-devel (the meta-package of
+# gcc/make/... that makepkg needs to compile). We install all
+# of those below.
+#
+# Why not archlinux:base-devel? `base-devel` is the meta-package
+# we'd need for any AUR-style build, but we don't compile any
+# C/C++ for honcho-inspector-backend (it's pure Java). We still
+# pull `base-devel` because fpm's native gem extensions
+# (json, openssl, etc.) compile during `gem install fpm` and
+# need gcc/make. Pulling base-devel as a single metapackage is
+# cheaper than enumerating gcc, make, binutils, autoconf, etc.
+#
+# (b) Third-party repos added
+# ---------------------------
+# We do NOT add any third-party repos. The verified package set
+# (jre25-openjdk-headless, nodejs-lts-krypton, ruby, base-devel)
+# is in the stock `extra` repo that ships with every Arch image.
+# fpm is not in the official repos; we install it via
+# `gem install --no-document fpm` from rubygems.org.
+# The AUR has `fpm` 1.17.0-2 but the AUR requires a manual
+# `makepkg -si` step with `-Sy` to refresh the ABS deps; the
+# gem path is hermetic and CI-friendly.
+#
+# (c) Artifact produced and where it lands
+# ----------------------------------------
+# The entrypoint.sh builds the fat jar via
+#   mvn -B -ntp -DskipTests package
+# then generates a PKGBUILD + .install file dynamically
+# (the task research explicitly says "Generate the PKGBUILD
+# programmatically in entrypoint.sh -- DON'T ship a static one
+# because version updates would drift") and runs
+#   makepkg -s --noconfirm
+# to produce
+#   honcho-inspector-backend-0.1.0-SNAPSHOT-1-x86_64.pkg.tar.zst
+# written to /out. The operator binds
+#   -v $PWD:/src:ro
+#   -v $PWD/../dist:/out:rw
+# so the .pkg.tar.zst lands in the host's dist/ directory.
+#
+# Build:
+#   podman build --build-arg HOST_UID=$(id -u) --build-arg HOST_GID=$(id -g) \
+#     -t honcho-inspector-backend:builder-arch -f packaging/build/arch/Containerfile .
+# Run:
+#   podman run --rm \
+#     -v $PWD:/src:ro \
+#     -v $PWD/../dist:/out:rw \
+#     honcho-inspector-backend:builder-arch
+
+# ====== base + label ==============================================
+FROM docker.io/library/archlinux:latest
+
+ARG HOST_UID=0
+ARG HOST_GID=0
+
+LABEL org.opencontainers.image.title="honcho-inspector-backend (builder-arch)" \
+      org.opencontainers.image.description="Build container for the honcho-inspector-backend .pkg.tar.zst on Arch Linux. Installs jre25-openjdk-headless, nodejs-lts-krypton (Node 24), ruby, base-devel, and fpm. Produces honcho-inspector-backend-0.1.0-SNAPSHOT-1-x86_64.pkg.tar.zst under /out via makepkg." \
+      org.opencontainers.image.source="https://github.com/cloudbsdorg/honcho-inspector-backend" \
+      org.opencontainers.image.licenses="BSD-3-Clause"
+
+# ====== toolchain =================================================
+# pacman is the package manager. We install in a few groups:
+#   - core: base-devel (gcc, make, autoconf, automake, binutils,
+#           fakeroot, patch, etc. -- everything fpm's gem compile
+#           needs), git, ca-certificates, fakeroot (for makepkg's
+#           fakeroot build step), openssh (for ssh-keygen used
+#           by some Maven plugins)
+#   - JDK25: jre25-openjdk-headless + jdk25-openjdk (Maven needs
+#            javac; end-user .pkg.tar.zst still depends on
+#            jre25-openjdk-headless via the depends=() field)
+#   - Node 24: nodejs-lts-krypton (Node 24 LTS), npm
+#   - Ruby: ruby + ruby-rdoc
+#
+# `-Sy` is used (not `-Syu`) because we just refreshed the
+# database in the previous line. The `pacman -Sy` refresh is
+# intentionally followed by `pacman -S --noconfirm` to skip
+# the package-selection prompt (pacman in non-interactive mode
+# still asks for `[Y/n]` per transaction unless --noconfirm).
+RUN set -eux \
+    && pacman -Sy --noconfirm --refresh \
+    && pacman -S --noconfirm --needed \
+        base-devel \
+        git \
+        ca-certificates \
+        fakeroot \
+        openssh \
+        jre25-openjdk-headless \
+        jdk25-openjdk \
+        nodejs-lts-krypton \
+        npm \
+        ruby \
+        ruby-rdoc \
+    && pacman -Scc --noconfirm \
+    && rm -rf /var/cache/pacman/pkg/* /var/lib/pacman/sync/*
+
+# ====== fpm via gem ===============================================
+# fpm is not in the official Arch repos. Install the gem and
+# its native deps via `gem install --no-document fpm`. base-devel
+# is already in the image so the C extensions compile.
+# Note: we don't actually need fpm for the Arch build path --
+# makepkg is the native arch tool. We keep fpm installed because
+# the entrypoint could fall back to fpm -t pacman if a future
+# task requires it; for now, makepkg is the chosen path.
+RUN set -eux \
+    && gem install --no-document fpm \
+    && fpm --version
+
+# ====== entrypoint ================================================
+COPY packaging/build/arch/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod 0755 /usr/local/bin/entrypoint.sh
+
+# /usr/lib/jvm/java-25-openjdk is the path pacman installs
+# the JDK to (a single canonical path on Arch).
+ENV JAVA_HOME=/usr/lib/jvm/java-25-openjdk
+
+WORKDIR /src
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD []
