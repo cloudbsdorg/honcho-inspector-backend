@@ -11,5 +11,5 @@ login-page.png
 /debian/stage/
 /dist/
 
-# Container build artifacts
-/packaging/container/stage/
+# fpm scratch
+/tmp/fpm-*/
