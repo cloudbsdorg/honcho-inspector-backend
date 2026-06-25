@@ -2,8 +2,11 @@
 set -e
 
 case "$1" in
-    install)
-        # Create the service user/group if missing.
+    install|configure)
+        # Create the service user/group if missing. configure is
+        # what dpkg invokes after `dpkg -i`; install is what some
+        # higher-level tools use. Both mean "first-time setup is
+        # safe to run".
         if ! getent group www-data >/dev/null; then
             addgroup --system www-data
         fi
@@ -21,7 +24,8 @@ case "$1" in
         install -d -m 0750 -o www-data -g www-data /var/log/honcho-inspector
         install -d -m 0750 -o root -g www-data /etc/honcho-inspector
         # /etc/default placeholder env file (operator fills HONCHO_CRYPTO_KEY).
-        if [ ! -f /etc/default/honcho-inspector ]; then
+        # Only seed on first install (configure), not on upgrade.
+        if [ "$1" = "install" ] && [ ! -f /etc/default/honcho-inspector ]; then
             cat > /etc/default/honcho-inspector <<'EOF'
 # Honcho Inspector backend environment file.
 # Secrets (HONCHO_CRYPTO_KEY, optional bootstrap credentials) belong here.
