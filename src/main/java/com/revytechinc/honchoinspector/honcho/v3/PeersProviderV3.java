@@ -129,13 +129,15 @@ public class PeersProviderV3 implements HonchoProvider {
     /**
      * Per-operation default body for POST endpoints whose controller
      * doesn't supply one. Honcho v3 requires a JSON body on every POST
-     * even when all options are absent; sending {@code {}} keeps the
-     * contract satisfied without forcing every controller to remember.
+     * even when all options are absent; sending an empty JSON object
+     * keeps the contract satisfied without forcing every controller to
+     * remember. (An empty string literal would serialize as an invalid
+     * JSON body and Honcho would 422 on missing fields like id/filters.)
      */
     private static Object defaultBody(HonchoOperation op) {
         return switch (op) {
             case GET_REPRESENTATION -> java.util.Map.of();
-            default -> "";
+            default -> java.util.Map.of();
         };
     }
 }
