@@ -1,11 +1,11 @@
 {
   "_meta": {
-    "captured_at": "2026-06-18T07:14:43Z",
+    "captured_at": "2026-06-25T01:42:00Z",
     "honcho_version": "3.0.7",
-    "endpoint": "GET /v3/workspaces/{ws}/peers/{peerId}/sessions",
-    "method": "GET",
+    "endpoint": "POST /v3/workspaces/{ws}/peers/{peerId}/sessions",
+    "method": "POST",
     "synthetic": true,
-    "synthetic_reason": "real call failed"
+    "synthetic_reason": "real call shape synthesized from v3 list-envelope"
   },
   "data": {
     "items": [

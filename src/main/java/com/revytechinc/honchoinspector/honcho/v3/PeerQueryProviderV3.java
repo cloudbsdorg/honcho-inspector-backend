@@ -30,8 +30,10 @@ import com.revytechinc.honchoinspector.model.HonchoContext;
  *       /v3/workspaces/{ws}/peers/{peerId}/chat</code>.</li>
  *   <li>{@link HonchoOperation#SEARCH_PEERS} &mdash; <code>POST
  *       /v3/workspaces/{ws}/peers/{peerId}/search</code>.</li>
- *   <li>{@link HonchoOperation#LIST_PEER_SESSIONS} &mdash; <code>GET
- *       /v3/workspaces/{ws}/peers/{peerId}/sessions</code>.</li>
+ *   <li>{@link HonchoOperation#LIST_PEER_SESSIONS} &mdash; <code>POST
+ *       /v3/workspaces/{ws}/peers/{peerId}/sessions</code> with a
+ *       {@code {filters:{...}}} body (v3 has no GET endpoint for this;
+ *       {@code GET} returns 405 with {@code Allow: POST}).</li>
  *   <li>{@link HonchoOperation#QUERY_PEER_CONCLUSIONS} &mdash; <code>POST
  *       /v3/workspaces/{ws}/peers/{peerId}/conclusions/query</code>.</li>
  * </ul>
@@ -89,8 +91,7 @@ public class PeerQueryProviderV3 implements HonchoProvider {
     @Override
     public HttpMethod httpMethod(HonchoOperation op) {
         return switch (op) {
-            case PEER_CHAT, SEARCH_PEERS, QUERY_PEER_CONCLUSIONS -> HttpMethod.POST;
-            case LIST_PEER_SESSIONS                              -> HttpMethod.GET;
+            case PEER_CHAT, SEARCH_PEERS, QUERY_PEER_CONCLUSIONS, LIST_PEER_SESSIONS -> HttpMethod.POST;
             default -> throw new UnsupportedOperationException(
                 "PeerQueryProviderV3 has no HTTP method for " + op);
         };
@@ -109,6 +110,15 @@ public class PeerQueryProviderV3 implements HonchoProvider {
             throw new HonchoCallException(
                 "PeerQueryProviderV3 does not handle " + op, 501, null);
         }
+        // LIST_PEER_SESSIONS in v3 has no GET endpoint. We POST the
+        // /peers/{id}/sessions path with {filters:{...}} as the body.
+        // The dispatcher passes `filters` in as requestBody (it was
+        // originally a queryParams arg, which Honcho ignored).
+        Object effectiveBody = requestBody;
+        if (op == HonchoOperation.LIST_PEER_SESSIONS) {
+            Map<String, ?> filterMap = requestBody instanceof Map ? (Map<String, ?>) requestBody : Map.of();
+            effectiveBody = Map.of("filters", filterMap);
+        }
         String substituted = V3ProviderSupport.substitutePath(pathTemplate(op), ctx, pathVars);
         String url = V3ProviderSupport.buildUrl(ctx.baseUrl(), ctx.apiVersion().pathPrefix(), substituted, queryParams);
         try {
@@ -116,8 +126,8 @@ public class PeerQueryProviderV3 implements HonchoProvider {
                 .uri(url)
                 .headers(h -> V3ProviderSupport.applyAuth(h, ctx))
                 .contentType(MediaType.APPLICATION_JSON);
-            ResponseEntity<Object> response = (requestBody != null)
-                ? spec.body(requestBody).retrieve().toEntity(Object.class)
+            ResponseEntity<Object> response = (effectiveBody != null)
+                ? spec.body(effectiveBody).retrieve().toEntity(Object.class)
                 : spec.retrieve().toEntity(Object.class);
             return response.getBody();
         } catch (HttpStatusCodeException e) {
