@@ -1,5 +1,7 @@
 package com.revytechinc.honchoinspector.auth;
 
+import com.revytechinc.honchoinspector.auth.repo.AuditLogRepository;
+
 import com.revytechinc.honchoinspector.config.HonchoProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,12 +34,12 @@ public class AuditRetentionJob {
 
     private static final Logger log = LoggerFactory.getLogger(AuditRetentionJob.class);
 
-    private final AuditLogDao dao;
+    private final AuditLogRepository repo;
     private final HonchoProperties properties;
     private final AdminAudit audit;
 
-    public AuditRetentionJob(AuditLogDao dao, HonchoProperties properties, AdminAudit audit) {
-        this.dao = dao;
+    public AuditRetentionJob(AuditLogRepository repo, HonchoProperties properties, AdminAudit audit) {
+        this.repo = repo;
         this.properties = properties;
         this.audit = audit;
     }
@@ -56,8 +58,13 @@ public class AuditRetentionJob {
         var cfg = properties.audit();
         Instant cutoff = Instant.now().minus(Duration.ofDays(cfg.retentionDays()));
         long longWindowBefore = Instant.now().getEpochSecond();
-        int ageDeleted = dao.deleteOlderThan(cutoff);
-        int sizeDeleted = dao.deleteOldestKeeping(cfg.maxRows());
+        int ageDeleted = repo.deleteOlderThan(cutoff);
+        // Size cap: keep the newest cfg.maxRows entries by deleting the
+        // oldest (totalCount - maxRows) rows. The repository paginates by
+        // createdAt ascending and deletes the head of the queue.
+        long totalCount = repo.count();
+        long toDrop = Math.max(0, totalCount - cfg.maxRows());
+        int sizeDeleted = (int) (toDrop > 0 ? repo.deleteOldest((int) toDrop) : 0);
         int total = ageDeleted + sizeDeleted;
         long tookMs = (Instant.now().getEpochSecond() - longWindowBefore) * 1000L;
         log.info(

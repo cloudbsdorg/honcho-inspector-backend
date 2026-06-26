@@ -1,5 +1,9 @@
 package com.revytechinc.honchoinspector.auth;
 
+import com.revytechinc.honchoinspector.auth.repo.AuthSessionRepository;
+import com.revytechinc.honchoinspector.auth.repo.ProfileRepository;
+import com.revytechinc.honchoinspector.auth.repo.UserRepository;
+
 import com.revytechinc.honchoinspector.config.OpenApiConfig;
 import com.revytechinc.honchoinspector.filter.SessionAuthFilter;
 import com.revytechinc.honchoinspector.model.ErrorResponse;
@@ -29,11 +33,11 @@ import java.util.Map;
 public class AuthController {
 
     private final AuthService auth;
-    private final UserDao users;
-    private final AuthSessionDao sessions;
-    private final ProfileDao profiles;
+    private final UserRepository users;
+    private final AuthSessionRepository sessions;
+    private final ProfileRepository profiles;
 
-    public AuthController(AuthService auth, UserDao users, AuthSessionDao sessions, ProfileDao profiles) {
+    public AuthController(AuthService auth, UserRepository users, AuthSessionRepository sessions, ProfileRepository profiles) {
         this.auth = auth;
         this.users = users;
         this.sessions = sessions;

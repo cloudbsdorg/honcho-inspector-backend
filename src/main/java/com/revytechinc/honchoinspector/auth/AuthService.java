@@ -1,5 +1,9 @@
 package com.revytechinc.honchoinspector.auth;
 
+import com.revytechinc.honchoinspector.auth.entity.AuthSessionEntity;
+import com.revytechinc.honchoinspector.auth.entity.UserEntity;
+import com.revytechinc.honchoinspector.auth.repo.AuthSessionRepository;
+import com.revytechinc.honchoinspector.auth.repo.UserRepository;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
@@ -11,12 +15,16 @@ import java.util.Optional;
 @Service
 public class AuthService {
 
-    private final UserDao users;
-    private final AuthSessionDao sessions;
+    private final UserRepository users;
+    private final AuthSessionRepository sessions;
     private final PasswordHasher hasher;
     private final SecureRandom rng = new SecureRandom();
 
-    public AuthService(UserDao users, AuthSessionDao sessions, PasswordHasher hasher) {
+    public AuthService(
+        UserRepository users,
+        AuthSessionRepository sessions,
+        PasswordHasher hasher
+    ) {
         this.users = users;
         this.sessions = sessions;
         this.hasher = hasher;
@@ -47,7 +55,7 @@ public class AuthService {
         if (users.findByUsername(username).isPresent()) {
             throw new UserExistsException(username);
         }
-        var user = new User(
+        var entity = new UserEntity(
             newId(),
             username.trim(),
             hasher.hash(password),
@@ -58,11 +66,11 @@ public class AuthService {
             Instant.now()
         );
         try {
-            users.insert(user);
+            users.save(entity);
         } catch (DataIntegrityViolationException e) {
             throw new UserExistsException(username);
         }
-        return user;
+        return toRecord(entity);
     }
 
     private static String blankToNull(String s) {
@@ -70,20 +78,20 @@ public class AuthService {
     }
 
     public LoginResult login(String username, String password) {
-        var user = users.findByUsername(username == null ? "" : username.trim())
+        var entity = users.findByUsername(username == null ? "" : username.trim())
             .orElseThrow(InvalidCredentialsException::new);
-        if (!hasher.verify(password, user.passwordHash())) {
+        if (!hasher.verify(password, entity.getPasswordHash())) {
             throw new InvalidCredentialsException();
         }
-        var session = new AuthSession(
+        var session = new AuthSessionEntity(
             newId(),
-            user.id(),
+            entity.getId(),
             Instant.now(),
             Instant.now(),
-            Optional.empty()
+            null
         );
-        sessions.insert(session);
-        return new LoginResult(session, user);
+        sessions.save(session);
+        return new LoginResult(toRecord(session), toRecord(entity));
     }
 
     public void logout(String sessionId) {
@@ -94,20 +102,46 @@ public class AuthService {
         if (sessionId == null || sessionId.isBlank()) return Optional.empty();
         var session = sessions.findById(sessionId).orElse(null);
         if (session == null) return Optional.empty();
-        if (session.isExpired(Instant.now())) {
+        if (session.getExpiresAtAsInstant() != null
+            && session.getExpiresAtAsInstant().isBefore(Instant.now())) {
             sessions.deleteById(sessionId);
             return Optional.empty();
         }
-        var user = users.findById(session.userId()).orElse(null);
+        sessions.touchLastSeen(sessionId, Instant.now());
+        var user = users.findById(session.getUserId()).orElse(null);
         if (user == null) return Optional.empty();
-        sessions.touch(sessionId, Instant.now());
-        return Optional.of(new CurrentUser(user, session));
+        return Optional.of(new CurrentUser(toRecord(user), toRecord(session)));
     }
 
     private String newId() {
         var bytes = new byte[24];
         rng.nextBytes(bytes);
         return HexFormat.of().formatHex(bytes);
+    }
+
+    private static User toRecord(UserEntity e) {
+        return new User(
+            e.getId(),
+            e.getUsername(),
+            e.getPasswordHash(),
+            e.getFirstname(),
+            e.getLastname(),
+            e.getEmail(),
+            e.getIsAdmin(),
+            e.getCreatedAtAsInstant()
+        );
+    }
+
+    private static AuthSession toRecord(AuthSessionEntity e) {
+        return new AuthSession(
+            e.getId(),
+            e.getUserId(),
+            e.getCreatedAtAsInstant(),
+            e.getLastSeenAtAsInstant(),
+            e.getExpiresAtAsInstant() == null
+                ? Optional.empty()
+                : Optional.of(e.getExpiresAtAsInstant())
+        );
     }
 
     public record CurrentUser(User user, AuthSession session) {}

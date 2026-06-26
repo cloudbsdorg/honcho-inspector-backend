@@ -34,6 +34,22 @@ spring:
       mode: always
       schema-locations: classpath:schema.sql
       continue-on-error: false
+  jpa:
+    # 'validate' makes Hibernate verify the entities match the existing
+    # schema (column names + types) at startup, but never silently
+    # mutate the database. The schema is owned by schema.sql and
+    # applied by spring.sql.init above; JPA only reads from it.
+    hibernate:
+      ddl-auto: validate
+    # The community SQLite dialect is the only one that maps
+    # @Column types onto a SQLite-flavored schema without choking on
+    # TEXT-as-varchar and INTEGER-as-boolean. It's pulled in via
+    # pom.xml.
+    database-platform: org.hibernate.community.dialect.SQLiteDialect
+    open-in-view: false
+    properties:
+      hibernate.format_sql: false
+      hibernate.show_sql: false
 
 # Honcho upstream. The base URL is also accepted per-login via the LoginInput,
 # but these defaults are used for the startup banner and any default-fallback calls.

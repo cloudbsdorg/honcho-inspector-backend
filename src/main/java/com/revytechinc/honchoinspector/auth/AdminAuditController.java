@@ -2,6 +2,8 @@ package com.revytechinc.honchoinspector.auth;
 
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
+import com.revytechinc.honchoinspector.auth.repo.AuditLogRepository;
+import com.revytechinc.honchoinspector.auth.repo.AuditLogSpecifications;
 import com.revytechinc.honchoinspector.config.OpenApiConfig;
 import com.revytechinc.honchoinspector.model.ErrorResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -29,11 +31,11 @@ import java.util.Map;
     description = "Admin-only audit log query. Filter by actor, target, action, time range.")
 public class AdminAuditController {
 
-    private final AuditLogDao dao;
+    private final AuditLogRepository repo;
     private final ObjectMapper json;
 
-    public AdminAuditController(AuditLogDao dao, ObjectMapper json) {
-        this.dao = dao;
+    public AdminAuditController(AuditLogRepository repo, ObjectMapper json) {
+        this.repo = repo;
         this.json = json;
     }
 
@@ -69,36 +71,40 @@ public class AdminAuditController {
         var p = PageSize.parse(pageSize);
         int rows = p.rows;
         int offset = page * rows;
-        var q = new AuditLogDao.Query(actor, target, action, sinceInstant);
-        var entries = dao.search(q, rows, offset);
+        var spec = AuditLogSpecifications.all(action, actor, target, sinceInstant);
+        var pageResult = repo.findAll(
+            spec,
+            org.springframework.data.domain.PageRequest.of(
+                Math.max(0, offset / Math.max(rows, 1)), Math.max(rows, 1)));
+        long total = pageResult.getTotalElements();
         return ResponseEntity.ok(Map.of(
-            "items", entries.stream().map(this::toDto).toList(),
-            "total", dao.count(),
+            "items", pageResult.getContent().stream().map(this::toDto).toList(),
+            "total", total,
             "page", page,
             "rows", rows,
-            "pages", rows == Integer.MAX_VALUE ? 1 : (int) Math.ceil((double) dao.count() / rows)
+            "pages", rows == Integer.MAX_VALUE ? 1 : (int) Math.ceil((double) total / rows)
         ));
     }
 
-    private Map<String, Object> toDto(AuditLogDao.Entry e) {
+    private Map<String, Object> toDto(com.revytechinc.honchoinspector.auth.entity.AuditLogEntity e) {
         Object metadata = null;
-        if (e.metadata() != null && !e.metadata().isBlank()) {
+        if (e.getMetadata() != null && !e.getMetadata().isBlank()) {
             try {
-                metadata = json.readTree(e.metadata());
+                metadata = json.readTree(e.getMetadata());
             } catch (JacksonException ex) {
-                metadata = e.metadata();
+                metadata = e.getMetadata();
             }
         }
         return Map.of(
-            "id", e.id(),
-            "actorUserId", e.actorUserId() == null ? "" : e.actorUserId(),
-            "action", e.action(),
-            "targetUserId", e.targetUserId() == null ? "" : e.targetUserId(),
-            "targetResource", e.targetResource() == null ? "" : e.targetResource(),
-            "ip", e.ip() == null ? "" : e.ip(),
-            "sessionId", e.sessionId() == null ? "" : e.sessionId(),
+            "id", e.getId(),
+            "actorUserId", e.getActorUserId() == null ? "" : e.getActorUserId(),
+            "action", e.getAction(),
+            "targetUserId", e.getTargetUserId() == null ? "" : e.getTargetUserId(),
+            "targetResource", e.getTargetResource() == null ? "" : e.getTargetResource(),
+            "ip", e.getIp() == null ? "" : e.getIp(),
+            "sessionId", e.getSessionId() == null ? "" : e.getSessionId(),
             "metadata", metadata == null ? Map.of() : metadata,
-            "createdAt", e.createdAt().toString()
+            "createdAt", e.getCreatedAtAsInstant().toString()
         );
     }
 

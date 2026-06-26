@@ -1,5 +1,7 @@
 package com.revytechinc.honchoinspector.auth;
 
+import com.revytechinc.honchoinspector.auth.entity.ProfileEntity;
+import com.revytechinc.honchoinspector.auth.repo.ProfileRepository;
 import org.springframework.stereotype.Service;
 
 import java.security.SecureRandom;
@@ -11,17 +13,17 @@ import java.util.Optional;
 @Service
 public class ProfileService {
 
-    private final ProfileDao profiles;
+    private final ProfileRepository repo;
     private final CryptoService crypto;
     private final SecureRandom rng = new SecureRandom();
 
-    public ProfileService(ProfileDao profiles, CryptoService crypto) {
-        this.profiles = profiles;
+    public ProfileService(ProfileRepository repo, CryptoService crypto) {
+        this.repo = repo;
         this.crypto = crypto;
     }
 
     public List<Profile> list(String userId) {
-        return profiles.findByUserId(userId);
+        return repo.findByUserId(userId).stream().map(ProfileService::toRecord).toList();
     }
 
     public Profile create(String userId, String label, String apiKey,
@@ -33,32 +35,24 @@ public class ProfileService {
                           String baseUrl, String workspaceId, String honchoUserName,
                           String apiVersion) {
         var now = Instant.now();
-        var profile = new Profile(
-            newId(),
-            userId,
-            label.trim(),
-            crypto.encrypt(apiKey),
-            baseUrl.trim(),
-            workspaceId.trim(),
-            honchoUserName.trim(),
-            now,
-            now,
-            normalizeApiVersion(apiVersion)
-        );
-        profiles.insert(profile);
-        return profile;
+        var entity = new ProfileEntity(
+            newId(), userId, label, crypto.encrypt(apiKey),
+            baseUrl, workspaceId, honchoUserName, normalizeApiVersion(apiVersion),
+            now, now);
+        repo.save(entity);
+        return toRecord(entity);
     }
 
     public Optional<Profile> get(String userId, String profileId) {
-        var p = profiles.findById(profileId);
-        if (p == null || !p.userId().equals(userId)) return Optional.empty();
-        return Optional.of(p);
+        return repo.findById(profileId)
+            .filter(p -> p.getUserId().equals(userId))
+            .map(ProfileService::toRecord);
     }
 
     public Optional<ProfileWithKey> getWithKey(String userId, String profileId) {
-        var p = profiles.findById(profileId);
-        if (p == null || !p.userId().equals(userId)) return Optional.empty();
-        return Optional.of(new ProfileWithKey(p, crypto.decrypt(p.apiKeyEncrypted())));
+        return repo.findById(profileId)
+            .filter(p -> p.getUserId().equals(userId))
+            .map(p -> new ProfileWithKey(toRecord(p), crypto.decrypt(p.getApiKeyEncrypted())));
     }
 
     /**
@@ -68,9 +62,8 @@ public class ProfileService {
      * dashboard fan-out.
      */
     public Optional<ProfileWithKey> getWithKeyForAdmin(String profileId) {
-        var p = profiles.findById(profileId);
-        if (p == null) return Optional.empty();
-        return Optional.of(new ProfileWithKey(p, crypto.decrypt(p.apiKeyEncrypted())));
+        return repo.findById(profileId)
+            .map(p -> new ProfileWithKey(toRecord(p), crypto.decrypt(p.getApiKeyEncrypted())));
     }
 
     public Optional<Profile> update(String userId, String profileId,
@@ -83,22 +76,21 @@ public class ProfileService {
                                     String label, String apiKey,
                                     String baseUrl, String workspaceId, String honchoUserName,
                                     String apiVersion) {
-        var existing = profiles.findById(profileId);
-        if (existing == null || !existing.userId().equals(userId)) return Optional.empty();
-        var updated = new Profile(
-            existing.id(),
-            existing.userId(),
-            label != null ? label.trim() : existing.label(),
-            apiKey != null ? crypto.encrypt(apiKey) : existing.apiKeyEncrypted(),
-            baseUrl != null ? baseUrl.trim() : existing.baseUrl(),
-            workspaceId != null ? workspaceId.trim() : existing.workspaceId(),
-            honchoUserName != null ? honchoUserName.trim() : existing.honchoUserName(),
-            existing.createdAt(),
-            Instant.now(),
-            apiVersion != null ? normalizeApiVersion(apiVersion) : existing.apiVersion()
-        );
-        profiles.update(updated);
-        return Optional.of(updated);
+        var existing = repo.findById(profileId).orElse(null);
+        if (existing == null || !existing.getUserId().equals(userId)) return Optional.empty();
+        var updated = repo.save(new ProfileEntity(
+            existing.getId(),
+            existing.getUserId(),
+            label != null ? label.trim() : existing.getLabel(),
+            apiKey != null ? crypto.encrypt(apiKey) : existing.getApiKeyEncrypted(),
+            baseUrl != null ? baseUrl.trim() : existing.getBaseUrl(),
+            workspaceId != null ? workspaceId.trim() : existing.getWorkspaceId(),
+            honchoUserName != null ? honchoUserName.trim() : existing.getHonchoUserName(),
+            apiVersion != null ? normalizeApiVersion(apiVersion) : existing.getApiVersion(),
+            existing.getCreatedAtAsInstant(),
+            Instant.now()
+        ));
+        return Optional.of(toRecord(updated));
     }
 
     private static String normalizeApiVersion(String v) {
@@ -108,9 +100,9 @@ public class ProfileService {
     }
 
     public boolean delete(String userId, String profileId) {
-        var p = profiles.findById(profileId);
-        if (p == null || !p.userId().equals(userId)) return false;
-        profiles.deleteById(profileId);
+        var p = repo.findById(profileId).orElse(null);
+        if (p == null || !p.getUserId().equals(userId)) return false;
+        repo.deleteById(profileId);
         return true;
     }
 
@@ -118,6 +110,16 @@ public class ProfileService {
         var bytes = new byte[24];
         rng.nextBytes(bytes);
         return HexFormat.of().formatHex(bytes);
+    }
+
+    private static Profile toRecord(ProfileEntity e) {
+        return new Profile(
+            e.getId(), e.getUserId(), e.getLabel(),
+            e.getApiKeyEncrypted(), e.getBaseUrl(),
+            e.getWorkspaceId(), e.getHonchoUserName(),
+            e.getCreatedAtAsInstant(), e.getUpdatedAtAsInstant(),
+            e.getApiVersion()
+        );
     }
 
     public record ProfileWithKey(Profile profile, String apiKey) {}

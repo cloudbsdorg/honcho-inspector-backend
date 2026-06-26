@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import com.revytechinc.honchoinspector.auth.repo.AuditLogRepository;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -15,9 +16,9 @@ class AuditRetentionJobTest {
 
     @Test
     void ageWindow_deletesOlderRows() {
-        var dao = mock(AuditLogDao.class);
+        var dao = mock(AuditLogRepository.class);
         when(dao.deleteOlderThan(org.mockito.ArgumentMatchers.any())).thenReturn(7);
-        when(dao.deleteOldestKeeping(100L)).thenReturn(0);
+        when(dao.deleteOldest(100)).thenReturn(0);
         var audit = mock(AdminAudit.class);
         var props = newProps(30, 100L, "0 0 3 * * *");
 
@@ -39,9 +40,9 @@ class AuditRetentionJobTest {
 
     @Test
     void sizeCap_deletesOldestExcess() {
-        var dao = mock(AuditLogDao.class);
+        var dao = mock(AuditLogRepository.class);
         when(dao.deleteOlderThan(org.mockito.ArgumentMatchers.any())).thenReturn(0);
-        when(dao.deleteOldestKeeping(50L)).thenReturn(3);
+        when(dao.deleteOldest(50)).thenReturn(3);
         var audit = mock(AdminAudit.class);
         var props = newProps(90, 50L, "0 0 3 * * *");
 
@@ -62,9 +63,9 @@ class AuditRetentionJobTest {
 
     @Test
     void noRowsDeleted_doesNotAudit() {
-        var dao = mock(AuditLogDao.class);
+        var dao = mock(AuditLogRepository.class);
         when(dao.deleteOlderThan(org.mockito.ArgumentMatchers.any())).thenReturn(0);
-        when(dao.deleteOldestKeeping(1000L)).thenReturn(0);
+        when(dao.deleteOldest(1000)).thenReturn(0);
         var audit = mock(AdminAudit.class);
         var props = newProps(90, 1000L, "0 0 3 * * *");
 
@@ -83,9 +84,9 @@ class AuditRetentionJobTest {
 
     @Test
     void auditMetadataIncludesDeletedCounts() {
-        var dao = mock(AuditLogDao.class);
+        var dao = mock(AuditLogRepository.class);
         when(dao.deleteOlderThan(org.mockito.ArgumentMatchers.any())).thenReturn(5);
-        when(dao.deleteOldestKeeping(100L)).thenReturn(2);
+        when(dao.deleteOldest(100)).thenReturn(2);
         var audit = mock(AdminAudit.class);
         var props = newProps(30, 100L, "0 0 3 * * *");
 

@@ -1,5 +1,6 @@
 package com.revytechinc.honchoinspector.auth;
 
+import com.revytechinc.honchoinspector.auth.repo.UserRepository;
 import com.revytechinc.honchoinspector.config.HonchoConfigDirResolver;
 import com.revytechinc.honchoinspector.config.HonchoProperties;
 import org.slf4j.Logger;
@@ -46,7 +47,7 @@ public class AdminBootstrap {
         "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
 
     private final HonchoProperties properties;
-    private final UserDao users;
+    private final UserRepository users;
     private final AuthService auth;
     private final AdminAudit audit;
     private final CryptoService crypto;
@@ -55,7 +56,7 @@ public class AdminBootstrap {
 
     public AdminBootstrap(
         HonchoProperties properties,
-        UserDao users,
+        UserRepository users,
         AuthService auth,
         AdminAudit audit,
         CryptoService crypto,

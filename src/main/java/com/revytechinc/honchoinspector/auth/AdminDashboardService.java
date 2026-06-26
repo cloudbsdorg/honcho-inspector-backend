@@ -1,10 +1,21 @@
 package com.revytechinc.honchoinspector.auth;
 
+import com.revytechinc.honchoinspector.auth.entity.AuthSessionEntity;
+import com.revytechinc.honchoinspector.auth.entity.AuditLogEntity;
+import com.revytechinc.honchoinspector.auth.entity.UserEntity;
+import com.revytechinc.honchoinspector.auth.repo.AuditLogRepository;
+import com.revytechinc.honchoinspector.auth.repo.AuthSessionRepository;
+import com.revytechinc.honchoinspector.auth.repo.ProfileRepository;
+import com.revytechinc.honchoinspector.auth.repo.AuditLogSpecifications;
+import com.revytechinc.honchoinspector.auth.repo.UserRepository;
+import com.revytechinc.honchoinspector.auth.repo.UserSpecifications;
 import com.revytechinc.honchoinspector.honcho.HonchoApiVersion;
 import com.revytechinc.honchoinspector.model.HonchoContext;
 import com.revytechinc.honchoinspector.service.HonchoProxyService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -16,8 +27,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
-import java.util.stream.Collectors;
 
 /**
  * Aggregate service for the admin dashboard. Pure local SQL aggregates +
@@ -32,10 +41,10 @@ public class AdminDashboardService {
     private static final Logger log = LoggerFactory.getLogger(AdminDashboardService.class);
     private static final Duration PER_PROFILE_TIMEOUT = Duration.ofSeconds(5);
 
-    private final UserDao users;
-    private final ProfileDao profiles;
-    private final AuthSessionDao sessions;
-    private final AuditLogDao audit;
+    private final UserRepository users;
+    private final ProfileRepository profiles;
+    private final AuthSessionRepository sessions;
+    private final AuditLogRepository audit;
     private final HonchoProxyService honcho;
     private final ProfileService profileService;
     private final ExecutorService fanout = Executors.newFixedThreadPool(8, r -> {
@@ -45,10 +54,10 @@ public class AdminDashboardService {
     });
 
     public AdminDashboardService(
-        UserDao users,
-        ProfileDao profiles,
-        AuthSessionDao sessions,
-        AuditLogDao audit,
+        UserRepository users,
+        ProfileRepository profiles,
+        AuthSessionRepository sessions,
+        AuditLogRepository audit,
         HonchoProxyService honcho,
         ProfileService profileService
     ) {
@@ -68,34 +77,40 @@ public class AdminDashboardService {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("usersTotal", users.count());
         m.put("usersAdmins", users.countByIsAdmin(true));
-        m.put("usersLast7d", users.countSince(last7d));
-        m.put("usersLast30d", users.countSince(last30d));
+        m.put("usersLast7d", users.count(UserSpecifications.createdAtOrAfter(last7d)));
+        m.put("usersLast30d", users.count(UserSpecifications.createdAtOrAfter(last30d)));
         m.put("profilesTotal", profiles.count());
         m.put("auditTotal", audit.count());
-        m.put("auditLast30d", audit.countOlderThan(last30d));
+        m.put("auditLast30d", audit.countAtOrAfter(last30d));
         m.put("generatedAt", now.toString());
         return m;
     }
 
     public Map<String, Object> userDrilldown(String userId) {
-        var user = users.findById(userId).orElse(null);
+        var user = users.findById(userId).map(AdminDashboardService::toRecord).orElse(null);
         if (user == null) return null;
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("user", UserResponse.from(user));
         m.put("profiles", profiles.findByUserId(userId).stream()
-            .map(AdminDashboardService::profileToMap)
+            .map(p -> profileToMap(toRecord(p)))
             .toList());
         m.put("sessions", sessions.findByUserId(userId).stream()
-            .map(AdminDashboardService::sessionToMap)
+            .map(s -> sessionToMap(toRecord(s)))
             .toList());
-        m.put("recentAudit", audit.search(new AuditLogDao.Query(userId, userId, null, null), 20, 0).stream()
+        Page<AuditLogEntity> recent = audit.findAll(
+            AuditLogSpecifications.all(null, userId, userId, null),
+            PageRequest.of(0, 20));
+        m.put("recentAudit", recent.getContent().stream()
             .map(AdminDashboardService::auditToMap)
             .toList());
         return m;
     }
 
+
     public Map<String, Object> honchoList() {
-        List<Profile> all = profiles.findAll();
+        List<Profile> all = profiles.findAll().stream()
+            .map(AdminDashboardService::toRecord)
+            .toList();
         if (all.isEmpty()) {
             return Map.of("profiles", List.of(), "reachable", 0, "unreachable", 0);
         }
@@ -124,7 +139,8 @@ public class AdminDashboardService {
     }
 
     public Map<String, Object> honchoDrilldown(String profileId) {
-        var p = profiles.findById(profileId);
+        var p = profiles.findById(profileId)
+            .map(AdminDashboardService::toRecord).orElse(null);
         if (p == null) return null;
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("profile", profileToMap(p));
@@ -158,7 +174,6 @@ public class AdminDashboardService {
             var ctx = buildContext(pwk);
             var queue = honcho.getQueueStatus(ctx);
             m.put("reachable", true);
-            m.put("queue", queue);
         } catch (Exception e) {
             m.put("reachable", false);
             String msg = e.getMessage();
@@ -187,6 +202,33 @@ public class AdminDashboardService {
         );
     }
 
+    static Profile toRecord(com.revytechinc.honchoinspector.auth.entity.ProfileEntity e) {
+        return new Profile(
+            e.getId(), e.getUserId(), e.getLabel(),
+            e.getApiKeyEncrypted(), e.getBaseUrl(),
+            e.getWorkspaceId(), e.getHonchoUserName(),
+            e.getCreatedAtAsInstant(), e.getUpdatedAtAsInstant(),
+            e.getApiVersion()
+        );
+    }
+
+    private static User toRecord(UserEntity e) {
+        return new User(
+            e.getId(), e.getUsername(), e.getPasswordHash(),
+            e.getFirstname(), e.getLastname(), e.getEmail(),
+            e.getIsAdmin(), e.getCreatedAtAsInstant()
+        );
+    }
+
+    private static AuthSession toRecord(AuthSessionEntity e) {
+        return new AuthSession(
+            e.getId(), e.getUserId(),
+            e.getCreatedAtAsInstant(), e.getLastSeenAtAsInstant(),
+            e.getExpiresAtAsInstant() == null
+                ? java.util.Optional.empty()
+                : java.util.Optional.of(e.getExpiresAtAsInstant()));
+    }
+
     private static Map<String, Object> profileToMap(Profile p) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("id", p.id());
@@ -208,14 +250,24 @@ public class AdminDashboardService {
         return m;
     }
 
-    private static Map<String, Object> auditToMap(AuditLogDao.Entry e) {
+    private static Map<String, Object> sessionToMap(AuthSessionEntity e) {
+        return sessionToMap(new AuthSession(
+            e.getId(), e.getUserId(),
+            e.getCreatedAtAsInstant(), e.getLastSeenAtAsInstant(),
+            e.getExpiresAtAsInstant() == null
+                ? java.util.Optional.empty()
+                : java.util.Optional.of(e.getExpiresAtAsInstant())
+        ));
+    }
+
+    private static Map<String, Object> auditToMap(AuditLogEntity e) {
         Map<String, Object> m = new LinkedHashMap<>();
-        m.put("id", e.id());
-        m.put("action", e.action());
-        m.put("actorUserId", e.actorUserId());
-        m.put("targetUserId", e.targetUserId());
-        m.put("ip", e.ip());
-        m.put("createdAt", e.createdAt().toString());
+        m.put("id", e.getId());
+        m.put("action", e.getAction());
+        m.put("actorUserId", e.getActorUserId());
+        m.put("targetUserId", e.getTargetUserId());
+        m.put("ip", e.getIp());
+        m.put("createdAt", e.getCreatedAtAsInstant().toString());
         return m;
     }
 }

@@ -1,5 +1,6 @@
 package com.revytechinc.honchoinspector.auth;
 
+import com.revytechinc.honchoinspector.auth.repo.UserRepository;
 import com.revytechinc.honchoinspector.config.HonchoConfigDirResolver;
 import com.revytechinc.honchoinspector.config.HonchoProperties;
 import org.junit.jupiter.api.Test;
@@ -19,7 +20,7 @@ class AdminBootstrapTest {
 
     @Test
     void usersExist_skipsBootstrap() {
-        var users = mock(UserDao.class);
+        var users = mock(UserRepository.class);
         when(users.count()).thenReturn(5L);
         var auth = mock(AuthService.class);
         var audit = mock(AdminAudit.class);
@@ -45,7 +46,7 @@ class AdminBootstrapTest {
 
     @Test
     void noUsersAndNoConfig_generatesAdminWithDefaultName(@TempDir Path tempDir) throws Exception {
-        var users = mock(UserDao.class);
+        var users = mock(UserRepository.class);
         when(users.count()).thenReturn(0L);
         var auth = mock(AuthService.class);
         var audit = mock(AdminAudit.class);
@@ -81,7 +82,7 @@ class AdminBootstrapTest {
 
     @Test
     void noUsersAndBlankPassword_generatesAdminAndPersistsKey(@TempDir Path tempDir) throws Exception {
-        var users = mock(UserDao.class);
+        var users = mock(UserRepository.class);
         when(users.count()).thenReturn(0L);
         var auth = mock(AuthService.class);
         var audit = mock(AdminAudit.class);
@@ -118,7 +119,7 @@ class AdminBootstrapTest {
 
     @Test
     void noUsersAndFullConfig_createsAdmin() {
-        var users = mock(UserDao.class);
+        var users = mock(UserRepository.class);
         when(users.count()).thenReturn(0L);
         var auth = mock(AuthService.class);
         var audit = mock(AdminAudit.class);
@@ -160,7 +161,7 @@ class AdminBootstrapTest {
 
     @Test
     void noUsersAndBlankPassword_generatesAdminAndPersistsFile(@TempDir Path tempDir) throws Exception {
-        var users = mock(UserDao.class);
+        var users = mock(UserRepository.class);
         when(users.count()).thenReturn(0L);
         var auth = mock(AuthService.class);
         var audit = mock(AdminAudit.class);
@@ -216,7 +217,7 @@ class AdminBootstrapTest {
 
     @Test
     void noUsersAndBlankUsernameAndPassword_generatesAdminWithDefaultName(@TempDir Path tempDir) throws Exception {
-        var users = mock(UserDao.class);
+        var users = mock(UserRepository.class);
         when(users.count()).thenReturn(0L);
         var auth = mock(AuthService.class);
         var audit = mock(AdminAudit.class);
