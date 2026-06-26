@@ -179,7 +179,7 @@ public class HonchoProxyService {
     }
 
     public Object listPeerSessions(HonchoContext ctx, String peerId, Map<String, ?> filters) throws HonchoCallException {
-        return call(HonchoOperation.LIST_PEER_SESSIONS, ctx, null, pathVar("peerId", peerId), filters);
+        return call(HonchoOperation.LIST_PEER_SESSIONS, ctx, filters, pathVar("peerId", peerId), null);
     }
 
     public Object queryPeerConclusions(HonchoContext ctx, String peerId, Object queryRequest) throws HonchoCallException {

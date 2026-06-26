@@ -343,15 +343,18 @@ class HonchoProxyServiceTest {
     }
 
     @Test
-    void typed_listPeerSessions_passesPeerIdAndFilters() {
+    void typed_listPeerSessions_passesPeerIdAndFiltersAsBody() {
         HonchoClientFactory factory = v3Factory();
         HonchoProxyService svc = service(factory);
 
-        svc.listPeerSessions(CTX_V3, "p-1", Map.of("limit", 5));
+        Map<String, Object> filters = Map.of("limit", 5);
+        svc.listPeerSessions(CTX_V3, "p-1", filters);
 
+        // v3 LIST_PEER_SESSIONS is POST with {filters:...} body. The
+        // dispatcher passes filters as requestBody (3rd arg).
         verify(clientOf(factory)).call(
-            HonchoOperation.LIST_PEER_SESSIONS, CTX_V3, null,
-            Map.of("peerId", "p-1"), Map.of("limit", 5)
+            HonchoOperation.LIST_PEER_SESSIONS, CTX_V3, filters,
+            Map.of("peerId", "p-1"), null
         );
     }
 

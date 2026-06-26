@@ -235,8 +235,8 @@ class HonchoWorkflowIntegrationTest extends IntegrationTestBase {
 
         JsonNode meta = readFixtureMeta("list-peer-sessions.json");
         assertThat(meta.get("method").asText())
-            .as("LIST_PEER_SESSIONS upstream contract is GET")
-            .isEqualTo("GET");
+            .as("LIST_PEER_SESSIONS upstream contract is POST (v3 has no GET)")
+            .isEqualTo("POST");
     }
 
     @Test

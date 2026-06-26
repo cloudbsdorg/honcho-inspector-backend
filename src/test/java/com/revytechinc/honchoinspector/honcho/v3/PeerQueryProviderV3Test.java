@@ -91,17 +91,19 @@ class PeerQueryProviderV3Test {
     }
 
     @Test
-    void listPeerSessions_isDeclaredAsGetOnSessionsEndpoint() {
+    void listPeerSessions_isDeclaredAsPostOnSessionsEndpoint() {
         PeerQueryProviderV3 provider = newProvider();
 
         assertThat(provider.operations())
             .contains(HonchoOperation.LIST_PEER_SESSIONS);
         assertThat(provider.supportedVersions())
             .containsExactly(HonchoApiVersion.V3);
+        // v3 has no GET endpoint for /peers/{id}/sessions — the only
+        // method registered is POST (filter body). Bare GET returns 405.
         assertThat(provider.pathTemplate(HonchoOperation.LIST_PEER_SESSIONS))
             .isEqualTo("workspaces/{ws}/peers/{peerId}/sessions");
         assertThat(provider.httpMethod(HonchoOperation.LIST_PEER_SESSIONS))
-            .isEqualTo(HttpMethod.GET);
+            .isEqualTo(HttpMethod.POST);
         assertThat(urlFor(HonchoOperation.LIST_PEER_SESSIONS, PEER_PATH_VARS))
             .as("URL must include both {ws} and {peerId} placeholders and the /sessions suffix")
             .isEqualTo("https://api.honcho.dev/v3/workspaces/ws-42/peers/p-99/sessions");

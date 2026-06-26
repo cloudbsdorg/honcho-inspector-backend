@@ -149,7 +149,7 @@ class PeersProviderV3UnitTest {
     }
 
     @Test
-    void listPeerSessions_advertisesV3GetOnSessionsEndpoint() {
+    void listPeerSessions_advertisesV3PostOnSessionsEndpoint() {
         PeerQueryProviderV3 provider = newPeerQueryProvider();
 
         assertThat(provider.operations()).contains(HonchoOperation.LIST_PEER_SESSIONS);
@@ -158,7 +158,7 @@ class PeersProviderV3UnitTest {
         assertThat(provider.pathTemplate(HonchoOperation.LIST_PEER_SESSIONS))
             .isEqualTo("workspaces/{ws}/peers/{peerId}/sessions");
         assertThat(provider.httpMethod(HonchoOperation.LIST_PEER_SESSIONS))
-            .isEqualTo(HttpMethod.GET);
+            .isEqualTo(HttpMethod.POST);
     }
 
     @Test
