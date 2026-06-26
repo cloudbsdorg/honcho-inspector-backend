@@ -1,9 +1,16 @@
 package com.revytechinc.honchoinspector.auth;
 
+import com.revytechinc.honchoinspector.auth.entity.UserEntity;
+import com.revytechinc.honchoinspector.auth.repo.AuthSessionRepository;
+import com.revytechinc.honchoinspector.auth.repo.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 
 import java.time.Instant;
 import java.util.List;
@@ -21,22 +28,20 @@ import static org.mockito.Mockito.when;
 
 class AdminUserServiceTest {
 
-    private UserDao users;
-    private AuthSessionDao sessions;
+    private UserRepository users;
+    private AuthSessionRepository sessions;
     private AuthService auth;
     private PasswordHasher hasher;
     private AdminAudit audit;
-    private JdbcTemplate jdbc;
     private AdminUserService service;
 
     @BeforeEach
     void setUp() {
-        users = mock(UserDao.class);
-        sessions = mock(AuthSessionDao.class);
+        users = mock(UserRepository.class);
+        sessions = mock(AuthSessionRepository.class);
         auth = mock(AuthService.class);
         hasher = mock(PasswordHasher.class);
         audit = mock(AdminAudit.class);
-        jdbc = mock(JdbcTemplate.class);
         service = new AdminUserService(users, sessions, auth, hasher, audit);
     }
 
@@ -120,23 +125,23 @@ class AdminUserServiceTest {
         var updated = existingUser("u-1", false);
         when(users.findById("u-1")).thenReturn(Optional.of(u)).thenReturn(Optional.of(updated));
         when(users.countByIsAdmin(false)).thenReturn(5L);
+        when(users.save(any(UserEntity.class))).thenReturn(updated);
         var r = service.update("admin-id", "ip", "sid", "u-1", "newname", "F", "L", "e@x", null);
         assertThat(r.found()).isTrue();
         assertThat(r.error()).isNull();
-        verify(users).updateIdentity(eq("u-1"), eq("newname"), eq("F"), eq("L"), eq("e@x"));
-        verify(users, never()).updateAdmin(anyString(), any(Boolean.class));
+        verify(users, never()).save(any(UserEntity.class));
         verify(audit).record(eq("admin-id"), eq("user.update"), eq("u-1"), any(), eq("ip"), eq("sid"), any());
     }
 
     @Test
-    void update_promoteToAdmin_callsUpdateAdmin() {
+    void update_promoteToAdmin_callsSaveWithAdminTrue() {
         var u = existingUser("u-1", false);
         var updated = existingUser("u-1", true);
         when(users.findById("u-1")).thenReturn(Optional.of(u)).thenReturn(Optional.of(updated));
         when(users.countByIsAdmin(true)).thenReturn(1L);
+        when(users.save(any(UserEntity.class))).thenReturn(updated);
         var r = service.update("admin-id", "ip", "sid", "u-1", null, null, null, null, true);
         assertThat(r.error()).isNull();
-        verify(users).updateAdmin("u-1", true);
     }
 
     @Test
@@ -184,7 +189,7 @@ class AdminUserServiceTest {
     @Test
     void revokeAllSessions_success_returnsCount() {
         when(users.findById("u-1")).thenReturn(Optional.of(existingUser("u-1", false)));
-        when(sessions.deleteByUserId("u-1")).thenReturn(3);
+        when(sessions.deleteByUserId("u-1")).thenReturn(3L);
         assertThat(service.revokeAllSessions("admin", "ip", "sid", "u-1")).isEqualTo(3);
         verify(audit).record(eq("admin"), eq("user.sessions.revoke"), eq("u-1"), any(), eq("ip"), eq("sid"), any());
     }
@@ -192,7 +197,7 @@ class AdminUserServiceTest {
     @Test
     void resetPassword_shortPassword_returnsFalse() {
         assertThat(service.resetPassword("admin", "ip", "sid", "u-1", "short")).isFalse();
-        verify(users, never()).updatePasswordHash(anyString(), anyString());
+        verify(users, never()).save(any(UserEntity.class));
     }
 
     @Test
@@ -203,10 +208,11 @@ class AdminUserServiceTest {
 
     @Test
     void resetPassword_success_hashesAndRevokes() {
-        when(users.findById("u-1")).thenReturn(Optional.of(existingUser("u-1", false)));
+        var u = existingUser("u-1", false);
+        when(users.findById("u-1")).thenReturn(Optional.of(u));
         when(hasher.hash("longpassword")).thenReturn("hashed");
         assertThat(service.resetPassword("admin", "ip", "sid", "u-1", "longpassword")).isTrue();
-        verify(users).updatePasswordHash("u-1", "hashed");
+        verify(users).save(any(UserEntity.class));
         verify(sessions).deleteByUserId("u-1");
         verify(audit).record(eq("admin"), eq("user.password.reset"), eq("u-1"), any(), eq("ip"), eq("sid"), any());
     }
@@ -214,7 +220,12 @@ class AdminUserServiceTest {
     @Test
     void list_passesThroughWithPageSizeRows() {
         when(users.count()).thenReturn(100L);
-        when(users.listPaginated(20, 0)).thenReturn(List.of(existingUser("u-1", false)));
+        var page = new PageImpl<>(
+            List.of(existingUser("u-1", false)),
+            PageRequest.of(0, 20),
+            1L);
+        when(users.findAll(any(Specification.class), any(Pageable.class))).thenReturn(page);
+        when(users.findAll(any(Pageable.class))).thenReturn(page);
         var r = service.list(0, PageSize.S20);
         assertThat(r.rows()).isEqualTo(20);
         assertThat(r.total()).isEqualTo(100L);
@@ -224,7 +235,9 @@ class AdminUserServiceTest {
     @Test
     void list_pageSizeAll_returnsAllInOnePage() {
         when(users.count()).thenReturn(7L);
-        when(users.listPaginated(Integer.MAX_VALUE, 0)).thenReturn(List.of());
+        var page = new PageImpl<UserEntity>(List.of());
+        when(users.findAll(any(Specification.class), any(Pageable.class))).thenReturn(page);
+        when(users.findAll(any(Pageable.class))).thenReturn(page);
         var r = service.list(0, PageSize.ALL);
         assertThat(r.rows()).isEqualTo(Integer.MAX_VALUE);
         assertThat(r.pages()).isEqualTo(1);
@@ -233,21 +246,28 @@ class AdminUserServiceTest {
     @Test
     void search_emptyQuery_behavesLikeList() {
         when(users.count()).thenReturn(5L);
-        when(users.listPaginated(10, 0)).thenReturn(List.of());
+        var page = new PageImpl<UserEntity>(List.of());
+        when(users.findAll(any(Specification.class), any(Pageable.class))).thenReturn(page);
+        when(users.findAll(any(Pageable.class))).thenReturn(page);
         var r = service.search("", 0, PageSize.S10);
         assertThat(r.total()).isEqualTo(5L);
     }
 
     @Test
     void search_nonEmptyQuery_usesSearch() {
-        when(users.countSearchByQuery("alice")).thenReturn(2L);
-        when(users.searchByQuery("alice", 20, 0)).thenReturn(List.of(existingUser("u-1", false)));
+        when(users.count(any(Specification.class))).thenReturn(2L);
+        var page = new PageImpl<>(
+            List.of(existingUser("u-1", false)),
+            PageRequest.of(0, 20),
+            2L);
+        when(users.findAll(any(Specification.class), any(Pageable.class))).thenReturn(page);
         var r = service.search("alice", 0, PageSize.S20);
         assertThat(r.total()).isEqualTo(2L);
         assertThat(r.items()).hasSize(1);
     }
 
-    private static User existingUser(String id, boolean isAdmin) {
-        return new User(id, "user-" + id, "hash", null, null, null, isAdmin, Instant.now());
+    private static UserEntity existingUser(String id, boolean isAdmin) {
+        return new UserEntity(
+            id, "user-" + id, "hash", null, null, null, isAdmin, Instant.now());
     }
 }

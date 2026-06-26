@@ -1,11 +1,9 @@
 package com.revytechinc.honchoinspector.cli;
 
 import com.revytechinc.honchoinspector.IntegrationTestBase;
-import com.revytechinc.honchoinspector.auth.AuthSession;
-import com.revytechinc.honchoinspector.auth.AuthSessionDao;
 import com.revytechinc.honchoinspector.auth.PasswordHasher;
-import com.revytechinc.honchoinspector.auth.User;
-import com.revytechinc.honchoinspector.auth.UserDao;
+import com.revytechinc.honchoinspector.auth.repo.AuthSessionRepository;
+import com.revytechinc.honchoinspector.auth.repo.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -26,8 +24,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class CliRunnerTest extends IntegrationTestBase {
 
-    @Autowired private UserDao userDao;
-    @Autowired private AuthSessionDao sessionDao;
+    @Autowired private UserRepository userRepo;
+    @Autowired private AuthSessionRepository sessionRepo;
 
     private CliRunner cli;
     private ByteArrayOutputStream stdout;
@@ -36,7 +34,7 @@ class CliRunnerTest extends IntegrationTestBase {
     @BeforeEach
     void setUpCli() {
         PasswordHasher hasher = new PasswordHasher();
-        cli = new CliRunner(userDao, sessionDao, hasher);
+        cli = new CliRunner(userRepo, sessionRepo, hasher);
         stdout = new ByteArrayOutputStream();
         stderr = new ByteArrayOutputStream();
         System.setOut(new PrintStream(stdout, true, StandardCharsets.UTF_8));
@@ -106,11 +104,11 @@ class CliRunnerTest extends IntegrationTestBase {
         int code = cli.handle(CliRunner.CMD_RESET_PASSWORD,
             new String[]{"--username", "alice", "--password", "newpassword12"});
         assertEquals(CliRunner.EXIT_OK, code);
-        Optional<User> reloaded = userDao.findByUsername("alice");
+        Optional<com.revytechinc.honchoinspector.auth.entity.UserEntity> reloaded = userRepo.findByUsername("alice");
         assertTrue(reloaded.isPresent());
         PasswordHasher hasher = new PasswordHasher();
-        assertTrue(hasher.verify("newpassword12", reloaded.get().passwordHash()));
-        assertFalse(hasher.verify("oldpassword12", reloaded.get().passwordHash()));
+        assertTrue(hasher.verify("newpassword12", reloaded.get().getPasswordHash()));
+        assertFalse(hasher.verify("oldpassword12", reloaded.get().getPasswordHash()));
         assertTrue(stdout.toString().contains("password reset for user 'alice'"), stdout.toString());
     }
 
@@ -124,10 +122,10 @@ class CliRunnerTest extends IntegrationTestBase {
         String out = stdout.toString();
         assertTrue(out.contains("new password: "), out);
         assertTrue(out.contains("shown only once"), out);
-        Optional<User> reloaded = userDao.findByUsername("alice");
+        Optional<com.revytechinc.honchoinspector.auth.entity.UserEntity> reloaded = userRepo.findByUsername("alice");
         assertTrue(reloaded.isPresent());
         PasswordHasher hasher = new PasswordHasher();
-        assertFalse(hasher.verify("oldpassword12", reloaded.get().passwordHash()));
+        assertFalse(hasher.verify("oldpassword12", reloaded.get().getPasswordHash()));
     }
 
     @Test
@@ -151,8 +149,8 @@ class CliRunnerTest extends IntegrationTestBase {
         createUserDirect("bob", "bobpw1234567", false);
         int code = cli.handle(CliRunner.CMD_PROMOTE_ADMIN, new String[]{"--username", "bob"});
         assertEquals(CliRunner.EXIT_OK, code);
-        User reloaded = userDao.findByUsername("bob").orElseThrow();
-        assertTrue(reloaded.isAdmin());
+        com.revytechinc.honchoinspector.auth.entity.UserEntity reloaded = userRepo.findByUsername("bob").orElseThrow();
+        assertTrue(reloaded.getIsAdmin());
         assertTrue(stdout.toString().contains("promoted to admin"), stdout.toString());
     }
 
@@ -170,13 +168,15 @@ class CliRunnerTest extends IntegrationTestBase {
     void revokeAllSessions_wipesEverything() {
         createUserDirect("alice", "alicepw1234", true);
         createUserDirect("bob", "bobpw1234567", false);
-        AuthSessionDao s = sessionDao;
-        s.insert(new AuthSession(UUID.randomUUID().toString().replace("-", ""),
-            userDao.findByUsername("alice").orElseThrow().id(),
-            Instant.now(), Instant.now(), Optional.empty()));
-        s.insert(new AuthSession(UUID.randomUUID().toString().replace("-", ""),
-            userDao.findByUsername("bob").orElseThrow().id(),
-            Instant.now(), Instant.now(), Optional.empty()));
+        AuthSessionRepository s = sessionRepo;
+        s.save(new com.revytechinc.honchoinspector.auth.entity.AuthSessionEntity(
+            UUID.randomUUID().toString().replace("-", ""),
+            userRepo.findByUsername("alice").orElseThrow().getId(),
+            Instant.now(), Instant.now(), null));
+        s.save(new com.revytechinc.honchoinspector.auth.entity.AuthSessionEntity(
+            UUID.randomUUID().toString().replace("-", ""),
+            userRepo.findByUsername("bob").orElseThrow().getId(),
+            Instant.now(), Instant.now(), null));
         assertEquals(2L, s.count());
         int code = cli.handle(CliRunner.CMD_REVOKE_SESSIONS, new String[0]);
         assertEquals(CliRunner.EXIT_OK, code);
@@ -268,18 +268,19 @@ class CliRunnerTest extends IntegrationTestBase {
     @DisplayName("end-to-end: a fresh admin can be promoted, password reset, and sessions revoked without a web server")
     void endToEnd_adminLifecycle() {
         createUserDirect("alice", "oldpassword12", false);
-        assertFalse(userDao.findByUsername("alice").orElseThrow().isAdmin());
+        assertFalse(userRepo.findByUsername("alice").orElseThrow().getIsAdmin());
         assertEquals(CliRunner.EXIT_OK, cli.handle(CliRunner.CMD_PROMOTE_ADMIN,
             new String[]{"--username", "alice"}));
-        assertTrue(userDao.findByUsername("alice").orElseThrow().isAdmin());
+        assertTrue(userRepo.findByUsername("alice").orElseThrow().getIsAdmin());
         assertEquals(CliRunner.EXIT_OK, cli.handle(CliRunner.CMD_RESET_PASSWORD,
             new String[]{"--username", "alice", "--password", "brand-new-12345"}));
-        AuthSession s1 = new AuthSession(UUID.randomUUID().toString().replace("-", ""),
-            userDao.findByUsername("alice").orElseThrow().id(),
-            Instant.now(), Instant.now(), Optional.empty());
-        sessionDao.insert(s1);
-        assertEquals(1L, sessionDao.count());
+        var s1Entity = new com.revytechinc.honchoinspector.auth.entity.AuthSessionEntity(
+            UUID.randomUUID().toString().replace("-", ""),
+            userRepo.findByUsername("alice").orElseThrow().getId(),
+            Instant.now(), Instant.now(), null);
+        sessionRepo.save(s1Entity);
+        assertEquals(1L, sessionRepo.count());
         assertEquals(CliRunner.EXIT_OK, cli.handle(CliRunner.CMD_REVOKE_SESSIONS, new String[0]));
-        assertEquals(0L, sessionDao.count());
+        assertEquals(0L, sessionRepo.count());
     }
 }

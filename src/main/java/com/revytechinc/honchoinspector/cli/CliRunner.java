@@ -1,8 +1,9 @@
 package com.revytechinc.honchoinspector.cli;
 
-import com.revytechinc.honchoinspector.auth.AuthSessionDao;
 import com.revytechinc.honchoinspector.auth.PasswordHasher;
-import com.revytechinc.honchoinspector.auth.UserDao;
+import com.revytechinc.honchoinspector.auth.entity.UserEntity;
+import com.revytechinc.honchoinspector.auth.repo.AuthSessionRepository;
+import com.revytechinc.honchoinspector.auth.repo.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.CommandLineRunner;
@@ -72,11 +73,11 @@ public class CliRunner implements CommandLineRunner {
         CMD_HELP
     );
 
-    private final UserDao users;
-    private final AuthSessionDao sessions;
+    private final UserRepository users;
+    private final AuthSessionRepository sessions;
     private final PasswordHasher hasher;
 
-    public CliRunner(UserDao users, AuthSessionDao sessions, PasswordHasher hasher) {
+    public CliRunner(UserRepository users, AuthSessionRepository sessions, PasswordHasher hasher) {
         this.users = users;
         this.sessions = sessions;
         this.hasher = hasher;
@@ -120,7 +121,7 @@ public class CliRunner implements CommandLineRunner {
     }
 
     private int doListUsers() {
-        List<com.revytechinc.honchoinspector.auth.User> all = users.findAll();
+        List<com.revytechinc.honchoinspector.auth.User> all = users.findAll().stream().map(CliRunner::toUser).toList();
         if (all.isEmpty()) {
             System.out.println("(no users)");
             return EXIT_OK;
@@ -143,7 +144,7 @@ public class CliRunner implements CommandLineRunner {
             System.err.println("--username is required");
             return EXIT_INVALID_ARGS;
         }
-        Optional<com.revytechinc.honchoinspector.auth.User> userOpt = users.findByUsername(username);
+        Optional<com.revytechinc.honchoinspector.auth.User> userOpt = users.findByUsername(username).map(CliRunner::toUser);
         if (userOpt.isEmpty()) {
             System.err.println("user not found: " + username);
             return EXIT_USER_NOT_FOUND;
@@ -162,7 +163,9 @@ public class CliRunner implements CommandLineRunner {
             password = randomPassword(20);
         }
         var user = userOpt.get();
-        users.updatePasswordHash(user.id(), hasher.hash(password));
+        var entity = users.findById(user.id()).orElseThrow();
+        entity.setPasswordHash(hasher.hash(password));
+        users.save(entity);
         System.out.println("password reset for user '" + username + "' (id=" + user.id() + ")");
         if (generate) {
             System.out.println("  new password: " + password);
@@ -177,7 +180,7 @@ public class CliRunner implements CommandLineRunner {
             System.err.println("--username is required");
             return EXIT_INVALID_ARGS;
         }
-        Optional<com.revytechinc.honchoinspector.auth.User> userOpt = users.findByUsername(username);
+        Optional<com.revytechinc.honchoinspector.auth.User> userOpt = users.findByUsername(username).map(CliRunner::toUser);
         if (userOpt.isEmpty()) {
             System.err.println("user not found: " + username);
             return EXIT_USER_NOT_FOUND;
@@ -187,14 +190,16 @@ public class CliRunner implements CommandLineRunner {
             System.out.println("user '" + username + "' is already an admin");
             return EXIT_OK;
         }
-        users.updateAdmin(user.id(), true);
+        var entity = users.findById(user.id()).orElseThrow();
+        entity.setIsAdmin(true);
+        users.save(entity);
         System.out.println("user '" + username + "' (id=" + user.id() + ") promoted to admin");
         return EXIT_OK;
     }
 
     private int doRevokeAllSessions() {
         long before = sessions.count();
-        users.findAll().forEach(u -> sessions.deleteByUserId(u.id()));
+        users.findAll().forEach(u -> sessions.deleteByUserId(u.getId()));
         long after = sessions.count();
         System.out.println("revoked " + before + " sessions; " + after + " remain");
         return EXIT_OK;
@@ -258,5 +263,13 @@ public class CliRunner implements CommandLineRunner {
 
     public static boolean isKnownCommand(String s) {
         return s != null && KNOWN_COMMANDS.contains(s);
+    }
+
+    private static com.revytechinc.honchoinspector.auth.User toUser(UserEntity e) {
+        return new com.revytechinc.honchoinspector.auth.User(
+            e.getId(), e.getUsername(), e.getPasswordHash(),
+            e.getFirstname(), e.getLastname(), e.getEmail(),
+            e.getIsAdmin(), e.getCreatedAtAsInstant()
+        );
     }
 }

@@ -1,5 +1,9 @@
 package com.revytechinc.honchoinspector.auth;
 
+import com.revytechinc.honchoinspector.auth.entity.AuthSessionEntity;
+import com.revytechinc.honchoinspector.auth.repo.AuthSessionRepository;
+import com.revytechinc.honchoinspector.auth.repo.UserRepository;
+
 import com.revytechinc.honchoinspector.config.OpenApiConfig;
 import com.revytechinc.honchoinspector.model.ErrorResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -41,10 +45,10 @@ import java.util.UUID;
 public class SetupController {
 
     private final AuthService auth;
-    private final UserDao users;
-    private final AuthSessionDao sessions;
+    private final UserRepository users;
+    private final AuthSessionRepository sessions;
 
-    public SetupController(AuthService auth, UserDao users, AuthSessionDao sessions) {
+    public SetupController(AuthService auth, UserRepository users, AuthSessionRepository sessions) {
         this.auth = auth;
         this.users = users;
         this.sessions = sessions;
@@ -107,7 +111,10 @@ public class SetupController {
                 Instant.now(),
                 Optional.empty()
             );
-            sessions.insert(session);
+            sessions.save(new AuthSessionEntity(
+                session.id(), session.userId(),
+                session.createdAt(), session.lastSeenAt(),
+                session.expiresAt().orElse(null)));
             return ResponseEntity.ok(LoginResponse.of(session, user));
         } catch (AuthService.UserExistsException e) {
             return ResponseEntity.status(409).body(new ErrorResponse(e.getMessage()));

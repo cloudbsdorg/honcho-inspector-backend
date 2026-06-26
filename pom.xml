@@ -53,6 +53,27 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-jdbc</artifactId>
         </dependency>
+        <!--
+            JPA + Hibernate. We migrated the four auth tables (users,
+            honcho_profiles, auth_sessions, audit_log) from JdbcTemplate
+            to @Entity + JpaRepository. spring-data-jpa is provided by
+            spring-boot-starter-data-jpa (transitive); hibernate-core is
+            pulled in by the same. hibernate-community-dialects ships
+            the SQLite dialect that maps @Column types to the existing
+            schema (TEXT/VARCHAR/INTEGER, no native DATE/TIME). The
+            existing schema.sql continues to be the source of truth;
+            JPA ddl-auto is set to "validate" so Hibernate verifies
+            the schema matches the entities at startup but never
+            silently mutates production data.
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.hibernate.orm</groupId>
+            <artifactId>hibernate-community-dialects</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.springframework</groupId>
             <artifactId>spring-tx</artifactId>

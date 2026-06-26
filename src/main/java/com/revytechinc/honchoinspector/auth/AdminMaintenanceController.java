@@ -1,5 +1,8 @@
 package com.revytechinc.honchoinspector.auth;
 
+import com.revytechinc.honchoinspector.auth.repo.AuditLogRepository;
+import com.revytechinc.honchoinspector.auth.repo.AuthSessionRepository;
+
 import com.revytechinc.honchoinspector.config.HonchoProperties;
 import com.revytechinc.honchoinspector.config.OpenApiConfig;
 import com.revytechinc.honchoinspector.filter.SessionAuthFilter;
@@ -31,15 +34,15 @@ import java.util.Map;
 public class AdminMaintenanceController {
 
     private final AuditRetentionJob auditRetention;
-    private final AuthSessionDao sessions;
-    private final AuditLogDao audit;
+    private final AuthSessionRepository sessions;
+    private final AuditLogRepository audit;
     private final HonchoProperties properties;
     private final AdminAudit adminAudit;
 
     public AdminMaintenanceController(
         AuditRetentionJob auditRetention,
-        AuthSessionDao sessions,
-        AuditLogDao audit,
+        AuthSessionRepository sessions,
+        AuditLogRepository audit,
         HonchoProperties properties,
         AdminAudit adminAudit
     ) {

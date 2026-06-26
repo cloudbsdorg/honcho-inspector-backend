@@ -1,5 +1,12 @@
 package com.revytechinc.honchoinspector.auth;
 
+import com.revytechinc.honchoinspector.auth.entity.UserEntity;
+import com.revytechinc.honchoinspector.auth.repo.AuthSessionRepository;
+import com.revytechinc.honchoinspector.auth.repo.UserRepository;
+import com.revytechinc.honchoinspector.auth.repo.UserSpecifications;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -13,15 +20,15 @@ import java.util.Optional;
 @Service
 public class AdminUserService {
 
-    private final UserDao users;
-    private final AuthSessionDao sessions;
+    private final UserRepository users;
+    private final AuthSessionRepository sessions;
     private final AuthService auth;
     private final PasswordHasher hasher;
     private final AdminAudit audit;
 
     public AdminUserService(
-        UserDao users,
-        AuthSessionDao sessions,
+        UserRepository users,
+        AuthSessionRepository sessions,
         AuthService auth,
         PasswordHasher hasher,
         AdminAudit audit
@@ -44,18 +51,30 @@ public class AdminUserService {
     private PageResult<User> listImpl(String query, int page, PageSize pageSize) {
         int rows = pageSize.rows;
         int offset = page * rows;
-        long total = (query == null || query.isBlank())
-            ? users.count()
-            : users.countSearchByQuery(query);
-        List<User> items = (query == null || query.isBlank())
-            ? users.listPaginated(rows, offset)
-            : users.searchByQuery(query, rows, offset);
+        Page<UserEntity> pageResult;
+        long total;
+        if (query == null || query.isBlank()) {
+            pageResult = users.findAll(
+                PageRequest.of(offset / Math.max(rows, 1), Math.max(rows, 1),
+                    Sort.by("createdAt")));
+            total = users.count();
+        } else {
+            String like = "%" + query.toLowerCase() + "%";
+            pageResult = users.findAll(
+                UserSpecifications.matchesQuery(like),
+                PageRequest.of(offset / Math.max(rows, 1), Math.max(rows, 1),
+                    Sort.by("createdAt")));
+            total = pageResult.getTotalElements();
+        }
+        List<User> items = pageResult.getContent().stream()
+            .map(AdminUserService::toRecord)
+            .toList();
         int pages = rows == Integer.MAX_VALUE ? 1 : (int) Math.ceil((double) total / rows);
         return new PageResult<>(items, total, page, rows, pages);
     }
 
     public User get(String id) {
-        return users.findById(id).orElse(null);
+        return users.findById(id).map(AdminUserService::toRecord).orElse(null);
     }
 
     public CreateResult create(
@@ -83,7 +102,7 @@ public class AdminUserService {
         String actorId, String ip, String sessionId,
         String id, String username, String firstname, String lastname, String email, Boolean isAdmin
     ) {
-        var existing = users.findById(id).orElse(null);
+        var existing = users.findById(id).map(AdminUserService::toRecord).orElse(null);
         if (existing == null) return UpdateResult.notFound();
 
         String newUsername = (username == null || username.isBlank()) ? existing.username() : username.trim();
@@ -103,18 +122,25 @@ public class AdminUserService {
         String newLastname  = (lastname  == null) ? existing.lastname()  : blankToNull(lastname);
         String newEmail     = (email     == null) ? existing.email()     : blankToNull(email);
 
-        users.updateIdentity(id, newUsername, newFirstname, newLastname, newEmail);
-        if (newIsAdmin != existing.isAdmin()) {
-            users.updateAdmin(id, newIsAdmin);
-        }
+        // Load-modify-save via the entity manager (JPA dirty-tracking)
+        // — avoids the legacy bulk-UPDATE @Query path entirely.
         var refreshed = users.findById(id).orElseThrow();
+        refreshed.setUsername(newUsername);
+        refreshed.setFirstname(newFirstname);
+        refreshed.setLastname(newLastname);
+        refreshed.setEmail(newEmail);
+        refreshed.setIsAdmin(newIsAdmin);
+        users.save(refreshed);
+        // Refresh the entity (the saved instance is what we want to
+        // return to the API caller, not the original detached one).
+        var updated = users.findById(id).map(AdminUserService::toRecord).orElseThrow();
         audit.record(actorId, "user.update", id, null, ip, sessionId,
             java.util.Map.of("username", newUsername, "isAdmin", newIsAdmin));
-        return UpdateResult.ok(refreshed);
+        return UpdateResult.ok(updated);
     }
 
     public DeleteResult delete(String actorId, String ip, String sessionId, String id) {
-        var existing = users.findById(id).orElse(null);
+        var existing = users.findById(id).map(AdminUserService::toRecord).orElse(null);
         if (existing == null) return DeleteResult.notFound();
         if (existing.isAdmin() && isLastAdmin()) {
             return DeleteResult.error("cannot delete the last admin");
@@ -129,16 +155,24 @@ public class AdminUserService {
     }
 
     public List<AuthSession> sessionsForUser(String userId) {
-        return sessions.findByUserId(userId);
+        return sessions.findByUserId(userId).stream()
+            .map(s -> {
+                var exp = s.getExpiresAtAsInstant();
+                return new AuthSession(
+                    s.getId(), s.getUserId(),
+                    s.getCreatedAtAsInstant(), s.getLastSeenAtAsInstant(),
+                    exp == null ? Optional.empty() : Optional.of(exp));
+            })
+            .toList();
     }
 
     public int revokeAllSessions(String actorId, String ip, String sessionId, String userId) {
         var existing = users.findById(userId).orElse(null);
         if (existing == null) return -1;
-        int n = sessions.deleteByUserId(userId);
+        long n = sessions.deleteByUserId(userId);
         audit.record(actorId, "user.sessions.revoke", userId, null, ip, sessionId,
             java.util.Map.of("revokedCount", n));
-        return n;
+        return (int) n;
     }
 
     public boolean resetPassword(String actorId, String ip, String sessionId, String userId, String newPassword) {
@@ -147,7 +181,10 @@ public class AdminUserService {
         }
         var existing = users.findById(userId).orElse(null);
         if (existing == null) return false;
-        users.updatePasswordHash(userId, hasher.hash(newPassword));
+        // Load-modify-save on the entity so the password update
+        // flows through the same transaction as any future change.
+        existing.setPasswordHash(hasher.hash(newPassword));
+        users.save(existing);
         sessions.deleteByUserId(userId);
         audit.record(actorId, "user.password.reset", userId, null, ip, sessionId, java.util.Map.of());
         return true;
@@ -159,6 +196,14 @@ public class AdminUserService {
 
     private static String blankToNull(String s) {
         return (s == null || s.isBlank()) ? null : s.trim();
+    }
+
+    private static User toRecord(UserEntity e) {
+        return new User(
+            e.getId(), e.getUsername(), e.getPasswordHash(),
+            e.getFirstname(), e.getLastname(), e.getEmail(),
+            e.getIsAdmin(), e.getCreatedAtAsInstant()
+        );
     }
 
     public record PageResult<T>(List<T> items, long total, int page, int rows, int pages) {}
