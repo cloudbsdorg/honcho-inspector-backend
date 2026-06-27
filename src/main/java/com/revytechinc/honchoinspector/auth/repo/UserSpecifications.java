@@ -46,7 +46,8 @@ public final class UserSpecifications {
         if (since == null) {
             return null;
         }
+        String iso = since.toString();
         return (root, cq, cb) -> cb.greaterThanOrEqualTo(
-            root.<String>get("createdAt"), since);
+            root.<String>get("createdAt"), iso);
     }
 }
