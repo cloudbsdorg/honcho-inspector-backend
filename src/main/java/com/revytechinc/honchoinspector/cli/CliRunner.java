@@ -8,6 +8,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
 import java.time.format.DateTimeFormatter;
@@ -101,6 +102,7 @@ public class CliRunner implements CommandLineRunner {
      * so unit tests can drive the handler directly without going
      * through {@link System#exit(int)}.
      */
+    @Transactional
     public int handle(String cmd, String[] args) {
         try {
             return switch (cmd) {
