@@ -36,12 +36,27 @@ public class AuthController {
     private final UserRepository users;
     private final AuthSessionRepository sessions;
     private final ProfileRepository profiles;
+    private final AdminAudit audit;
 
-    public AuthController(AuthService auth, UserRepository users, AuthSessionRepository sessions, ProfileRepository profiles) {
+    public AuthController(AuthService auth, UserRepository users, AuthSessionRepository sessions, ProfileRepository profiles, AdminAudit audit) {
         this.auth = auth;
         this.users = users;
         this.sessions = sessions;
         this.profiles = profiles;
+        this.audit = audit;
+    }
+
+    /**
+     * Best-effort client IP for audit logging. Honors
+     * X-Forwarded-For (first hop) for reverse-proxy deployments,
+     * else falls back to the socket peer. Same logic the admin
+     * endpoints use; duplicated here so the auth endpoints don't
+     * take a dependency on the admin package.
+     */
+    private static String clientIp(HttpServletRequest req) {
+        var fwd = req.getHeader("X-Forwarded-For");
+        if (fwd != null && !fwd.isBlank()) return fwd.split(",")[0].trim();
+        return req.getRemoteAddr();
     }
 
     @Schema(
@@ -136,6 +151,60 @@ public class AuthController {
             return ResponseEntity.status(401).body(new ErrorResponse("not authenticated"));
         }
         return ResponseEntity.ok(UserResponse.from(current.user()));
+    }
+
+    @Schema(
+        name = "ChangeOwnPasswordInput",
+        description = "Self-service password change payload. The currentPassword is verified against the stored hash (so a stolen session cookie alone cannot lock the real user out). The newPassword must be at least 8 characters. On success, ALL of the user's existing sessions are revoked — including the one making the call — and the caller has to log in again with the new password.",
+        example = "{\"currentPassword\":\"correct horse battery staple\",\"newPassword\":\"new-pass-phrase-here\"}"
+    )
+    public record ChangeOwnPasswordDto(
+        @Schema(description = "Caller's current password (verified server-side).", requiredMode = Schema.RequiredMode.REQUIRED)
+        @NotBlank String currentPassword,
+
+        @Schema(description = "New password. Minimum 8 characters.", example = "new-pass-phrase-here", minLength = 8, requiredMode = Schema.RequiredMode.REQUIRED)
+        @NotBlank @Size(min = 8) String newPassword
+    ) {}
+
+    @PostMapping("/auth/me/password")
+    @Operation(
+        summary = "Change the currently authenticated user's own password",
+        description = "Self-service password change. Requires the current password (defense against a stolen session cookie). On success: re-hashes the new password, records a `user.password.change` audit event, and revokes ALL of the user's existing sessions (including the one making this call) so the new password takes effect across all clients. The caller is redirected to the login screen on the next API call because their current session is gone.",
+        operationId = "authChangeOwnPassword"
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "204", description = "Password changed; all sessions revoked"),
+        @ApiResponse(responseCode = "400", description = "Validation error (new password too short, etc.)"),
+        @ApiResponse(responseCode = "401", description = "Not authenticated, or current password is wrong",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    public ResponseEntity<?> changeOwnPassword(
+        HttpServletRequest request,
+        @Valid @RequestBody ChangeOwnPasswordDto body
+    ) {
+        var current = (AuthService.CurrentUser) request.getAttribute(SessionAuthFilter.CURRENT_USER_ATTR);
+        if (current == null) {
+            return ResponseEntity.status(401).body(new ErrorResponse("not authenticated"));
+        }
+        try {
+            auth.changeOwnPassword(current.user().id(), body.currentPassword(), body.newPassword());
+        } catch (AuthService.InvalidCredentialsException e) {
+            // Same generic message as the login endpoint — don't
+            // leak whether the username exists or whether the
+            // current password is wrong.
+            return ResponseEntity.status(401).body(new ErrorResponse("invalid username or password"));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
+        }
+        // Record the self-service change. AdminUserService does
+        // the same for the admin-reset path; keeping both audits
+        // symmetric means the admin audit tab shows self-service
+        // and admin-driven changes in the same shape.
+        audit.record(
+            current.user().id(), "user.password.change", current.user().id(), null,
+            clientIp(request), request.getHeader(SessionAuthFilter.SESSION_HEADER),
+            java.util.Map.of());
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/health")

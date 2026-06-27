@@ -12,6 +12,8 @@ import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
+import java.util.Map;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -160,6 +162,86 @@ class AuthControllerTest {
         mvc.perform(post("/api/auth/logout").header("X-Session-Id", sessionId))
             .andExpect(status().isOk());
         mvc.perform(get("/api/auth/me").header("X-Session-Id", sessionId))
+            .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void changeOwnPassword_happyPath_returns204_and_revokesSessions_and_canLoginWithNew() throws Exception {
+        // The end-to-end contract: after a successful self-service
+        // password change, the caller's old session is gone, the
+        // old password no longer works, and the new password
+        // works. This is the user-facing test that proves the
+        // endpoint actually does what the docstring claims.
+        var sessionId = registerAndLogin("alice", "old-passw0rd");
+        mvc.perform(post("/api/auth/me/password")
+                .header("X-Session-Id", sessionId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsBytes(Map.of(
+                    "currentPassword", "old-passw0rd",
+                    "newPassword", "new-passw0rd"))))
+            .andExpect(status().isNoContent());
+        // The caller's session is gone — must re-auth.
+        mvc.perform(get("/api/auth/me").header("X-Session-Id", sessionId))
+            .andExpect(status().isUnauthorized());
+        // The old password no longer works.
+        mvc.perform(post("/api/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsBytes(new AuthController.CredentialsDto("alice", "old-passw0rd"))))
+            .andExpect(status().isUnauthorized());
+        // The new password works.
+        var newSessionId = loginAs("alice", "new-passw0rd");
+        mvc.perform(get("/api/auth/me").header("X-Session-Id", newSessionId))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.username").value("alice"));
+    }
+
+    @Test
+    void changeOwnPassword_wrongCurrentPassword_returns401_and_doesNotChangeHash() throws Exception {
+        // Wrong current password: 401 with the SAME generic message
+        // as the login endpoint (don't leak whether the username
+        // exists or whether the password is wrong). The hash must
+        // be unchanged — the user's password is NOT reset on a
+        // failed attempt.
+        var sessionId = registerAndLogin("alice", "correct-passw0rd");
+        mvc.perform(post("/api/auth/me/password")
+                .header("X-Session-Id", sessionId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsBytes(Map.of(
+                    "currentPassword", "wrong-passw0rd",
+                    "newPassword", "new-passw0rd"))))
+            .andExpect(status().isUnauthorized())
+            .andExpect(jsonPath("$.error").value("invalid username or password"));
+        // Session is still valid (the failed change didn't kick us out).
+        mvc.perform(get("/api/auth/me").header("X-Session-Id", sessionId))
+            .andExpect(status().isOk());
+        // Old password still works.
+        mvc.perform(post("/api/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsBytes(new AuthController.CredentialsDto("alice", "correct-passw0rd"))))
+            .andExpect(status().isOk());
+    }
+
+    @Test
+    void changeOwnPassword_shortNewPassword_returns400() throws Exception {
+        var sessionId = registerAndLogin("alice", "old-passw0rd");
+        mvc.perform(post("/api/auth/me/password")
+                .header("X-Session-Id", sessionId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsBytes(Map.of(
+                    "currentPassword", "old-passw0rd",
+                    "newPassword", "7chars!"))))
+            .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void changeOwnPassword_unauthenticated_returns401() throws Exception {
+        // No X-Session-Id header: the SessionAuthFilter rejects
+        // with 401 before the controller is reached.
+        mvc.perform(post("/api/auth/me/password")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsBytes(Map.of(
+                    "currentPassword", "x",
+                    "newPassword", "new-passw0rd"))))
             .andExpect(status().isUnauthorized());
     }
 
