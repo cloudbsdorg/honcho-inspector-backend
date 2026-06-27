@@ -238,6 +238,35 @@ install_launcher() {
     echo "installed launcher: $INSTALL_PREFIX/bin/honcho-inspector"
 }
 
+# Install the operator scripts from bin/tools/ to $INSTALL_PREFIX/bin/.
+# These are NOT part of the service itself; they are small operator
+# conveniences that the Makefile (and the deb package) install alongside
+# the service. The canonical set is:
+#
+#   cleanrun    - exec a command with a sanitized environment (strips
+#                 CI, DEBIAN_FRONTEND, EDITOR, GIT_EDITOR, etc.)
+#
+# The `make tools` target does the same thing from the workspace,
+# allowing dev iteration without running the full installer.
+install_tools() {
+    TOOLS_SRC="$(find_source_file "bin/tools")" || {
+        echo "warning: bin/tools/ not found; skipping tools install" >&2
+        return 0
+    }
+    [ -d "$TOOLS_SRC" ] || return 0
+    found=0
+    for src in $(find "$TOOLS_SRC" -maxdepth 1 -type f -perm -100 2>/dev/null | sort); do
+        [ -f "$src" ] || continue
+        base=$(basename "$src")
+        install -d -m 0755 "$INSTALL_PREFIX/bin"
+        install -m 0755 -o root -g "$SERVICE_GROUP" "$src" "$INSTALL_PREFIX/bin/$base"
+        found=1
+    done
+    if [ "$found" = 1 ]; then
+        echo "installed operator tools to $INSTALL_PREFIX/bin/"
+    fi
+}
+
 # Find a source-tree file by relative path. Probes these locations
 # in order:
 #   1. $SCRIPT_DIR/..   (script run from a source-tree bin/ dir)
@@ -449,6 +478,7 @@ create_user
 create_dirs
 install_jar
 install_launcher
+install_tools
 install_service_file
 install_man_page
 install_env_file

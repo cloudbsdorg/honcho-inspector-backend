@@ -1,0 +1,212 @@
+# Makefile.linux - Linux-specific targets for honcho-inspector-backend
+#
+# Included by the top-level Makefile after Makefile.common. Only
+# active on Linux; the dispatcher picks the right per-OS fragment
+# based on `uname -s`. Targets that are OS-agnostic (build, test,
+# run, db-shell, clean) live in Makefile.common; this fragment
+# adds systemd + deb packaging + tools install.
+#
+# === Portability ===
+# Same restrictions as Makefile.common: no GNU-only make syntax
+# inside recipes (no :=, no ifeq, no $(shell), no echo -e). Use
+# `make -n` to dry-run under GNU make; the project also parses
+# under FreeBSD bmake (the test goal is bmake-clean, not Linux-
+# clean, but a passing `make -n` under GNU is a strong signal).
+#
+# === Help ===
+# Every public target here is declared  target: ## short description
+# so the top-level `make help` picks it up via the aggregation grep.
+
+# === Phony (linux) ===
+.PHONY: install install-only install-linux \
+        install-launcher install-config-only \
+        deb deb-clean \
+        tools install-tools uninstall-tools
+
+# === Install (OS-aware; see README) ===
+# `make install` is the canonical, OS-agnostic install target. It
+# invokes bin/install-honcho-inspector which auto-detects the OS
+# (Linux, FreeBSD, macOS) and dispatches to the right per-OS
+# service file (systemd unit, rc.d script, or launchd plist). The
+# install-linux, install-freebsd, and install-macos targets are
+# explicit-OS aliases of `install` (the script does the same work
+# regardless); they exist for documentation and CI-matrix
+# invocation.
+#
+# `install-launcher` installs only the bin/honcho-inspector wrapper
+# to /usr/local/bin/ - useful in dev when you want manual launcher
+# access without installing the full service.
+#
+# `install-config-only` is a legacy target that drops just the
+# application.yml at the OS-appropriate config dir without touching
+# the service, the jar, or the launcher. Retained for operators
+# who want to seed a config dir first and run the full install
+# later.
+
+INSTALL_SCRIPT = bin/install-honcho-inspector
+LAUNCHER_BIN   = bin/honcho-inspector
+TOOLS_BIN_DIR  = /usr/local/bin
+
+install: build ## Full install: jar + launcher + service + man + config (auto-detect OS, requires sudo)
+	@if [ -z "$$(command -v sudo)" ]; then \
+		printf "sudo not found in PATH\n" >&2; exit 1; \
+	fi
+	@if [ ! -f "$(JAR)" ]; then \
+		printf "jar not found: %s (run 'make build' first)\n" "$(JAR)" >&2; exit 1; \
+	fi
+	sudo "$(INSTALL_SCRIPT)"
+
+install-only: ## Install only (no rebuild) - assumes the jar is already built; requires sudo
+	@if [ -z "$$(command -v sudo)" ]; then \
+		printf "sudo not found in PATH\n" >&2; exit 1; \
+	fi
+	@if [ ! -f "$(JAR)" ]; then \
+		printf "jar not found: %s (run 'make build' first)\n" "$(JAR)" >&2; exit 1; \
+	fi
+	sudo "$(INSTALL_SCRIPT)"
+
+install-linux: install ## Alias of install; OS is auto-detected by the install script
+
+install-launcher: ## Install only the bin/honcho-inspector wrapper to /usr/local/bin/ (requires sudo)
+	@if [ ! -w $(TOOLS_BIN_DIR) ]; then \
+		printf "cannot write to $(TOOLS_BIN_DIR) -- re-run with sudo\n" >&2; exit 1; \
+	fi
+	@install -m 0755 "$(LAUNCHER_BIN)" $(TOOLS_BIN_DIR)/honcho-inspector
+	@printf "installed launcher to $(TOOLS_BIN_DIR)/honcho-inspector\n"
+
+install-config-only: ## Drop the application.yml at the OS-appropriate config dir (no service, no jar)
+	install -d -m 0755 /etc/honcho-inspector
+	install -m 0644 etc/honcho-inspector/application.yml.example /etc/honcho-inspector/application.yml
+	@printf "installed config to /etc/honcho-inspector\n"
+
+# === Tools (operator scripts) ===
+# `make tools` is the canonical, idempotent install of the small
+# operator scripts that live in bin/tools/. They are NOT part of
+# the service itself - they exist to make day-to-day operation
+# survivable across shell environments. The current set:
+#
+#   cleanrun    - exec a command with a sanitized environment
+#                 (strips CI, DEBIAN_FRONTEND, EDITOR, GIT_EDITOR,
+#                 etc.). Workaround for shell environments where
+#                 these polluters block interactive tools.
+#
+# All scripts in bin/tools/ are installed to /usr/local/bin/ with
+# mode 0755, owned by root. Re-running is safe; existing files are
+# overwritten with the same content. `make uninstall-tools` removes
+# only the scripts this Makefile installed (won't touch
+# unrelated binaries in /usr/local/bin/).
+#
+# Requires sudo (writes to /usr/local/bin/).
+
+TOOLS_SRC_DIR = bin/tools
+TOOLS_INSTALLED_MARKER = $(TOOLS_BIN_DIR)/.honcho-inspector-tools-installed
+
+tools: install-tools ## Install operator scripts from bin/tools/ to /usr/local/bin/ (requires sudo)
+	@printf "tools installed under $(TOOLS_BIN_DIR)/:\n"
+	@ls -1 $(TOOLS_BIN_DIR)/cleanrun 2>/dev/null && \
+		printf "  cleanrun  - exec a command with a sanitized environment\n"
+
+install-tools: ## (internal) install every executable in bin/tools/ to /usr/local/bin/
+	@if [ -z "$$(command -v sudo)" ]; then \
+		printf "sudo not found in PATH\n" >&2; exit 1; \
+	fi
+	@if [ ! -d "$(TOOLS_SRC_DIR)" ]; then \
+		printf "no tools directory at $(TOOLS_SRC_DIR) -- nothing to install\n" >&2; exit 0; \
+	fi
+	@installed=0; \
+	for src in "$$(find $(TOOLS_SRC_DIR) -maxdepth 1 -type f -perm -100 | sort)"; do \
+		[ -f "$$src" ] || continue; \
+		base="$$(basename $$src)"; \
+		printf "  install %s -> $(TOOLS_BIN_DIR)/%s\n" "$$src" "$$base"; \
+		sudo install -m 0755 -o root -g root "$$src" $(TOOLS_BIN_DIR)/"$$base" || exit 1; \
+		installed=1; \
+	done; \
+	if [ -z "$$installed" ]; then \
+		printf "no executable tools found in $(TOOLS_SRC_DIR)/\n" >&2; \
+	else \
+		printf "installed tools OK\n" >&2; \
+	fi
+
+uninstall-tools: ## Remove the operator scripts that `make tools` installed (requires sudo)
+	@if [ -z "$$(command -v sudo)" ]; then \
+		printf "sudo not found in PATH\n" >&2; exit 1; \
+	fi
+	@if [ ! -d "$(TOOLS_SRC_DIR)" ]; then \
+		printf "no tools directory at $(TOOLS_SRC_DIR) -- nothing to remove\n" >&2; exit 0; \
+	fi
+	@for src in "$$(find $(TOOLS_SRC_DIR) -maxdepth 1 -type f -perm -100 | sort)"; do \
+		[ -f "$$src" ] || continue; \
+		base="$$(basename $$src)"; \
+		target="$(TOOLS_BIN_DIR)/$$base"; \
+		if [ -f "$$target" ]; then \
+			printf "  remove %s\n" "$$target"; \
+			sudo rm -f "$$target" || exit 1; \
+		fi; \
+	done
+	@sudo rm -f $(TOOLS_INSTALLED_MARKER)
+
+# === Debian package ===
+# `make deb` builds a .deb package from the source tree, the built jar,
+# the systemd unit, and the maintainer scripts in debian/DEBIAN/.
+# Uses `fpm` (Ruby gem; install with `sudo gem install fpm`) which
+# handles the staging, ownership, and conffile machinery in one
+# command. Output lands in
+# dist/honcho-inspector-backend-VERSION_all.deb.
+#
+# Build: `make build && make deb`.
+#
+# The deb depends on a Java 25 JRE (openjdk-25-jre-headless) plus
+# adduser (for the www-data system account). The postinst script
+# creates the user, the data/log/config dirs, and the env-file
+# placeholder. The conffiles list protects the operator's env-file
+# from being clobbered on upgrade.
+#
+# Why fpm: hand-rolled `dpkg-deb --build` works but requires manually
+# staging files into debian/stage/ with install -d / install -m commands.
+# fpm takes source:dest mappings on the command line, has a `--deb-systemd`
+# flag that installs the unit + runs daemon-reload, and supports
+# `--after-install` for our postinst. One command, fewer moving parts.
+
+DEB_NAME      = honcho-inspector-backend
+# Version is hardcoded here (not parsed from a control file) because
+# the source of truth is the Maven project version, which lives in
+# pom.xml. Operators bump it in one place.
+DEB_VERSION   = 0.1.0-SNAPSHOT
+DEB_OUT       = dist/$(DEB_NAME)_$(DEB_VERSION)_all.deb
+
+deb: build ## Build a .deb package via fpm (requires fpm + the built jar)
+	@if [ -z "$$(command -v fpm)" ]; then printf "fpm not found in PATH -- sudo gem install fpm\n" >&2; exit 1; fi
+	@if [ ! -f "$(JAR)" ]; then \
+		printf "jar not found: %s (run 'make build' first)\n" "$(JAR)" >&2; exit 1; \
+	fi
+	@printf "packing %s ...\n" "$(DEB_OUT)"
+	@install -d dist
+	@fpm -s dir -t deb \
+	    -p "$(DEB_OUT)" \
+	    -n "$(DEB_NAME)" \
+	    -v "$(DEB_VERSION)" \
+	    -a all \
+	    --maintainer "Mark LaPointe <mark@cloudbsd.org>" \
+	    --description "Honcho Inspector backend (Spring Boot + SQLite). Multi-user admin surface for Honcho, runs as www-data on 127.0.0.1:8080. Fronted by the Angular UI's Vite proxy." \
+	    --depends "openjdk-25-jre-headless | java25-runtime-headless | default-jre-headless (>= 21)" \
+	    --depends adduser \
+	    --config-files /etc/default/honcho-inspector \
+	    --deb-no-default-config-files \
+	    --deb-systemd etc/systemd/honcho-inspector.service \
+	    --deb-systemd-path etc/systemd/system \
+	    --after-install debian/DEBIAN/postinst \
+	    --before-remove debian/DEBIAN/prerm \
+	    --after-remove debian/DEBIAN/postrm \
+	    "target/honcho-inspector-backend-0.1.0-SNAPSHOT.jar"=/usr/local/lib/honcho-inspector/honcho-inspector-backend.jar \
+	    bin/honcho-inspector=/usr/local/bin/honcho-inspector \
+	    bin/tools/cleanrun=/usr/local/bin/cleanrun \
+	    etc/default/honcho-inspector=/etc/default/honcho-inspector \
+	    etc/honcho-inspector/application.yml.example=/usr/local/share/honcho-inspector/etc/honcho-inspector/application.yml.example \
+	    docs/honcho-inspector.1=/usr/local/share/man/man1/honcho-inspector.1 \
+	    debian/DEBIAN/changelog=/usr/local/share/doc/honcho-inspector-backend/changelog.Debian
+	@printf "built %s\n" "$(DEB_OUT)"
+	@printf "install:  sudo dpkg -i %s && sudo apt -f install\n" "$(DEB_OUT)"
+
+deb-clean: ## Remove the deb build artifacts
+	@rm -rf dist/*.deb
+	@printf "removed dist/*.deb\n"
