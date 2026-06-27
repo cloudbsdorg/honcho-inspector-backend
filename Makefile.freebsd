@@ -1,0 +1,124 @@
+# Makefile.freebsd - FreeBSD-specific targets for honcho-inspector-backend
+#
+# Included by the top-level Makefile after Makefile.common. Only
+# active on FreeBSD (or DragonFly, OpenBSD, NetBSD - the FreeBSD
+# rc.d convention is close enough that the same fragment is reused
+# for the BSDs; macOS lives in Makefile.darwin).
+#
+# === Portability ===
+# This file is consumed by both GNU make and FreeBSD bmake. The
+# `tools` target uses `sudo` (FreeBSD has it in ports/security/sudo;
+# the operator is expected to have it installed if they want a
+# system-wide tools install).
+#
+# === Help ===
+# Every public target here is declared  target: ## short description
+# so the top-level `make help` picks it up via the aggregation grep.
+
+# === Phony (freebsd) ===
+.PHONY: install install-only install-freebsd \
+        install-launcher install-config-only \
+        tools install-tools uninstall-tools
+
+# === Install (OS-aware; see README) ===
+# `make install` is the canonical, OS-agnostic install target. It
+# invokes bin/install-honcho-inspector which auto-detects the OS
+# (Linux, FreeBSD, macOS) and dispatches to the right per-OS
+# service file (systemd unit, rc.d script, or launchd plist). The
+# install-linux, install-freebsd, and install-macos targets are
+# explicit-OS aliases of `install` (the script does the same work
+# regardless); they exist for documentation and CI-matrix
+# invocation.
+
+INSTALL_SCRIPT = bin/install-honcho-inspector
+LAUNCHER_BIN   = bin/honcho-inspector
+TOOLS_BIN_DIR  = /usr/local/bin
+
+install: build ## Full install: jar + launcher + service + man + config (auto-detect OS, requires sudo)
+	@if [ -z "$$(command -v sudo)" ]; then \
+		printf "sudo not found in PATH\n" >&2; exit 1; \
+	fi
+	@if [ ! -f "$(JAR)" ]; then \
+		printf "jar not found: %s (run 'make build' first)\n" "$(JAR)" >&2; exit 1; \
+	fi
+	sudo "$(INSTALL_SCRIPT)"
+
+install-only: ## Install only (no rebuild) - assumes the jar is already built; requires sudo
+	@if [ -z "$$(command -v sudo)" ]; then \
+		printf "sudo not found in PATH\n" >&2; exit 1; \
+	fi
+	@if [ ! -f "$(JAR)" ]; then \
+		printf "jar not found: %s (run 'make build' first)\n" "$(JAR)" >&2; exit 1; \
+	fi
+	sudo "$(INSTALL_SCRIPT)"
+
+install-freebsd: install ## Alias of install; OS is auto-detected by the install script
+
+install-launcher: ## Install only the bin/honcho-inspector wrapper to /usr/local/bin/ (requires sudo)
+	@if [ ! -w $(TOOLS_BIN_DIR) ]; then \
+		printf "cannot write to $(TOOLS_BIN_DIR) -- re-run with sudo\n" >&2; exit 1; \
+	fi
+	@install -m 0755 "$(LAUNCHER_BIN)" $(TOOLS_BIN_DIR)/honcho-inspector
+	@printf "installed launcher to $(TOOLS_BIN_DIR)/honcho-inspector\n"
+
+install-config-only: ## Drop the application.yml at the OS-appropriate config dir (no service, no jar)
+	install -d -m 0755 /usr/local/etc/honcho-inspector
+	install -m 0644 etc/honcho-inspector/application.yml.example /usr/local/etc/honcho-inspector/application.yml
+	@printf "installed config to /usr/local/etc/honcho-inspector\n"
+
+# === Tools (operator scripts) ===
+# `make tools` is the canonical, idempotent install of the small
+# operator scripts that live in bin/tools/. They are NOT part of
+# the service itself - they exist to make day-to-day operation
+# survivable across shell environments. The current set:
+#
+#   cleanrun    - exec a command with a sanitized environment
+#                 (strips CI, DEBIAN_FRONTEND, EDITOR, GIT_EDITOR,
+#                 etc.). Workaround for shell environments where
+#                 these polluters block interactive tools.
+#
+# All scripts in bin/tools/ are installed to /usr/local/bin/ with
+# mode 0755, owned by root. Re-running is safe; existing files are
+# overwritten with the same content. `make uninstall-tools` removes
+# only the scripts this Makefile installed.
+#
+# Requires sudo (writes to /usr/local/bin/).
+
+TOOLS_SRC_DIR = bin/tools
+
+tools: install-tools ## Install operator scripts from bin/tools/ to /usr/local/bin/ (requires sudo)
+	@printf "tools installed under $(TOOLS_BIN_DIR)/:\n"
+	@ls -1 $(TOOLS_BIN_DIR)/cleanrun 2>/dev/null && \
+		printf "  cleanrun  - exec a command with a sanitized environment\n"
+
+install-tools: ## (internal) install every executable in bin/tools/ to /usr/local/bin/
+	@if [ -z "$$(command -v sudo)" ]; then \
+		printf "sudo not found in PATH\n" >&2; exit 1; \
+	fi
+	@if [ ! -d "$(TOOLS_SRC_DIR)" ]; then \
+		printf "no tools directory at $(TOOLS_SRC_DIR) -- nothing to install\n" >&2; exit 0; \
+	fi
+	@for src in $$(find $(TOOLS_SRC_DIR) -maxdepth 1 -type f -perm -100 2>/dev/null | sort); do \
+		[ -f "$$src" ] || continue; \
+		base=$$(basename $$src); \
+		printf "  install %s -> $(TOOLS_BIN_DIR)/%s\n" "$$src" "$$base"; \
+		sudo install -m 0755 -o root -g wheel "$$src" $(TOOLS_BIN_DIR)/"$$base" || exit 1; \
+	done
+	@printf "installed tools OK\n" >&2
+
+uninstall-tools: ## Remove the operator scripts that `make tools` installed (requires sudo)
+	@if [ -z "$$(command -v sudo)" ]; then \
+		printf "sudo not found in PATH\n" >&2; exit 1; \
+	fi
+	@if [ ! -d "$(TOOLS_SRC_DIR)" ]; then \
+		printf "no tools directory at $(TOOLS_SRC_DIR) -- nothing to remove\n" >&2; exit 0; \
+	fi
+	@for src in $$(find $(TOOLS_SRC_DIR) -maxdepth 1 -type f -perm -100 2>/dev/null | sort); do \
+		[ -f "$$src" ] || continue; \
+		base=$$(basename $$src); \
+		target="$(TOOLS_BIN_DIR)/$$base"; \
+		if [ -f "$$target" ]; then \
+			printf "  remove %s\n" "$$target"; \
+			sudo rm -f "$$target" || exit 1; \
+		fi; \
+	done

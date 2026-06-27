@@ -1,0 +1,44 @@
+#!/bin/sh
+#
+# cleanrun - exec the given command with a sanitized environment.
+#
+# Some shell environments accumulate polluters (CI=true blocks
+# interactive behavior; DEBIAN_FRONTEND/DEBIAN_END change debconf;
+# GIT_EDITOR, GIT_SEQUENCE_EDITOR, GCM_INTERACTIVE, EDITOR, VISUAL
+# leak into spawned tools and change behavior). When a downstream
+# tool reads these via getenv() and behaves differently than
+# expected, the operator sees surprising failures (mvn pauses for
+# an editor; apt-get refuses to run; git tries to launch a pager;
+# `git push` blocks on a credential prompt).
+#
+# cleanrun is the manual escape hatch: it unsets the known polluters
+# and exec's the command with a minimal PATH. Use it as a wrapper:
+#
+#   cleanrun mvn -B -ntp package
+#   cleanrun apt-get install -y foo
+#   cleanrun git push
+#
+# Anything after `cleanrun` is the command + args. No quoting is
+# done; this is intentionally a transparent wrapper.
+#
+# The Makefile installs a copy of this script at /usr/local/bin/
+# via `make tools` (Linux / FreeBSD / macOS), so every user on
+# the system can invoke it as a first-class command.
+#
+# Portable to POSIX sh (Linux, FreeBSD, macOS, etc.). No bashisms.
+
+unset CI DEBIAN_FRONTEND DEBIAN_END \
+      GIT_EDITOR GIT_SEQUENCE_EDITOR GCM_INTERACTIVE \
+      EDITOR VISUAL \
+      GIT_PAGER PAGER \
+      GIT_TERMINAL_PROMPT GIT_MERGE_AUTOEDIT \
+      HOMEBREW_NO_AUTO_UPDATE HOMEBREW_NO_UPDATE \
+      NPM_CONFIG_YES NPM_NO_INPUT \
+      YARN_ENABLE_IMMUTABLE_INSTALLS \
+      PIP_NO_INPUT
+# Keep the system PATH only; user-local paths often carry wrappers
+# that change behavior in surprising ways. Operators who want the
+# user PATH can prefix with `env PATH="$PATH" cleanrun ...`.
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+exec "$@"

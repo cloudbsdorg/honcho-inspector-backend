@@ -1,312 +1,88 @@
-# Makefile for honcho-inspector-backend
+# Makefile - dispatcher for honcho-inspector-backend
+#
+# This file is intentionally tiny. It detects the current OS via
+# `uname -s` and includes:
+#   1. Makefile.common    - OS-agnostic build/test/run/db/clean
+#   2. Makefile.<os>      - the per-OS fragment (linux, freebsd, darwin)
+#
+# === Layout ===
+#
+#   Makefile           - this file (dispatcher)
+#   Makefile.common    - build / test / run / db / clean
+#   Makefile.linux     - systemd + deb + tools
+#   Makefile.freebsd   - rc.d + tools
+#   Makefile.darwin    - launchd + tools
 #
 # === Portability ===
-# This Makefile MUST parse and execute correctly under BOTH:
+# This dispatcher is consumed by BOTH:
 #   - GNU Make 4.x  (Linux, macOS with Homebrew, etc.)
 #   - FreeBSD make (bmake, the BSD-make from pkgsrc / brew)
 #
-# Avoid GNU-only features:
-#   := or ?= for variables      -> use recursive  =  only
-#   ifeq / ifneq / ifdef        -> use shell  case  inside recipes
-#   $(@D), $(@F), ${var:...}    -> extract logic to scripts/*.sh
-#   $(shell ...) for output     -> use backticks (works in both) or
-#                                  inline $$(...) in recipes
-#   echo -e for colors          -> use printf with hardcoded \033[NNm
-#   [[ ... ]]                   -> use [ ... ] (POSIX test)
-#   which foo                   -> use command -v foo
+# Detection uses `!=` (POSIX shell-assignment; works in both makes)
+# and `tr A-Z a-z` (POSIX case conversion; works on all Unixes).
+# The dispatch is `include Makefile.$(FRAGMENT_OS)` where
+# FRAGMENT_OS is a single filename.
 #
-# Validate before shipping:
+# The per-OS fragments are OS-agnostic in their make syntax (no
+# `ifeq`, no `:=`, no `$(shell)`); they use only recursive
+# variables and recipe-time shell. This is enforced in each
+# fragment's header comment.
+#
+# Validate with:
 #   make -n                     # GNU make dry run
 #   bmake -n                    # FreeBSD bmake dry run
 #
-# If a GNU-only feature is required, the fallback is to extract the logic
-# to scripts/*.sh (shell scripts are portable across both makes) and call
-# it from the Makefile.
+# === Help ===
+# `make help` (defined in Makefile.common) aggregates every public
+# target from Makefile.common and the per-OS fragment for the
+# current OS, so the help output always shows what is actually
+# available on the running machine.
+
+# === Detect OS ===
+# `!=` runs uname -s and assigns the result to UNAME_S. The shell
+# then lowercases it via `tr A-Z a-z` (POSIX) and falls back to
+# 'freebsd' (a shell case) if the result isn't in our support
+# list. The whole thing is one shell invocation; the result is a
+# single filename.
 #
-# === Self-documenting help ===
-# Every public target is declared  target: ## short description
-# The trailing  ## description  is the help metadata.
-# The help target greps the Makefile itself, so the Makefile is the
-# single source of truth for the menu.
-# NOTE: we hardcode 'Makefile' rather than using $(MAKEFILE_LIST) because
-# the latter is GNU-make-only (bmake leaves it empty). The lesson's
-# preference for $(MAKEFILE_LIST) is for projects with `include`d
-# fragments; this project has none.
+# Operators with an exotic OS can override on the command line:
+#   make FRAGMENT_OS=linux build
+#   make FRAGMENT_OS=freebsd install
+#   make FRAGMENT_OS=darwin install
+FRAGMENT_OS != case "$$(uname -s | tr A-Z a-z)" in \
+                  linux) echo linux ;; \
+                  darwin) echo darwin ;; \
+                  *) echo freebsd ;; \
+                esac
+
+# === Include ===
+# Makefile.common first (defines build/test/run/db/clean and the
+# help target). Then the per-OS fragment for the current OS.
+# Only one per-OS fragment is included, so there are no
+# duplicate-recipe warnings and the target namespace is clean.
 #
-# === Scope ===
-# This portability rule applies to AUTHORED Makefiles in this project.
-# Vendored dependencies and upstream OSS Makefiles are explicitly out
-# of scope; touching them requires explicit user authorization and a
-# targeted minimal patch (never a rewrite).
+# If you add a new OS, add a new Makefile.<os> file and update
+# the case statement above (and the help aggregation grep in
+# Makefile.common).
+include Makefile.common
+include Makefile.$(FRAGMENT_OS)
 
 # === Variables ===
-# Use  =  (recursive) for portability. Tool paths are detected inline
-# in recipes via $$(command -v ...) — no $(shell ...) needed, no
-# captured-trailing-newline hazards.
-PROJECT_NAME = honcho-inspector-backend
-LAUNCHER     = bin/honcho-inspector
-DB_FILE      = honcho-inspector.db
-JAR          = target/$(PROJECT_NAME)-0.1.0-SNAPSHOT.jar
+# Per-OS fragment sets MAKEFILE_OS to its own filename, which
+# the help target in Makefile.common uses to filter the
+# aggregation grep. Override for testing:
+#   make MAKEFILE_OS=Makefile.darwin help
+MAKEFILE_OS = Makefile.$(FRAGMENT_OS)
 
-# === Phony ===
-.PHONY: help build package compile validate test verify \
-        run start run-jar \
-        db-shell db-vacuum db-reset \
-        lint format outdated \
-        install install-only install-linux install-freebsd install-macos \
-        install-launcher install-config-only \
-        deb deb-clean \
-        clean distclean
+# === Phony (dispatcher) ===
+.PHONY: help-os check-os
 
-# === Default goal ===
-.DEFAULT_GOAL := help
+help-os: ## (debug) show which Makefile fragment is active
+	@printf "uname -s:  %s\n" "$$(uname -s)"
+	@printf "active:    %s\n" "$(MAKEFILE_OS)"
 
-# === Help ===
-help: ## Show this help menu
-	@printf "\n\033[1m%s (%s/%s)\033[0m\n" \
-		"$(PROJECT_NAME)" \
-		"$$(uname -s)" \
-		"$$(uname -m)"
-	@printf "\n\033[1mTools\033[0m\n"
-	@printf "\033[36m%-10s\033[0m %s\n" "maven"   "$$(command -v mvn     2>/dev/null | tr -d '\n')"
-	@printf "\033[36m%-10s\033[0m %s\n" "java"    "$$(command -v java    2>/dev/null | tr -d '\n')"
-	@printf "\033[36m%-10s\033[0m %s\n" "sqlite3" "$$(command -v sqlite3 2>/dev/null | tr -d '\n')"
-	@printf "\n\033[1mTargets\033[0m\n"
-	@printf "\033[36m%-22s\033[0m %s\n" "Target" "Description"
-	@printf "\033[36m%-22s\033[0m %s\n" "------" "-----------"
-	@grep -hE '^[a-zA-Z_-][a-zA-Z0-9_-]*:.*?## .*$$' Makefile | \
-		awk -F':.*?## ' '{ printf "\033[36m%-22s\033[0m %s\n", $$1, $$2 }' | \
-		sort
-	@printf "\n"
-
-# === Build ===
-build: ## Build the executable jar (skip tests)
-	@if [ -z "$$(command -v mvn)" ]; then printf "mvn not found in PATH\n" >&2; exit 1; fi
-	mvn -B -ntp -DskipTests package
-
-package: ## Build + run tests, produce fat jar
-	@if [ -z "$$(command -v mvn)" ]; then printf "mvn not found in PATH\n" >&2; exit 1; fi
-	mvn -B -ntp package
-
-compile: ## Compile main sources only
-	@if [ -z "$$(command -v mvn)" ]; then printf "mvn not found in PATH\n" >&2; exit 1; fi
-	mvn -B -ntp compile
-
-validate: ## Fast validation pass (no compile)
-	@if [ -z "$$(command -v mvn)" ]; then printf "mvn not found in PATH\n" >&2; exit 1; fi
-	mvn -B -ntp validate
-
-# === Test ===
-test: ## Run unit tests
-	@if [ -z "$$(command -v mvn)" ]; then printf "mvn not found in PATH\n" >&2; exit 1; fi
-	mvn -B -ntp test
-
-verify: ## Full verify (tests + integration)
-	@if [ -z "$$(command -v mvn)" ]; then printf "mvn not found in PATH\n" >&2; exit 1; fi
-	mvn -B -ntp verify
-
-# === Run ===
-run: ## Run in dev mode (live reload, foreground)
-	@if [ -z "$$(command -v mvn)" ]; then printf "mvn not found in PATH\n" >&2; exit 1; fi
-	mvn -B -ntp spring-boot:run
-
-start: build ## Build then start via the OS-aware launcher (foreground)
-	@if [ ! -x "$(LAUNCHER)" ]; then \
-		printf "launcher not found or not executable: %s\n" "$(LAUNCHER)" >&2; exit 1; \
-	fi
-	$(LAUNCHER)
-
-run-jar: build ## Run the built fat jar directly (no launcher; sources per-OS env file)
-	@if [ -z "$$(command -v java)" ]; then printf "java not found in PATH\n" >&2; exit 1; fi
-	@if [ ! -f "$(JAR)" ]; then \
-		printf "jar not found: %s (run 'make build' first)\n" "$(JAR)" >&2; exit 1; \
-	fi
-	@case "$$(uname -s)" in \
-		Linux)             for f in /etc/default/honcho-inspector /etc/sysconfig/honcho-inspector; do [ -f "$$f" ] && { set -a; . "$$f" 2>/dev/null; set +a; }; done ;; \
-		FreeBSD|DragonFly|OpenBSD|NetBSD) for f in /etc/default/honcho-inspector "$${HOMEBREW_PREFIX:-/usr/local}/etc/honcho-inspector/honcho-inspector.env"; do [ -f "$$f" ] && { set -a; . "$$f" 2>/dev/null; set +a; }; done ;; \
-		Darwin)            for f in /etc/defaults/honcho-inspector "$${HOME:-}/Library/Application Support/honcho-inspector/env"; do [ -f "$$f" ] && { set -a; . "$$f" 2>/dev/null; set +a; }; done ;; \
+check-os: ## (debug) verify the per-OS fragment for this OS is in effect
+	@case "$$(uname -s | tr A-Z a-z)" in \
+		linux|freebsd|darwin) ;; \
+		*) printf "WARN: uname -s = %s is not in the documented support list; using Makefile.freebsd as best-effort\n" "$$(uname -s)" >&2 ;; \
 	esac
-	java -Xms64m -Xmx256m -jar "$(JAR)"
-
-# === Database (dev default: ./honcho-inspector.db) ===
-db-shell: ## Open sqlite3 on the dev-default db
-	@if [ -z "$$(command -v sqlite3)" ]; then printf "sqlite3 not found in PATH\n" >&2; exit 1; fi
-	@if [ ! -f "$(DB_FILE)" ]; then \
-		printf "db not found: %s\n" "$(DB_FILE)" >&2; exit 1; \
-	fi
-	sqlite3 "$(DB_FILE)"
-
-db-vacuum: ## VACUUM the dev-default db (reclaims space, requires no writers)
-	@if [ -z "$$(command -v sqlite3)" ]; then printf "sqlite3 not found in PATH\n" >&2; exit 1; fi
-	@if [ ! -f "$(DB_FILE)" ]; then \
-		printf "db not found: %s\n" "$(DB_FILE)" >&2; exit 1; \
-	fi
-	sqlite3 "$(DB_FILE)" "VACUUM;"
-
-db-reset: ## Delete the dev-default db (will reinit on next start)
-	@if [ -f "$(DB_FILE)" ]; then \
-		printf "deleting %s ...\n" "$(DB_FILE)"; \
-		rm -f "$(DB_FILE)" "$(DB_FILE)-journal" "$(DB_FILE)-wal" "$(DB_FILE)-shm"; \
-	else \
-		printf "no db at %s, nothing to do\n" "$(DB_FILE)"; \
-	fi
-
-# === Quality ===
-lint: ## Run configured linters (no checkstyle/spotless configured yet)
-	@printf "no linter configured -- add checkstyle or spotless to pom.xml\n"
-
-format: ## Run configured formatter (no spotless configured yet)
-	@printf "no formatter configured -- add spotless to pom.xml\n"
-
-outdated: ## Show dependency updates available
-	@if [ -z "$$(command -v mvn)" ]; then printf "mvn not found in PATH\n" >&2; exit 1; fi
-	mvn -B -ntp versions:display-dependency-updates
-
-# === Install (system-level; see README) ===
-# `make install` is the canonical, OS-agnostic install target. It
-# invokes bin/install-honcho-inspector which auto-detects the OS
-# (Linux, FreeBSD, macOS) and dispatches to the right per-OS
-# service file (systemd unit, rc.d script, or launchd plist). The
-# install-linux, install-freebsd, and install-macos targets are
-# explicit-OS aliases of `install` (the script does the same work
-# regardless); they exist for documentation and CI-matrix
-# invocation.
-#
-# `install-launcher` installs only the bin/honcho-inspector wrapper
-# to /usr/local/bin/ — useful in dev when you want manual launcher
-# access without installing the full service.
-#
-# `install-config-only` is a legacy target that drops just the
-# application.yml at the OS-appropriate config dir without touching
-# the service, the jar, or the launcher. Retained for operators
-# who want to seed a config dir first and run the full install
-# later.
-
-INSTALL_SCRIPT = bin/install-honcho-inspector
-LAUNCHER_BIN   = bin/honcho-inspector
-
-.PHONY: install install-linux install-freebsd install-macos \
-        install-launcher install-config-only
-
-install: build ## Full install: jar + launcher + service + man + config (auto-detect OS, requires sudo)
-	@if [ -z "$$(command -v sudo)" ]; then \
-		printf "sudo not found in PATH\n" >&2; exit 1; \
-	fi
-	@if [ ! -f "$(JAR)" ]; then \
-		printf "jar not found: %s (run 'make build' first)\n" "$(JAR)" >&2; exit 1; \
-	fi
-	sudo "$(INSTALL_SCRIPT)"
-
-install-only: ## Install only (no rebuild) — assumes the jar is already built; requires sudo
-	@if [ -z "$$(command -v sudo)" ]; then \
-		printf "sudo not found in PATH\n" >&2; exit 1; \
-	fi
-	@if [ ! -f "$(JAR)" ]; then \
-		printf "jar not found: %s (run 'make build' first)\n" "$(JAR)" >&2; exit 1; \
-	fi
-	sudo "$(INSTALL_SCRIPT)"
-
-install-linux: install ## Alias of install; OS is auto-detected by the install script
-
-install-freebsd: install ## Alias of install; OS is auto-detected by the install script
-
-install-macos: install ## Alias of install; OS is auto-detected by the install script
-
-install-launcher: ## Install only the bin/honcho-inspector wrapper to /usr/local/bin/ (requires sudo)
-	@if [ ! -w /usr/local/bin ]; then \
-		printf "cannot write to /usr/local/bin -- re-run with sudo\n" >&2; exit 1; \
-	fi
-	@install -m 0755 "$(LAUNCHER_BIN)" /usr/local/bin/honcho-inspector
-	@printf "installed launcher to /usr/local/bin/honcho-inspector\n"
-
-install-config-only: ## Drop the application.yml at the OS-appropriate config dir (no service, no jar)
-	@case "$$(uname -s)" in \
-		Linux) \
-			install -d -m 0755 /etc/honcho-inspector; \
-			install -m 0644 etc/honcho-inspector/application.yml.example /etc/honcho-inspector/application.yml; \
-			printf "installed config to /etc/honcho-inspector\n" ;; \
-		FreeBSD) \
-			install -d -m 0755 /usr/local/etc/honcho-inspector; \
-			install -m 0644 etc/honcho-inspector/application.yml.example /usr/local/etc/honcho-inspector/application.yml; \
-			printf "installed config to /usr/local/etc/honcho-inspector\n" ;; \
-		Darwin) \
-			dest="$$HOME/Library/Application Support/honcho-inspector"; \
-			mkdir -p "$$dest"; \
-			install -m 0644 etc/honcho-inspector/application.yml.example "$$dest/application.yml"; \
-			printf "installed config to %s\n" "$$dest" ;; \
-		*) printf "unsupported OS: %s\n" "$$(uname -s)" >&2; exit 1 ;; \
-	esac
-
-# === Debian package ===
-# `make deb` builds a .deb package from the source tree, the built jar,
-# the systemd unit, and the maintainer scripts in debian/DEBIAN/.
-# Uses `fpm` (Ruby gem; install with `sudo gem install fpm`) which
-# handles the staging, ownership, and conffile machinery in one
-# command. Output lands in
-# dist/honcho-inspector-backend-VERSION_all.deb.
-#
-# Build: `make build && make deb`.
-#
-# The deb depends on a Java 25 JRE (openjdk-25-jre-headless) plus
-# adduser (for the www-data system account). The postinst script
-# creates the user, the data/log/config dirs, and the env-file
-# placeholder. The conffiles list protects the operator's env-file
-# from being clobbered on upgrade.
-#
-# Why fpm: hand-rolled `dpkg-deb --build` works but requires manually
-# staging files into debian/stage/ with install -d / install -m commands.
-# fpm takes source:dest mappings on the command line, has a `--deb-systemd`
-# flag that installs the unit + runs daemon-reload, and supports
-# `--after-install` for our postinst. One command, fewer moving parts.
-
-DEB_NAME      = honcho-inspector-backend
-# Version is hardcoded here (not parsed from a control file) because
-# the source of truth is the Maven project version, which lives in
-# pom.xml. Operators bump it in one place.
-DEB_VERSION   = 0.1.0-SNAPSHOT
-DEB_OUT       = dist/$(DEB_NAME)_$(DEB_VERSION)_all.deb
-
-deb: build ## Build a .deb package via fpm (requires fpm + the built jar)
-	@if [ -z "$$(command -v fpm)" ]; then printf "fpm not found in PATH -- sudo gem install fpm\n" >&2; exit 1; fi
-	@if [ ! -f "$(JAR)" ]; then \
-		printf "jar not found: %s (run 'make build' first)\n" "$(JAR)" >&2; exit 1; \
-	fi
-	@printf "packing %s ...\n" "$(DEB_OUT)"
-	@install -d dist
-	@fpm -s dir -t deb \
-	    -p "$(DEB_OUT)" \
-	    -n "$(DEB_NAME)" \
-	    -v "$(DEB_VERSION)" \
-	    -a all \
-	    --maintainer "Mark LaPointe <mark@cloudbsd.org>" \
-	    --description "Honcho Inspector backend (Spring Boot + SQLite). Multi-user admin surface for Honcho, runs as www-data on 127.0.0.1:8080. Fronted by the Angular UI's Vite proxy." \
-	    --depends "openjdk-25-jre-headless | java25-runtime-headless | default-jre-headless (>= 21)" \
-	    --depends adduser \
-	    --config-files /etc/default/honcho-inspector \
-	    --deb-no-default-config-files \
-	    --deb-systemd etc/systemd/honcho-inspector.service \
-	    --deb-systemd-path etc/systemd/system \
-	    --after-install debian/DEBIAN/postinst \
-	    --before-remove debian/DEBIAN/prerm \
-	    --after-remove debian/DEBIAN/postrm \
-	    "target/honcho-inspector-backend-0.1.0-SNAPSHOT.jar"=/usr/local/lib/honcho-inspector/honcho-inspector-backend.jar \
-	    bin/honcho-inspector=/usr/local/bin/honcho-inspector \
-	    etc/default/honcho-inspector=/etc/default/honcho-inspector \
-	    etc/honcho-inspector/application.yml.example=/usr/local/share/honcho-inspector/etc/honcho-inspector/application.yml.example \
-	    docs/honcho-inspector.1=/usr/local/share/man/man1/honcho-inspector.1 \
-	    debian/DEBIAN/changelog=/usr/local/share/doc/honcho-inspector-backend/changelog.Debian
-	@printf "built %s\n" "$(DEB_OUT)"
-	@printf "install:  sudo dpkg -i %s && sudo apt -f install\n" "$(DEB_OUT)"
-
-deb-clean: ## Remove the deb build artifacts
-	@rm -rf dist/*.deb
-	@printf "removed dist/*.deb\n"
-
-# === Cleanup ===
-clean: ## Remove build artifacts
-	@if [ -z "$$(command -v mvn)" ]; then printf "mvn not found in PATH\n" >&2; exit 1; fi
-	mvn -B -ntp clean
-	@printf "removed target/\n"
-
-distclean: clean db-reset deb-clean ## Remove build artifacts + dev db + deb artifacts
-	@printf "removed build artifacts + dev db + deb artifacts\n"
