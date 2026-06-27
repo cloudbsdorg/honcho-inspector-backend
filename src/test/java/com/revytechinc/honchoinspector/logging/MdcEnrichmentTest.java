@@ -118,7 +118,7 @@ class MdcEnrichmentTest extends IntegrationTestBase {
 
         HonchoClientFactory factory = new HonchoClientFactory(List.of(spyClient));
 
-        HonchoProxyService svc = new HonchoProxyService(factory, proxyService.properties());
+        HonchoProxyService svc = new HonchoProxyService(factory, proxyService.properties(), new com.revytechinc.honchoinspector.honcho.HonchoResponseUnwrapper());
         HonchoContext ctx = new HonchoContext(
             "k", "https://api.honcho.dev", "ws-1", "u",
             HonchoApiVersion.V3, profileId
