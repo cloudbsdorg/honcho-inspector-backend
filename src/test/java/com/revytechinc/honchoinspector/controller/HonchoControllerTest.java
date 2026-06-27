@@ -200,7 +200,7 @@ class HonchoControllerTest {
     void returns400WhenProfileHeaderMissing() throws Exception {
         mvc.perform(get("/api/peers").header("X-Session-Id", sessionId))
             .andExpect(status().isBadRequest())
-            .andExpect(jsonPath("$.error").value("missing " + HonchoController.PROFILE_HEADER + " header"));
+            .andExpect(jsonPath("$.data.error").value("missing " + HonchoController.PROFILE_HEADER + " header"));
     }
 
     @Test
@@ -209,7 +209,7 @@ class HonchoControllerTest {
                 .header("X-Session-Id", sessionId)
                 .header(HonchoController.PROFILE_HEADER, "deadbeef"))
             .andExpect(status().isNotFound())
-            .andExpect(jsonPath("$.error").value("profile not found"));
+            .andExpect(jsonPath("$.data.error").value("profile not found"));
     }
 
     // ------------------------------------------------------------------
@@ -223,7 +223,7 @@ class HonchoControllerTest {
 
         mvc.perform(withHeaders(get("/api/peers").param("limit", "5")))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.items").value("peer-list"));
+            .andExpect(jsonPath("$.data.items").value("peer-list"));
 
         verify(honchoProxy).listPeers(any(), eq(Map.of("limit", "5")));
     }
@@ -285,7 +285,7 @@ class HonchoControllerTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(json.writeValueAsBytes(body))))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.response").value("hello"));
+            .andExpect(jsonPath("$.data.response").value("hello"));
 
         verify(honchoProxy).peerChat(any(), eq("p-1"), eq(body));
     }
@@ -516,7 +516,7 @@ class HonchoControllerTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(json.writeValueAsBytes(body))))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.scheduled").value(true));
+            .andExpect(jsonPath("$.data.scheduled").value(true));
 
         // The full body (including peerId) is forwarded as the third arg;
         // peerId is also passed separately as the second arg. Both must agree.
@@ -531,7 +531,7 @@ class HonchoControllerTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(json.writeValueAsBytes(body))))
             .andExpect(status().isBadRequest())
-            .andExpect(jsonPath("$.error").value(org.hamcrest.Matchers.containsString("peerId")));
+            .andExpect(jsonPath("$.data.error").value(org.hamcrest.Matchers.containsString("peerId")));
     }
 
     @Test
@@ -554,8 +554,8 @@ class HonchoControllerTest {
 
         mvc.perform(withHeaders(get("/api/workspace/info")))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.workspace.id").value("ws-1"))
-            .andExpect(jsonPath("$.queue.pending").value(7));
+            .andExpect(jsonPath("$.data.workspace.id").value("ws-1"))
+            .andExpect(jsonPath("$.data.queue.pending").value(7));
 
         verify(honchoProxy, never()).getWorkspaceInfo(any());
         verify(honchoProxy).getQueueStatus(any());
@@ -646,6 +646,6 @@ class HonchoControllerTest {
 
         mvc.perform(withHeaders(get("/api/peers")))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.hello").value("world"));
+            .andExpect(jsonPath("$.data.hello").value("world"));
     }
 }

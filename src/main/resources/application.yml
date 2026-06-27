@@ -16,7 +16,19 @@ spring:
     # default "local" / empty fallbacks declared inline below.
     import: classpath:build-info.properties
   jackson:
-    default-property-inclusion: non_null
+    # `data`, `error`, and `meta` on the Honcho proxy envelope are
+    # explicitly nullable by contract (data:null on errors, error:null
+    # on success, meta:null until we add pagination metadata). The
+    # global Jackson 3 default would normally drop these nulls from
+    # map-content serialization, which produces a `{}` body that the
+    # frontend can't disambiguate from "Honcho returned an empty
+    # object" or "no payload". Spring Boot 4's Jackson 3 auto-config
+    # applies this property to BOTH value inclusion AND map-content
+    # inclusion (see spring-projects/spring-boot#48343), so we leave
+    # the global default at `always` and rely on per-record
+    # `@JsonInclude(NON_NULL)` on DTOs that genuinely want to omit
+    # null fields (none yet, but the hook is there for future use).
+    default-property-inclusion: always
   threads:
     virtual:
       enabled: false
