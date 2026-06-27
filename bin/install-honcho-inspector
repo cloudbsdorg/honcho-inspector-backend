@@ -176,7 +176,12 @@ create_dirs() {
     install -d -m 0750 -o "$SERVICE_USER" -g "$SERVICE_GROUP" "$DATA_DIR"
     install -d -m 0750 -o "$SERVICE_USER" -g "$SERVICE_GROUP" "$LOG_DIR"
     if [ ! -d "$CONFIG_DIR" ]; then
-        install -d -m 0750 -o root -g "$SERVICE_GROUP" "$CONFIG_DIR"
+        # Mode 0770 (not 0750) so the AdminBootstrap component can
+        # write the bootstrap admin password file (only root can
+        # read existing files, but group can create new ones).
+        # The application.yml inside is still 0640 (root:www-data)
+        # so secrets in there stay protected.
+        install -d -m 0770 -o root -g "$SERVICE_GROUP" "$CONFIG_DIR"
     fi
     # The logback JSONL appender writes to ${CONFIG_DIR}/logs/. The
     # RollingFileAppender does NOT auto-create parent directories,
