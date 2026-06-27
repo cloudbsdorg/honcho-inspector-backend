@@ -129,7 +129,7 @@ class AdminUserServiceTest {
         var r = service.update("admin-id", "ip", "sid", "u-1", "newname", "F", "L", "e@x", null);
         assertThat(r.found()).isTrue();
         assertThat(r.error()).isNull();
-        verify(users, never()).save(any(UserEntity.class));
+        verify(users).save(any(UserEntity.class));
         verify(audit).record(eq("admin-id"), eq("user.update"), eq("u-1"), any(), eq("ip"), eq("sid"), any());
     }
 
@@ -262,8 +262,8 @@ class AdminUserServiceTest {
             2L);
         when(users.findAll(any(Specification.class), any(Pageable.class))).thenReturn(page);
         var r = service.search("alice", 0, PageSize.S20);
-        assertThat(r.total()).isEqualTo(2L);
         assertThat(r.items()).hasSize(1);
+        assertThat(r.total()).isEqualTo(2L);
     }
 
     private static UserEntity existingUser(String id, boolean isAdmin) {

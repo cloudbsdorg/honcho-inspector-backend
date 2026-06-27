@@ -26,15 +26,13 @@ class CliRunnerTest extends IntegrationTestBase {
 
     @Autowired private UserRepository userRepo;
     @Autowired private AuthSessionRepository sessionRepo;
+    @Autowired private CliRunner cli;
 
-    private CliRunner cli;
     private ByteArrayOutputStream stdout;
     private ByteArrayOutputStream stderr;
 
     @BeforeEach
     void setUpCli() {
-        PasswordHasher hasher = new PasswordHasher();
-        cli = new CliRunner(userRepo, sessionRepo, hasher);
         stdout = new ByteArrayOutputStream();
         stderr = new ByteArrayOutputStream();
         System.setOut(new PrintStream(stdout, true, StandardCharsets.UTF_8));
@@ -177,10 +175,14 @@ class CliRunnerTest extends IntegrationTestBase {
             UUID.randomUUID().toString().replace("-", ""),
             userRepo.findByUsername("bob").orElseThrow().getId(),
             Instant.now(), Instant.now(), null));
-        assertEquals(2L, s.count());
+        long beforeCount = s.count();
+        System.out.println("DEBUG: before revoke, sessionRepo.count() = " + beforeCount);
+        assertEquals(2L, beforeCount);
         int code = cli.handle(CliRunner.CMD_REVOKE_SESSIONS, new String[0]);
         assertEquals(CliRunner.EXIT_OK, code);
-        assertEquals(0L, s.count());
+        long afterCount = s.count();
+        System.out.println("DEBUG: after revoke, sessionRepo.count() = " + afterCount);
+        assertEquals(0L, afterCount);
         assertTrue(stdout.toString().contains("revoked 2"), stdout.toString());
     }
 

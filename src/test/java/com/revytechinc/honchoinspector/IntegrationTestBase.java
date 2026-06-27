@@ -87,6 +87,7 @@ public abstract class IntegrationTestBase {
     @Autowired protected ObjectMapper json;
     @Autowired protected JdbcTemplate jdbc;
     @Autowired protected HonchoClientFactory honchoFactory;
+    @Autowired protected jakarta.persistence.EntityManager entityManager;
     @Autowired protected ProfileService profiles;
     @Autowired protected PasswordHasher hasher;
 
@@ -119,6 +120,7 @@ public abstract class IntegrationTestBase {
         jdbc.update("DELETE FROM auth_sessions");
         jdbc.update("DELETE FROM honcho_profiles");
         jdbc.update("DELETE FROM users");
+        entityManager.clear();
     }
 
     /**

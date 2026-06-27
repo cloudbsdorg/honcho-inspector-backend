@@ -42,7 +42,8 @@ class AuditRetentionJobTest {
     void sizeCap_deletesOldestExcess() {
         var dao = mock(AuditLogRepository.class);
         when(dao.countOlderThan(org.mockito.ArgumentMatchers.any())).thenReturn(0L);
-        when(dao.deleteOldest(50)).thenReturn(3);
+        when(dao.count()).thenReturn(53L);
+        when(dao.deleteOldest(3)).thenReturn(3);
         var audit = mock(AdminAudit.class);
         var props = newProps(90, 50L, "0 0 3 * * *");
 
@@ -86,7 +87,8 @@ class AuditRetentionJobTest {
     void auditMetadataIncludesDeletedCounts() {
         var dao = mock(AuditLogRepository.class);
         when(dao.countOlderThan(org.mockito.ArgumentMatchers.any())).thenReturn(5L);
-        when(dao.deleteOldest(100)).thenReturn(2);
+        when(dao.count()).thenReturn(102L);
+        when(dao.deleteOldest(2)).thenReturn(2);
         var audit = mock(AdminAudit.class);
         var props = newProps(30, 100L, "0 0 3 * * *");
 
