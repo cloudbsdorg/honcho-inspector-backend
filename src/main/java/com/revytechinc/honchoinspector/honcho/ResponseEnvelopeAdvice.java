@@ -81,14 +81,14 @@ public class ResponseEnvelopeAdvice implements ResponseBodyAdvice<Object> {
 
     @Override
     public boolean supports(MethodParameter returnParameter, Class<? extends HttpMessageConverter<?>> converterType) {
-        // Spring calls supports() per (returnType, converterType)
-        // pair. We return true for every non-String pair. For
-        // String bodies (raw String or ResponseEntity<String>), we
-        // let StringHttpMessageConverter handle them; the
-        // converter will write the raw String. Our beforeBodyWrite
-        // is only invoked for converterTypes that DO support the
-        // body, so a Map body never gets routed here for String
-        // converterTypes. We just return true unconditionally.
+        // Always apply the advice. The wrapper serializes the
+        // envelope to a JSON String at beforeBodyWrite so the
+        // String converter writes the envelope as a JSON object
+        // body. (We tried returning a Map but the controller's
+        // `ResponseEntity<?>` return type + Spring's converter
+        // chain would still call StringHttpMessageConverter which
+        // ClassCasts the Map. Serializing to String at the
+        // boundary avoids that.)
         return true;
     }
 
@@ -122,16 +122,12 @@ public class ResponseEnvelopeAdvice implements ResponseBodyAdvice<Object> {
             nullEnvelope.put("meta", null);
             return nullEnvelope;
         }
-        // Serialize the envelope to a JSON String ourselves and
-        // return that. This is the cleanest fix for the converter
-        // dispatch problem: by returning a String, we let
-        // StringHttpMessageConverter handle the write step (it
-        // writes raw String bodies without any conversion), and the
-        // Content-Type we set on the response drives the charset
-        // (UTF-8). Returning a Map<String,Object> instead would let
-        // Spring pick a converter based on the body type, but the
-        // chain's StringHttpMessageConverter claims Object first
-        // and ClassCasts to String at writeInternal.
+        // Serialize the envelope to a JSON String and return that.
+        // The string body is then written by StringHttpMessageConverter
+        // (no Map<->String cast at the converter's writeInternal
+        // step). The frontend does response.json() to read the
+        // envelope as a JSON object. The previous attempt (returning
+        // a Map) crashed on the converter's addDefaultHeaders step.
         java.util.Map<String, Object> envelope = new java.util.LinkedHashMap<>();
         envelope.put("data", body);
         envelope.put("error", null);
