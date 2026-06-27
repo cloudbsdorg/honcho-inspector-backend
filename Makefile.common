@@ -53,7 +53,13 @@ JAR          = target/$(PROJECT_NAME)-0.1.0-SNAPSHOT.jar
 # Lists targets from this fragment AND the per-OS fragment so a
 # single `make help` covers both. Filters to the public menu only
 # (lines starting with a non-whitespace target name, then `:`,
-# then `##`).
+# then ` ## `).
+#
+# Regex portability note: the original `.*?` (non-greedy) and `$$`
+# (literal end-of-line) are GNU-grep extensions. FreeBSD / macOS
+# BSD grep only support basic POSIX BRE/ERE, so we use plain
+# `.* ## ` and split on the first `:`. Both GNU grep and BSD grep
+# accept the simpler pattern.
 #
 # The dispatcher sets MAKEFILE_OS to the filename of the active
 # per-OS fragment. If MAKEFILE_OS is empty (e.g. running the
@@ -72,8 +78,8 @@ help: ## Show this help menu (auto-aggregates from Makefile.common + Makefile.<o
 	@printf "\033[36m%-22s\033[0m %s\n" "Target" "Description"
 	@printf "\033[36m%-22s\033[0m %s\n" "------" "-----------"
 	@cat Makefile.common "$(MAKEFILE_OS)" 2>/dev/null | \
-		grep -hE '^[a-zA-Z_][a-zA-Z0-9_-]*:.*?## .*$$' | \
-		awk -F':.*?## ' '{ printf "\033[36m%-22s\033[0m %s\n", $$1, $$2 }' | \
+		grep -hE '^[a-zA-Z_][a-zA-Z0-9_-]*:.* ## ' | \
+		awk -F':.* ## ' '{ printf "\033[36m%-22s\033[0m %s\n", $$1, $$2 }' | \
 		sort
 	@printf "\n"
 
