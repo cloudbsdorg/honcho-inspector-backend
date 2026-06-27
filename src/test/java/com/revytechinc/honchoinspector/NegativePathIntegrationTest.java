@@ -82,7 +82,7 @@ class NegativePathIntegrationTest extends IntegrationTestBase {
 
         mvc.perform(get("/api/peers").header("X-Session-Id", sessionId))
             .andExpect(status().isBadRequest())
-            .andExpect(jsonPath("$.error").value("missing " + HonchoController.PROFILE_HEADER + " header"));
+            .andExpect(jsonPath("$.data.error").value("missing " + HonchoController.PROFILE_HEADER + " header"));
     }
 
     @Test
@@ -98,7 +98,7 @@ class NegativePathIntegrationTest extends IntegrationTestBase {
                 .header("X-Session-Id", aliceSession)
                 .header(HonchoController.PROFILE_HEADER, bobProfile))
             .andExpect(status().isNotFound())
-            .andExpect(jsonPath("$.error").value("profile not found"));
+            .andExpect(jsonPath("$.data.error").value("profile not found"));
 
         mvc.perform(get("/api/peers")
                 .header("X-Session-Id", aliceSession)

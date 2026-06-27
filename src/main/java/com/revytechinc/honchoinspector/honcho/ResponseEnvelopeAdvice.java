@@ -1,9 +1,7 @@
 package com.revytechinc.honchoinspector.honcho;
 
 import tools.jackson.databind.ObjectMapper;
-import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.core.MethodParameter;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.converter.HttpMessageConverter;
 import org.springframework.http.server.ServerHttpRequest;
@@ -107,35 +105,58 @@ public class ResponseEnvelopeAdvice implements ResponseBodyAdvice<Object> {
         if (selectedContentType == null || !selectedContentType.includes(MediaType.APPLICATION_JSON)) {
             response.getHeaders().setContentType(MediaType.APPLICATION_JSON);
         }
-        // If the body is already an envelope, pass it through.
+        // Error bodies from HonchoController.call() (ErrorResponse
+        // records, or Map.of("error", ..., "body", ...)) — pass
+        // through unwrapped. The controller's @ExceptionHandler
+        // for HonchoCallException returns Map.of("error", ...);
+        // we let it reach the client verbatim. Tests assert
+        // $.error or $.body directly, which is the controller's
+        // contract.
         if (body instanceof java.util.Map<?, ?> m
-            && m.containsKey("data")
             && m.containsKey("error")
-            && m.containsKey("meta")
+            && !m.containsKey("data")
         ) {
             return body;
         }
-        if (body == null) {
-            java.util.Map<String, Object> nullEnvelope = new java.util.LinkedHashMap<>();
-            nullEnvelope.put("data", null);
-            nullEnvelope.put("error", null);
-            nullEnvelope.put("meta", null);
-            return nullEnvelope;
+        // Already-wrapped envelope (defense against nested wrap).
+        if (body instanceof java.util.Map<?, ?> em
+            && em.containsKey("data")
+            && em.containsKey("error")
+            && em.containsKey("meta")
+        ) {
+            return body;
         }
-        // Serialize the envelope to a JSON String and return that.
-        // The string body is then written by StringHttpMessageConverter
-        // (no Map<->String cast at the converter's writeInternal
-        // step). The frontend does response.json() to read the
-        // envelope as a JSON object. The previous attempt (returning
-        // a Map) crashed on the converter's addDefaultHeaders step.
+        // Success path — wrap the controller return in {data, error, meta}.
+        // The controller's @RequestMapping declares
+        // produces = MediaType.APPLICATION_JSON_VALUE, so Spring
+        // selects MappingJackson2HttpMessageConverter for Map bodies;
+        // the LinkedHashMap is serialized to a JSON object, not a
+        // string. (Earlier iterations serialized to a JSON String
+        // at this boundary to dodge a StringHttpMessageConverter
+        // ClassCastException, but that left MockMvc tests unable
+        // to walk the body with jsonPath("$.data.X") because the
+        // body was a String literal containing the envelope.)
         java.util.Map<String, Object> envelope = new java.util.LinkedHashMap<>();
         envelope.put("data", body);
         envelope.put("error", null);
         envelope.put("meta", null);
-        try {
-            return mapper.writeValueAsString(envelope);
-        } catch (Exception e) {
-            throw new RuntimeException("envelope serialization failed", e);
+        // Special case: when the controller's body is a String
+        // (e.g. a peer representation that the unwrapper has
+        // reduced to a markdown string), Spring selected
+        // StringHttpMessageConverter for the original body. If we
+        // return a Map, the converter's writeInternal tries to
+        // cast the Map to String and ClassCastExceptions. Return
+        // the envelope as a JSON String so the same converter
+        // chain writes it cleanly. The frontend does
+        // `JSON.parse(response.text)` to recover the envelope —
+        // see the HonchoService in the UI repo.
+        if (selectedConverterType == org.springframework.http.converter.StringHttpMessageConverter.class) {
+            try {
+                return mapper.writeValueAsString(envelope);
+            } catch (Exception e) {
+                throw new RuntimeException("envelope serialization failed", e);
+            }
         }
+        return envelope;
     }
 }

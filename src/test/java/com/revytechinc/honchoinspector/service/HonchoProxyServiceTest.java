@@ -101,7 +101,7 @@ class HonchoProxyServiceTest {
             HonchoOperation.LIST_PEER_SESSIONS, CTX_V3, body, pathVars, query
         );
 
-        assertThat(result).isSameAs(items);
+        assertThat(result).isSameAs(pageEnvelope);
         // Every argument must be forwarded intact, including the body that
         // a real provider would serialize.
         verify(v3Client).call(
@@ -118,8 +118,8 @@ class HonchoProxyServiceTest {
         when(factory.clientFor(HonchoApiVersion.V3)).thenReturn(v3Client);
         Object v2Marker = new Object();
         // LIST_PEERS returns a Page[Peer] pagination envelope; the
-        // unwrapper extracts .items. Mock with a real envelope so
-        // the assertion below can compare against the unwrapped items.
+        // the unwrapper passes it through. Mock the envelope and
+        // assert the envelope is returned unchanged.
         List<Object> v2Items = List.of("v2-p-1");
         Map<String, Object> v2Page = Map.of("items", v2Items, "total", 1, "page", 1, "size", 50, "pages", 1);
         List<Object> v3Items = List.of("v3-p-1", "v3-p-2");
@@ -130,9 +130,9 @@ class HonchoProxyServiceTest {
         HonchoProxyService svc = service(factory);
 
         // V2 context -> V2 client -> unwrap -> v2Items
-        assertThat(svc.call(HonchoOperation.LIST_PEERS, CTX_V2, null, null, null)).isSameAs(v2Items);
+        assertThat(svc.call(HonchoOperation.LIST_PEERS, CTX_V2, null, null, null)).isSameAs(v2Page);
         // V3 context -> V3 client -> unwrap -> v3Items
-        assertThat(svc.call(HonchoOperation.LIST_PEERS, CTX_V3, null, null, null)).isSameAs(v3Items);
+        assertThat(svc.call(HonchoOperation.LIST_PEERS, CTX_V3, null, null, null)).isSameAs(v3Page);
 
         // Factory must have been called with the per-context version
         // (not with a class-level field — there is no such field in T15).

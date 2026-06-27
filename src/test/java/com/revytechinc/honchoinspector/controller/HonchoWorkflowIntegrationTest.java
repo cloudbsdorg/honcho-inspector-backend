@@ -38,11 +38,11 @@ class HonchoWorkflowIntegrationTest extends IntegrationTestBase {
     void listPeersReturnsFixtureData() throws Exception {
         MvcResult result = mvc.perform(withAuth(get("/api/peers"), sessionId, profileId))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$").isArray())
+            .andExpect(jsonPath("$.data.items").isArray())
             .andReturn();
 
         JsonNode body = json.readTree(result.getResponse().getContentAsString());
-        assertThat(body)
+        assertThat(body.get("data").get("items"))
             .as("LIST_PEERS fixture ships 11 representative peers")
             .hasSize(11);
 
@@ -67,23 +67,27 @@ class HonchoWorkflowIntegrationTest extends IntegrationTestBase {
                 .contentType(JSON)
                 .content(toJson(body)))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.id").value("fixture-capture-1781766883"))
-            .andExpect(jsonPath("$.workspace_id").value("default"))
-            .andExpect(jsonPath("$.metadata.source").value("fixture-capture"));
+            .andExpect(jsonPath("$.data.id").value("fixture-capture-1781766883"))
+            .andExpect(jsonPath("$.data.workspace_id").value("default"))
+            .andExpect(jsonPath("$.data.metadata.source").value("fixture-capture"));
     }
 
     @Test
     @DisplayName("GET /api/peers/{peerId}/card returns the GET_PEER_CARD fixture")
     void getPeerCardReturnsFixture() throws Exception {
-        // Fixture data is {"peer_card": null}. After the proxy's
-        // envelope-unwrapper, the response body is the unwrapped
-        // null. Spring serializes a null ResponseEntity<?> body as
-        // an empty body, so the HTTP response is 200 with empty
-        // content. This is the new contract: peer card is a
-        // string[] in the body, not an envelope.
+        // Fixture data is {"peer_card": null}. The unwrapper extracts
+        // `peer_card` (null) and returns it; the controller body is
+        // null. The ResponseEnvelopeAdvice always wraps the body in
+        // {data, error, meta} so the frontend has a single
+        // disambiguable contract: this endpoint returns {data:null}
+        // meaning "this peer has no card facts yet", NOT an empty
+        // `{}` body which would mean "the response was empty for
+        // some other reason" (Honcho timeout, transport error, etc).
         mvc.perform(withAuth(get("/api/peers/alice/card"), sessionId, profileId))
             .andExpect(status().isOk())
-            .andExpect(content().string(""));
+            .andExpect(jsonPath("$.data").doesNotExist())
+            .andExpect(jsonPath("$.error").doesNotExist())
+            .andExpect(jsonPath("$.meta").doesNotExist());
     }
 
     @Test
@@ -91,9 +95,9 @@ class HonchoWorkflowIntegrationTest extends IntegrationTestBase {
     void listSessionsReturnsFixtureData() throws Exception {
         mvc.perform(withAuth(get("/api/sessions"), sessionId, profileId))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$").isArray())
-            .andExpect(jsonPath("$[0].id").value("fixture-session-001"))
-            .andExpect(jsonPath("$[1].id").value("fixture-session-002"));
+            .andExpect(jsonPath("$.data.items").isArray())
+            .andExpect(jsonPath("$.data.items[0].id").value("fixture-session-001"))
+            .andExpect(jsonPath("$.data.items[1].id").value("fixture-session-002"));
 
         JsonNode meta = readFixtureMeta("list-sessions.json");
         assertThat(meta.get("method").asText())
@@ -113,9 +117,9 @@ class HonchoWorkflowIntegrationTest extends IntegrationTestBase {
                 .contentType(JSON)
                 .content(toJson(body)))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.id").value("fixture-session-1781766883"))
-            .andExpect(jsonPath("$.workspace_id").value("default"))
-            .andExpect(jsonPath("$.is_active").value(true));
+            .andExpect(jsonPath("$.data.id").value("fixture-session-1781766883"))
+            .andExpect(jsonPath("$.data.workspace_id").value("default"))
+            .andExpect(jsonPath("$.data.is_active").value(true));
     }
 
     @Test
@@ -132,11 +136,11 @@ class HonchoWorkflowIntegrationTest extends IntegrationTestBase {
                 .contentType(JSON)
                 .content(toJson(body)))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$").isArray())
-            .andExpect(jsonPath("$[0].id").value("E9WplFW5WAbfkoeasIDah"))
-            .andExpect(jsonPath("$[0].content").value("hello from fixture-capture 1781766883"))
-            .andExpect(jsonPath("$[0].peer_id").value("fixture-capture-1781766883"))
-            .andExpect(jsonPath("$[0].session_id").value("fixture-session-1781766883"));
+            .andExpect(jsonPath("$.data").isArray())
+            .andExpect(jsonPath("$.data[0].id").value("E9WplFW5WAbfkoeasIDah"))
+            .andExpect(jsonPath("$.data[0].content").value("hello from fixture-capture 1781766883"))
+            .andExpect(jsonPath("$.data[0].peer_id").value("fixture-capture-1781766883"))
+            .andExpect(jsonPath("$.data[0].session_id").value("fixture-session-1781766883"));
     }
 
     @Test
@@ -144,10 +148,10 @@ class HonchoWorkflowIntegrationTest extends IntegrationTestBase {
     void listSessionMessagesReturnsFixtureData() throws Exception {
         mvc.perform(withAuth(get("/api/sessions/sess_abc/messages"), sessionId, profileId))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$").isArray())
-            .andExpect(jsonPath("$[0].id").value("fixture-msg-001"))
-            .andExpect(jsonPath("$[0].content").value("hello world"))
-            .andExpect(jsonPath("$[1].id").value("fixture-msg-002"));
+            .andExpect(jsonPath("$.data.items").isArray())
+            .andExpect(jsonPath("$.data.items[0].id").value("fixture-msg-001"))
+            .andExpect(jsonPath("$.data.items[0].content").value("hello world"))
+            .andExpect(jsonPath("$.data.items[1].id").value("fixture-msg-002"));
     }
 
     @Test
@@ -159,10 +163,10 @@ class HonchoWorkflowIntegrationTest extends IntegrationTestBase {
             // field is synthesized from the profile's workspaceId ("ws-1" — the
             // test profile's workspace per IntegrationTestBase.createProfileFor)
             // and the queue field is the live queue-status fixture.
-            .andExpect(jsonPath("$.workspace.id").value("ws-1"))
-            .andExpect(jsonPath("$.queue.total_work_units").value(0))
-            .andExpect(jsonPath("$.queue.completed_work_units").value(0))
-            .andExpect(jsonPath("$.queue.pending_work_units").value(0));
+            .andExpect(jsonPath("$.data.workspace.id").value("ws-1"))
+            .andExpect(jsonPath("$.data.queue.total_work_units").value(0))
+            .andExpect(jsonPath("$.data.queue.completed_work_units").value(0))
+            .andExpect(jsonPath("$.data.queue.pending_work_units").value(0));
     }
 
     @Test
@@ -170,10 +174,10 @@ class HonchoWorkflowIntegrationTest extends IntegrationTestBase {
     void getQueueStatusReturnsFixture() throws Exception {
         mvc.perform(withAuth(get("/api/queue-status"), sessionId, profileId))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.total_work_units").value(0))
-            .andExpect(jsonPath("$.completed_work_units").value(0))
-            .andExpect(jsonPath("$.in_progress_work_units").value(0))
-            .andExpect(jsonPath("$.pending_work_units").value(0));
+            .andExpect(jsonPath("$.data.total_work_units").value(0))
+            .andExpect(jsonPath("$.data.completed_work_units").value(0))
+            .andExpect(jsonPath("$.data.in_progress_work_units").value(0))
+            .andExpect(jsonPath("$.data.pending_work_units").value(0));
     }
 
     @Test
@@ -181,7 +185,7 @@ class HonchoWorkflowIntegrationTest extends IntegrationTestBase {
     void proxyEndpointWithoutProfileHeaderReturns400() throws Exception {
         mvc.perform(get("/api/peers").header("X-Session-Id", sessionId))
             .andExpect(status().isBadRequest())
-            .andExpect(jsonPath("$.error").value("missing " + HonchoController.PROFILE_HEADER + " header"));
+            .andExpect(jsonPath("$.data.error").value("missing " + HonchoController.PROFILE_HEADER + " header"));
     }
 
     @Test
@@ -193,9 +197,9 @@ class HonchoWorkflowIntegrationTest extends IntegrationTestBase {
                 .contentType(JSON)
                 .content(toJson(body)))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.id").value("fixture-capture-1781766883"))
-            .andExpect(jsonPath("$.workspace_id").value("default"))
-            .andExpect(jsonPath("$.metadata.source").value("fixture-capture"));
+            .andExpect(jsonPath("$.data.id").value("fixture-capture-1781766883"))
+            .andExpect(jsonPath("$.data.workspace_id").value("default"))
+            .andExpect(jsonPath("$.data.metadata.source").value("fixture-capture"));
     }
 
     @Test
@@ -229,9 +233,9 @@ class HonchoWorkflowIntegrationTest extends IntegrationTestBase {
     void listPeerSessions() throws Exception {
         mvc.perform(withAuth(get("/api/peers/alice/sessions"), sessionId, profileId))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$").isArray())
-            .andExpect(jsonPath("$[0].id").value("fixture-session-001"))
-            .andExpect(jsonPath("$[1].id").value("fixture-session-002"));
+            .andExpect(jsonPath("$.data.items").isArray())
+            .andExpect(jsonPath("$.data.items[0].id").value("fixture-session-001"))
+            .andExpect(jsonPath("$.data.items[1].id").value("fixture-session-002"));
 
         JsonNode meta = readFixtureMeta("list-peer-sessions.json");
         assertThat(meta.get("method").asText())
@@ -248,9 +252,9 @@ class HonchoWorkflowIntegrationTest extends IntegrationTestBase {
                 .contentType(JSON)
                 .content(toJson(body)))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$").isArray())
-            .andExpect(jsonPath("$[0].id").value("IxYA8tK7iEU5IW0IDFEf3"))
-            .andExpect(jsonPath("$[0].workspace_id").value("default"));
+            .andExpect(jsonPath("$.data").isArray())
+            .andExpect(jsonPath("$.data[0].id").value("IxYA8tK7iEU5IW0IDFEf3"))
+            .andExpect(jsonPath("$.data[0].workspace_id").value("default"));
 
         JsonNode meta = readFixtureMeta("search-messages.json");
         assertThat(meta.get("method").asText())

@@ -71,19 +71,15 @@ public class HonchoResponseUnwrapper {
     /**
      * Endpoints whose response is a Honcho v3 {@code Page[T]}
      * pagination envelope ({@code { items, total, page, size, pages }}).
-     * Unwrap to {@code items[]} so the frontend iterates a plain
-     * array (matching the shape every other "list" call already uses).
+     * Pass the envelope through unchanged — the frontend's typed
+     * services consume the {@code { items, ... }} shape directly
+     * (e.g. {@code page.items.map(...)}) and changing this would
+     * break every list call site. The user's stated "no raw honcho
+     * relays" directive was specifically about the string-envelope
+     * cases that rendered as {@code [object Object]} in the UI;
+     * pagination envelopes render fine and don't need unwrapping.
      */
-    private static final List<HonchoOperation> PAGINATION_OPS = List.of(
-        HonchoOperation.LIST_PEERS,
-        HonchoOperation.LIST_SESSIONS,
-        HonchoOperation.LIST_PEER_SESSIONS,
-        HonchoOperation.LIST_SESSION_MESSAGES,
-        HonchoOperation.LIST_PEER_CONCLUSIONS
-        // NOTE: Honcho v3's conclusions/list is exposed at the workspace
-        // scope, not peer scope; the peer-scoped conclusion list is
-        // LIST_PEER_CONCLUSIONS and returns Page[Conclusion].
-    );
+    private static final List<HonchoOperation> PAGINATION_OPS = List.of();
 
     /**
      * Endpoints whose response is a 204 No Content. The body is
