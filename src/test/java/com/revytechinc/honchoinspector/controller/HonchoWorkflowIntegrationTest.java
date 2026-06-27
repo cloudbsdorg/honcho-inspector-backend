@@ -38,15 +38,11 @@ class HonchoWorkflowIntegrationTest extends IntegrationTestBase {
     void listPeersReturnsFixtureData() throws Exception {
         MvcResult result = mvc.perform(withAuth(get("/api/peers"), sessionId, profileId))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.total").value(11))
-            .andExpect(jsonPath("$.page").value(1))
-            .andExpect(jsonPath("$.size").value(50))
-            .andExpect(jsonPath("$.pages").value(1))
-            .andExpect(jsonPath("$.items").isArray())
+            .andExpect(jsonPath("$").isArray())
             .andReturn();
 
         JsonNode body = json.readTree(result.getResponse().getContentAsString());
-        assertThat(body.get("items"))
+        assertThat(body)
             .as("LIST_PEERS fixture ships 11 representative peers")
             .hasSize(11);
 
@@ -79,13 +75,15 @@ class HonchoWorkflowIntegrationTest extends IntegrationTestBase {
     @Test
     @DisplayName("GET /api/peers/{peerId}/card returns the GET_PEER_CARD fixture")
     void getPeerCardReturnsFixture() throws Exception {
-        // Fixture data is {"peer_card": null}. Spring's Jackson config
-        // (default-property-inclusion: non_null) strips null fields from
-        // the response, so we assert the empty-object shape rather than
-        // the literal null key.
+        // Fixture data is {"peer_card": null}. After the proxy's
+        // envelope-unwrapper, the response body is the unwrapped
+        // null. Spring serializes a null ResponseEntity<?> body as
+        // an empty body, so the HTTP response is 200 with empty
+        // content. This is the new contract: peer card is a
+        // string[] in the body, not an envelope.
         mvc.perform(withAuth(get("/api/peers/alice/card"), sessionId, profileId))
             .andExpect(status().isOk())
-            .andExpect(content().json("{}"));
+            .andExpect(content().string(""));
     }
 
     @Test
@@ -93,10 +91,9 @@ class HonchoWorkflowIntegrationTest extends IntegrationTestBase {
     void listSessionsReturnsFixtureData() throws Exception {
         mvc.perform(withAuth(get("/api/sessions"), sessionId, profileId))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.total").value(2))
-            .andExpect(jsonPath("$.items").isArray())
-            .andExpect(jsonPath("$.items[0].id").value("fixture-session-001"))
-            .andExpect(jsonPath("$.items[1].id").value("fixture-session-002"));
+            .andExpect(jsonPath("$").isArray())
+            .andExpect(jsonPath("$[0].id").value("fixture-session-001"))
+            .andExpect(jsonPath("$[1].id").value("fixture-session-002"));
 
         JsonNode meta = readFixtureMeta("list-sessions.json");
         assertThat(meta.get("method").asText())
@@ -147,11 +144,10 @@ class HonchoWorkflowIntegrationTest extends IntegrationTestBase {
     void listSessionMessagesReturnsFixtureData() throws Exception {
         mvc.perform(withAuth(get("/api/sessions/sess_abc/messages"), sessionId, profileId))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.total").value(2))
-            .andExpect(jsonPath("$.items").isArray())
-            .andExpect(jsonPath("$.items[0].id").value("fixture-msg-001"))
-            .andExpect(jsonPath("$.items[0].content").value("hello world"))
-            .andExpect(jsonPath("$.items[1].id").value("fixture-msg-002"));
+            .andExpect(jsonPath("$").isArray())
+            .andExpect(jsonPath("$[0].id").value("fixture-msg-001"))
+            .andExpect(jsonPath("$[0].content").value("hello world"))
+            .andExpect(jsonPath("$[1].id").value("fixture-msg-002"));
     }
 
     @Test
@@ -205,11 +201,19 @@ class HonchoWorkflowIntegrationTest extends IntegrationTestBase {
     @Test
     @DisplayName("POST /api/peers/{peerId}/representation returns the GET_REPRESENTATION fixture (Honcho v3 disallows GET on this endpoint)")
     void getPeerRepresentation() throws Exception {
-        mvc.perform(withAuth(post("/api/peers/alice/representation"), sessionId, profileId)
+        MvcResult result = mvc.perform(withAuth(post("/api/peers/alice/representation"), sessionId, profileId)
                 .contentType(JSON)
                 .content("{}"))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.representation").value(org.hamcrest.Matchers.containsString("backend engineer")));
+            .andReturn();
+
+        String body = result.getResponse().getContentAsString();
+        // After the proxy's envelope-unwrapper, the body is the
+        // unwrapped string (no $.representation wrapper). Verify
+        // the text content directly.
+        assertThat(body)
+            .as("representation body is a plain string after unwrap")
+            .contains("backend engineer");
 
         JsonNode meta = readFixtureMeta("get-peer-representation.json");
         assertThat(meta.get("method").asText())
@@ -225,13 +229,9 @@ class HonchoWorkflowIntegrationTest extends IntegrationTestBase {
     void listPeerSessions() throws Exception {
         mvc.perform(withAuth(get("/api/peers/alice/sessions"), sessionId, profileId))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.total").value(2))
-            .andExpect(jsonPath("$.items").isArray())
-            .andExpect(jsonPath("$.items[0].id").value("fixture-session-001"))
-            .andExpect(jsonPath("$.items[1].id").value("fixture-session-002"))
-            .andExpect(jsonPath("$.page").value(1))
-            .andExpect(jsonPath("$.size").value(50))
-            .andExpect(jsonPath("$.pages").value(1));
+            .andExpect(jsonPath("$").isArray())
+            .andExpect(jsonPath("$[0].id").value("fixture-session-001"))
+            .andExpect(jsonPath("$[1].id").value("fixture-session-002"));
 
         JsonNode meta = readFixtureMeta("list-peer-sessions.json");
         assertThat(meta.get("method").asText())

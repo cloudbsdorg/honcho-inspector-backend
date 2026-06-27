@@ -11,6 +11,7 @@ import com.revytechinc.honchoinspector.honcho.HonchoCallException;
 import com.revytechinc.honchoinspector.honcho.HonchoClient;
 import com.revytechinc.honchoinspector.honcho.HonchoClientFactory;
 import com.revytechinc.honchoinspector.honcho.HonchoOperation;
+import com.revytechinc.honchoinspector.honcho.HonchoResponseUnwrapper;
 import com.revytechinc.honchoinspector.model.HonchoContext;
 
 /**
@@ -53,10 +54,16 @@ public class HonchoProxyService {
 
     private final HonchoClientFactory factory;
     private final HonchoProperties properties;
+    private final HonchoResponseUnwrapper unwrapper;
 
-    public HonchoProxyService(HonchoClientFactory factory, HonchoProperties properties) {
+    public HonchoProxyService(
+        HonchoClientFactory factory,
+        HonchoProperties properties,
+        HonchoResponseUnwrapper unwrapper
+    ) {
         this.factory = factory;
         this.properties = properties;
+        this.unwrapper = unwrapper;
     }
 
     // ------------------------------------------------------------------
@@ -87,7 +94,13 @@ public class HonchoProxyService {
         try {
             if (putProfile) MDC.put(MDC_PROFILE_ID, ctx.profileId());
             if (putVersion) MDC.put(MDC_HONCHO_VERSION, ctx.apiVersion().pathPrefix());
-            return client.call(op, ctx, requestBody, pathVars, queryParams);
+            Object raw = client.call(op, ctx, requestBody, pathVars, queryParams);
+            // Canonical unwrap happens here, on the proxy boundary,
+            // so the controller and the UI see the inner value
+            // (string, string[], array, or object) directly without
+            // knowing about Honcho's envelope shapes. See
+            // HonchoResponseUnwrapper for the per-operation table.
+            return unwrapper.unwrap(op, raw);
         } finally {
             if (putProfile) MDC.remove(MDC_PROFILE_ID);
             if (putVersion) MDC.remove(MDC_HONCHO_VERSION);

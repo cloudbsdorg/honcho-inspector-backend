@@ -12,6 +12,7 @@ import com.revytechinc.honchoinspector.honcho.HonchoCallException;
 import com.revytechinc.honchoinspector.honcho.HonchoClient;
 import com.revytechinc.honchoinspector.honcho.HonchoClientFactory;
 import com.revytechinc.honchoinspector.honcho.HonchoOperation;
+import com.revytechinc.honchoinspector.honcho.HonchoResponseUnwrapper;
 import com.revytechinc.honchoinspector.honcho.UnsupportedHonchoVersionException;
 import com.revytechinc.honchoinspector.model.HonchoContext;
 
@@ -70,7 +71,7 @@ class HonchoProxyServiceTest {
     }
 
     private static HonchoProxyService service(HonchoClientFactory factory) {
-        return new HonchoProxyService(factory, properties());
+        return new HonchoProxyService(factory, properties(), new HonchoResponseUnwrapper());
     }
 
     // ------------------------------------------------------------------
@@ -86,15 +87,21 @@ class HonchoProxyServiceTest {
         Object body = Map.of("name", "p-1");
         Map<String, String> pathVars = Map.of("peerId", "p-1");
         Map<String, ?> query = Map.of("limit", 5);
-        Object marker = new Object();
+        // Honcho v3 returns Page[Session] for LIST_PEER_SESSIONS; the
+        // unwrapper extracts `.items`. The test mocks the upstream
+        // envelope and asserts the unwrapper produces the right shape.
+        List<String> items = List.of("s-1", "s-2");
+        Map<String, Object> pageEnvelope = Map.of(
+            "items", items, "total", 2, "page", 1, "size", 50, "pages", 1
+        );
         when(v3Client.call(eq(HonchoOperation.LIST_PEER_SESSIONS), eq(CTX_V3), eq(body), eq(pathVars), eq(query)))
-            .thenReturn(marker);
+            .thenReturn(pageEnvelope);
 
         Object result = service(factory).call(
             HonchoOperation.LIST_PEER_SESSIONS, CTX_V3, body, pathVars, query
         );
 
-        assertThat(result).isSameAs(marker);
+        assertThat(result).isSameAs(items);
         // Every argument must be forwarded intact, including the body that
         // a real provider would serialize.
         verify(v3Client).call(
@@ -110,16 +117,22 @@ class HonchoProxyServiceTest {
         when(factory.clientFor(HonchoApiVersion.V2)).thenReturn(v2Client);
         when(factory.clientFor(HonchoApiVersion.V3)).thenReturn(v3Client);
         Object v2Marker = new Object();
-        Object v3Marker = new Object();
-        when(v2Client.call(any(), any(), any(), any(), any())).thenReturn(v2Marker);
-        when(v3Client.call(any(), any(), any(), any(), any())).thenReturn(v3Marker);
+        // LIST_PEERS returns a Page[Peer] pagination envelope; the
+        // unwrapper extracts .items. Mock with a real envelope so
+        // the assertion below can compare against the unwrapped items.
+        List<Object> v2Items = List.of("v2-p-1");
+        Map<String, Object> v2Page = Map.of("items", v2Items, "total", 1, "page", 1, "size", 50, "pages", 1);
+        List<Object> v3Items = List.of("v3-p-1", "v3-p-2");
+        Map<String, Object> v3Page = Map.of("items", v3Items, "total", 2, "page", 1, "size", 50, "pages", 1);
+        when(v2Client.call(any(), any(), any(), any(), any())).thenReturn(v2Page);
+        when(v3Client.call(any(), any(), any(), any(), any())).thenReturn(v3Page);
 
         HonchoProxyService svc = service(factory);
 
-        // V2 context -> V2 client
-        assertThat(svc.call(HonchoOperation.LIST_PEERS, CTX_V2, null, null, null)).isSameAs(v2Marker);
-        // V3 context -> V3 client
-        assertThat(svc.call(HonchoOperation.LIST_PEERS, CTX_V3, null, null, null)).isSameAs(v3Marker);
+        // V2 context -> V2 client -> unwrap -> v2Items
+        assertThat(svc.call(HonchoOperation.LIST_PEERS, CTX_V2, null, null, null)).isSameAs(v2Items);
+        // V3 context -> V3 client -> unwrap -> v3Items
+        assertThat(svc.call(HonchoOperation.LIST_PEERS, CTX_V3, null, null, null)).isSameAs(v3Items);
 
         // Factory must have been called with the per-context version
         // (not with a class-level field — there is no such field in T15).
@@ -214,7 +227,7 @@ class HonchoProxyServiceTest {
     void properties_exposesTheInjectedHonchoProperties() {
         HonchoProperties props = properties();
         HonchoProxyService svc = new HonchoProxyService(
-            mock(HonchoClientFactory.class), props
+            mock(HonchoClientFactory.class), props, new HonchoResponseUnwrapper()
         );
 
         assertThat(svc.properties()).isSameAs(props);
