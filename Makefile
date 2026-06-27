@@ -74,16 +74,21 @@
 #
 # We can't use `case ... esac` inside `$(shell ...)` on a single
 # line because the `;;` pattern terminators confuse make's variable
-# parser. Use `tr` to lowercase and then a `sed` expression to map
-# the few cases we support. The final pattern (.*) maps everything
-# we don't have an explicit rule for to `freebsd` (best-effort for
-# OpenBSD / NetBSD / DragonFly / SunOS).
+# parser. Use `if/elif/fi` instead.
+#
+# The three supported OSes are linux, freebsd, and darwin (macOS).
+# Anything else prints an error to stderr and the variable stays
+# empty, which causes the `include Makefile.$(FRAGMENT_OS)` line
+# below to fail loud with "No such file or directory" - which is
+# the right outcome. We do NOT silently fall through to freebsd
+# for unknown OSes; that's a hidden assumption that hides real
+# portability issues.
 #
 # Operators can override on the command line:
 #   make FRAGMENT_OS=linux build
 #   make FRAGMENT_OS=freebsd install
 #   make FRAGMENT_OS=darwin install
-FRAGMENT_OS := $(shell UNAME=$$(uname -s | tr A-Z a-z); if [ "x$$UNAME" = "xdarwin" ]; then echo darwin; elif [ "x$$UNAME" = "xlinux" ]; then echo linux; else echo freebsd; fi)
+FRAGMENT_OS := $(shell UNAME=$$(uname -s | tr A-Z a-z); if [ "x$$UNAME" = "xdarwin" ]; then echo darwin; elif [ "x$$UNAME" = "xlinux" ]; then echo linux; elif [ "x$$UNAME" = "xfreebsd" ]; then echo freebsd; else printf "unsupported OS: %s (supported: linux, freebsd, darwin)\n" "$$UNAME" >&2; exit 1; fi)
 
 # === Include ===
 # Makefile.common first (defines build/test/run/db/clean and the
@@ -114,5 +119,5 @@ help-os: ## (debug) show which Makefile fragment is active
 check-os: ## (debug) verify the per-OS fragment for this OS is in effect
 	@case "$$(uname -s | tr A-Z a-z)" in \
 		linux|freebsd|darwin) ;; \
-		*) printf "WARN: uname -s = %s is not in the documented support list; using Makefile.freebsd as best-effort\n" "$$(uname -s)" >&2 ;; \
+		*) printf "ERROR: uname -s = %s is not in the documented support list (linux, freebsd, darwin only)\n" "$$(uname -s)" >&2; exit 1 ;; \
 	esac
