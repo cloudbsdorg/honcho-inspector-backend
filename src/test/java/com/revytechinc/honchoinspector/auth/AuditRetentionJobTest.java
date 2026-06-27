@@ -17,7 +17,7 @@ class AuditRetentionJobTest {
     @Test
     void ageWindow_deletesOlderRows() {
         var dao = mock(AuditLogRepository.class);
-        when(dao.deleteOlderThan(org.mockito.ArgumentMatchers.any())).thenReturn(7);
+        when(dao.countOlderThan(org.mockito.ArgumentMatchers.any())).thenReturn(7L);
         when(dao.deleteOldest(100)).thenReturn(0);
         var audit = mock(AdminAudit.class);
         var props = newProps(30, 100L, "0 0 3 * * *");
@@ -41,7 +41,7 @@ class AuditRetentionJobTest {
     @Test
     void sizeCap_deletesOldestExcess() {
         var dao = mock(AuditLogRepository.class);
-        when(dao.deleteOlderThan(org.mockito.ArgumentMatchers.any())).thenReturn(0);
+        when(dao.countOlderThan(org.mockito.ArgumentMatchers.any())).thenReturn(0L);
         when(dao.deleteOldest(50)).thenReturn(3);
         var audit = mock(AdminAudit.class);
         var props = newProps(90, 50L, "0 0 3 * * *");
@@ -64,7 +64,7 @@ class AuditRetentionJobTest {
     @Test
     void noRowsDeleted_doesNotAudit() {
         var dao = mock(AuditLogRepository.class);
-        when(dao.deleteOlderThan(org.mockito.ArgumentMatchers.any())).thenReturn(0);
+        when(dao.countOlderThan(org.mockito.ArgumentMatchers.any())).thenReturn(0L);
         when(dao.deleteOldest(1000)).thenReturn(0);
         var audit = mock(AdminAudit.class);
         var props = newProps(90, 1000L, "0 0 3 * * *");
@@ -85,7 +85,7 @@ class AuditRetentionJobTest {
     @Test
     void auditMetadataIncludesDeletedCounts() {
         var dao = mock(AuditLogRepository.class);
-        when(dao.deleteOlderThan(org.mockito.ArgumentMatchers.any())).thenReturn(5);
+        when(dao.countOlderThan(org.mockito.ArgumentMatchers.any())).thenReturn(5L);
         when(dao.deleteOldest(100)).thenReturn(2);
         var audit = mock(AdminAudit.class);
         var props = newProps(30, 100L, "0 0 3 * * *");

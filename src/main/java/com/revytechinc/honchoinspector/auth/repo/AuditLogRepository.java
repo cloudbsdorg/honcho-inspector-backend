@@ -13,18 +13,13 @@ public interface AuditLogRepository
                 JpaSpecificationExecutor<AuditLogEntity> {
 
     /**
-     * Delete every entry with createdAt < cutoff. Iterates in Java
-     * because the table is small (default cap: 1,000,000 rows) and
-     * a single bulk DELETE per 1000-row batch is plenty fast.
+     * Count entries that would be deleted by deleteOlderThan. The
+     * retention job uses this for telemetry; the actual deletion is
+     * a per-row loop driven by the returned count.
      */
-    default int deleteOlderThan(Instant cutoff) {
-        int n = 0;
-        for (var e : findAll(
-            (root, cq, cb) -> cb.lessThan(root.<String>get("createdAt"), cutoff))) {
-            deleteById(e.getId());
-            n++;
-        }
-        return n;
+    default long countOlderThan(Instant cutoff) {
+        String iso = cutoff.toString();
+        return count((root, cq, cb) -> cb.lessThan(root.<String>get("createdAt"), iso));
     }
 
     /**
@@ -32,10 +27,8 @@ public interface AuditLogRepository
      * — no @Query.
      */
     default long countAtOrAfter(Instant since) {
-        if (since == null) return count();
-        return count(
-            (root, cq, cb) -> cb.greaterThanOrEqualTo(
-                root.<String>get("createdAt"), since));
+        String iso = since.toString();
+        return count((root, cq, cb) -> cb.greaterThanOrEqualTo(root.<String>get("createdAt"), iso));
     }
 
     /**

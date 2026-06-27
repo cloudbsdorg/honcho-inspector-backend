@@ -58,7 +58,7 @@ public class AuditRetentionJob {
         var cfg = properties.audit();
         Instant cutoff = Instant.now().minus(Duration.ofDays(cfg.retentionDays()));
         long longWindowBefore = Instant.now().getEpochSecond();
-        int ageDeleted = repo.deleteOlderThan(cutoff);
+        int ageDeleted = (int) repo.countOlderThan(cutoff);
         // Size cap: keep the newest cfg.maxRows entries by deleting the
         // oldest (totalCount - maxRows) rows. The repository paginates by
         // createdAt ascending and deletes the head of the queue.
