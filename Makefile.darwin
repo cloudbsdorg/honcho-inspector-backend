@@ -33,10 +33,18 @@
 
 INSTALL_SCRIPT = bin/install-honcho-inspector
 LAUNCHER_BIN   = bin/honcho-inspector
+
 # Homebrew lives at /opt/homebrew on Apple Silicon and /usr/local
-# on Intel. Default to /usr/local for Intel and let operators
-# override for Apple Silicon.
-TOOLS_BIN_DIR  = $(HOMEBREW_PREFIX)/bin
+# on Intel. We resolve the install dir at recipe time (not parse
+# time) so the recipe works on stock macOS without Homebrew too
+# (where HOMEBREW_PREFIX is unset) and on Homebrew installs (where
+# it is set). Default fallback is /usr/local/bin, which is on the
+# default PATH on every macOS since 10.5 (Leopard). Operators with
+# Homebrew at /opt/homebrew should set
+#   export HOMEBREW_PREFIX=/opt/homebrew
+# in their shell rc.
+# Recipe-time resolution keeps the Makefile parser-portable (no
+# GNU-only $(HOMEBREW_PREFIX:%=...) substitution syntax).
 
 install: build ## Full install: jar + launcher + service + man + config (auto-detect OS, requires sudo)
 	@if [ -z "$$(command -v sudo)" ]; then \
@@ -58,12 +66,13 @@ install-only: ## Install only (no rebuild) - assumes the jar is already built; r
 
 install-macos: install ## Alias of install; OS is auto-detected by the install script
 
-install-launcher: ## Install only the bin/honcho-inspector wrapper to $(HOMEBREW_PREFIX)/bin/ (requires sudo)
-	@if [ ! -w $(TOOLS_BIN_DIR) ]; then \
-		printf "cannot write to $(TOOLS_BIN_DIR) -- re-run with sudo\n" >&2; exit 1; \
-	fi
-	@install -m 0755 "$(LAUNCHER_BIN)" $(TOOLS_BIN_DIR)/honcho-inspector
-	@printf "installed launcher to $(TOOLS_BIN_DIR)/honcho-inspector\n"
+install-launcher: ## Install only the bin/honcho-inspector wrapper to $$HOMEBREW_PREFIX/bin/ (requires sudo)
+	@tools_bin=$$( [ -n "$$HOMEBREW_PREFIX" ] && echo "$$HOMEBREW_PREFIX/bin" || echo "/usr/local/bin" ); \
+	if [ ! -w "$$tools_bin" ]; then \
+		printf "cannot write to $$tools_bin -- re-run with sudo\n" >&2; exit 1; \
+	fi; \
+	install -m 0755 "$(LAUNCHER_BIN)" "$$tools_bin/honcho-inspector"
+	@printf "installed launcher to $$HOMEBREW_PREFIX/bin/ (or /usr/local/bin if unset)\n"
 
 install-config-only: ## Drop the application.yml at the OS-appropriate config dir (no service, no jar)
 	@dest="$$HOME/Library/Application Support/honcho-inspector"; \
@@ -82,46 +91,50 @@ install-config-only: ## Drop the application.yml at the OS-appropriate config di
 #                 etc.). Workaround for shell environments where
 #                 these polluters block interactive tools.
 #
-# All scripts in bin/tools/ are installed to $(HOMEBREW_PREFIX)/bin/
-# with mode 0755, owned by root:wheel. Re-running is safe; existing
-# files are overwritten with the same content. `make uninstall-tools`
+# All scripts in bin/tools/ are installed to $$HOMEBREW_PREFIX/bin/
+# (or /usr/local/bin if HOMEBREW_PREFIX is unset) with mode 0755,
+# owned by root:wheel. Re-running is safe; existing files are
+# overwritten with the same content. `make uninstall-tools`
 # removes only the scripts this Makefile installed.
 #
-# Requires sudo (writes to $(HOMEBREW_PREFIX)/bin/).
+# Requires sudo (writes to the install dir).
 
 TOOLS_SRC_DIR = bin/tools
 
-tools: install-tools ## Install operator scripts from bin/tools/ to $(HOMEBREW_PREFIX)/bin/ (requires sudo)
-	@printf "tools installed under $(TOOLS_BIN_DIR)/:\n"
-	@ls -1 $(TOOLS_BIN_DIR)/cleanrun 2>/dev/null && \
+tools: install-tools ## Install operator scripts from bin/tools/ to $$HOMEBREW_PREFIX/bin/ (requires sudo)
+	@tools_bin=$$( [ -n "$$HOMEBREW_PREFIX" ] && echo "$$HOMEBREW_PREFIX/bin" || echo "/usr/local/bin" ); \
+	printf "tools installed under $$tools_bin/:\n"; \
+	ls -1 "$$tools_bin/cleanrun" 2>/dev/null && \
 		printf "  cleanrun  - exec a command with a sanitized environment\n"
 
-install-tools: ## (internal) install every executable in bin/tools/ to $(HOMEBREW_PREFIX)/bin/
-	@if [ -z "$$(command -v sudo)" ]; then \
+install-tools: ## (internal) install every executable in bin/tools/ to $$HOMEBREW_PREFIX/bin/
+	@tools_bin=$$( [ -n "$$HOMEBREW_PREFIX" ] && echo "$$HOMEBREW_PREFIX/bin" || echo "/usr/local/bin" ); \
+	if [ -z "$$(command -v sudo)" ]; then \
 		printf "sudo not found in PATH\n" >&2; exit 1; \
-	fi
-	@if [ ! -d "$(TOOLS_SRC_DIR)" ]; then \
+	fi; \
+	if [ ! -d "$(TOOLS_SRC_DIR)" ]; then \
 		printf "no tools directory at $(TOOLS_SRC_DIR) -- nothing to install\n" >&2; exit 0; \
-	fi
-	@for src in $$(find $(TOOLS_SRC_DIR) -maxdepth 1 -type f -perm -100 2>/dev/null | sort); do \
+	fi; \
+	for src in $$(find $(TOOLS_SRC_DIR) -maxdepth 1 -type f -perm -100 2>/dev/null | sort); do \
 		[ -f "$$src" ] || continue; \
 		base=$$(basename $$src); \
-		printf "  install %s -> $(TOOLS_BIN_DIR)/%s\n" "$$src" "$$base"; \
-		sudo install -m 0755 -o root -g wheel "$$src" $(TOOLS_BIN_DIR)/"$$base" || exit 1; \
-	done
-	@printf "installed tools OK\n" >&2
+		printf "  install %s -> $$tools_bin/%s\n" "$$src" "$$base"; \
+		sudo install -m 0755 -o root -g wheel "$$src" "$$tools_bin/$$base" || exit 1; \
+	done; \
+	printf "installed tools OK\n" >&2
 
 uninstall-tools: ## Remove the operator scripts that `make tools` installed (requires sudo)
-	@if [ -z "$$(command -v sudo)" ]; then \
+	@tools_bin=$$( [ -n "$$HOMEBREW_PREFIX" ] && echo "$$HOMEBREW_PREFIX/bin" || echo "/usr/local/bin" ); \
+	if [ -z "$$(command -v sudo)" ]; then \
 		printf "sudo not found in PATH\n" >&2; exit 1; \
-	fi
-	@if [ ! -d "$(TOOLS_SRC_DIR)" ]; then \
+	fi; \
+	if [ ! -d "$(TOOLS_SRC_DIR)" ]; then \
 		printf "no tools directory at $(TOOLS_SRC_DIR) -- nothing to remove\n" >&2; exit 0; \
-	fi
-	@for src in $$(find $(TOOLS_SRC_DIR) -maxdepth 1 -type f -perm -100 2>/dev/null | sort); do \
+	fi; \
+	for src in $$(find $(TOOLS_SRC_DIR) -maxdepth 1 -type f -perm -100 2>/dev/null | sort); do \
 		[ -f "$$src" ] || continue; \
 		base=$$(basename $$src); \
-		target="$(TOOLS_BIN_DIR)/$$base"; \
+		target="$$tools_bin/$$base"; \
 		if [ -f "$$target" ]; then \
 			printf "  remove %s\n" "$$target"; \
 			sudo rm -f "$$target" || exit 1; \
