@@ -9,9 +9,21 @@ case "$1" in
         rm -rf /var/log/honcho-inspector
         rm -rf /etc/honcho-inspector
         rm -f /etc/default/honcho-inspector
-        # Remove the service user if it still exists.
+        # Best-effort: remove the www-data user if it exists AND if
+        # it's the system-user variant we created on install. On
+        # Debian/Ubuntu www-data is a normal user (UID 33) created
+        # by the base system; the install script's useradd used
+        # --system (UID 1-999) so we check the UID range. If
+        # deluser fails (e.g. user has processes or files we don't
+        # own), we just warn and move on — the user account will be
+        # cleaned up by the OS's normal maintenance.
         if getent passwd www-data >/dev/null; then
-            deluser --quiet --system www-data || true
+            www_data_uid=$(getent passwd www-data | cut -d: -f3)
+            if [ -n "$www_data_uid" ] && [ "$www_data_uid" -lt 1000 ] 2>/dev/null; then
+                deluser --quiet www-data 2>/dev/null || true
+            else
+                echo "honcho-inspector postrm: not removing www-data (uid=$www_data_uid is outside system range)" >&2
+            fi
         fi
         ;;
     remove|upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
