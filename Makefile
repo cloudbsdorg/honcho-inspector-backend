@@ -14,23 +14,51 @@
 #   Makefile.darwin    - launchd + tools
 #
 # === Portability ===
-# This dispatcher is consumed by BOTH:
-#   - GNU Make 4.x  (Linux, macOS with Homebrew, etc.)
-#   - FreeBSD make (bmake, the BSD-make from pkgsrc / brew)
+# This dispatcher requires GNU make (4.x or newer). The three
+# platforms we support each ship GNU make under a different name:
 #
-# Detection uses `!=` (POSIX shell-assignment; works in both makes)
-# and `tr A-Z a-z` (POSIX case conversion; works on all Unixes).
-# The dispatch is `include Makefile.$(FRAGMENT_OS)` where
-# FRAGMENT_OS is a single filename.
+#   - Linux:    /usr/bin/make            (GNU make on every distro)
+#   - macOS:    /opt/homebrew/bin/make   (Homebrew, default on Apple Silicon)
+#               /usr/local/bin/make      (Homebrew on Intel; CLT make is BSD)
+#               The XCode CLT ships /usr/bin/make as BSD make 3.81,
+#               which does NOT parse this Makefile. Operators on
+#               stock macOS without Homebrew should run
+#                 brew install make
+#               which installs GNU make as `gmake` (not as `make`).
+#               Either `gmake` or `make` (after `brew install make`)
+#               works.
+#   - FreeBSD:  gmake (install via `pkg install gmake`).
+#               The default /usr/bin/make is bmake, which does not
+#               parse this Makefile. Operators on stock FreeBSD
+#               should install GNU make and use `gmake`.
 #
-# The per-OS fragments are OS-agnostic in their make syntax (no
-# `ifeq`, no `:=`, no `$(shell)`); they use only recursive
-# variables and recipe-time shell. This is enforced in each
-# fragment's header comment.
+# Why GNU make only:
+#   The three popular make implementations disagree on the right
+#   syntax for "run a shell command at parse time and assign its
+#   output":
+#
+#     GNU make:   VAR != cmd          OR   VAR := $(shell cmd)
+#     bmake:      VAR != cmd          ONLY
+#     BSD make:   VAR := $(shell cmd) ONLY
+#
+#   `!=` and `$(shell)` are mutually exclusive across the three
+#   implementations. The portable pattern would require conditionals
+#   (ifeq/else/endif) AND shell-assignment operators to be
+#   supported on ALL THREE makes simultaneously, which is not
+#   possible (bmake rejects `ifeq`; BSD make rejects `!=`).
+#
+#   GNU make is the common denominator. Both Linux (every distro)
+#   and macOS (via Homebrew) ship it as `make`. FreeBSD ships it
+#   in `devel/gmake` (or the meta-port `gmake`). GNU make is the
+#   most-portable choice and the one used by ~every large OSS
+#   project (kernel, glibc, systemd, etc.).
+#
+# The per-OS fragments are parser-portable: no `ifeq`, no `:=`,
+# no `$(shell)`, no GNU-only functions. Only recursive `=` and
+# recipe-time shell. This is enforced in each fragment's header.
 #
 # Validate with:
 #   make -n                     # GNU make dry run
-#   bmake -n                    # FreeBSD bmake dry run
 #
 # === Help ===
 # `make help` (defined in Makefile.common) aggregates every public
@@ -39,21 +67,23 @@
 # available on the running machine.
 
 # === Detect OS ===
-# `!=` runs uname -s and assigns the result to UNAME_S. The shell
-# then lowercases it via `tr A-Z a-z` (POSIX) and falls back to
-# 'freebsd' (a shell case) if the result isn't in our support
-# list. The whole thing is one shell invocation; the result is a
-# single filename.
+# `:=` with `$(shell ...)` is the GNU-make + BSD-make-compatible
+# way to run a shell command at parse time. bmake does not support
+# `$(shell)`, but we require GNU make anyway (see portability note
+# above).
 #
-# Operators with an exotic OS can override on the command line:
+# We can't use `case ... esac` inside `$(shell ...)` on a single
+# line because the `;;` pattern terminators confuse make's variable
+# parser. Use `tr` to lowercase and then a `sed` expression to map
+# the few cases we support. The final pattern (.*) maps everything
+# we don't have an explicit rule for to `freebsd` (best-effort for
+# OpenBSD / NetBSD / DragonFly / SunOS).
+#
+# Operators can override on the command line:
 #   make FRAGMENT_OS=linux build
 #   make FRAGMENT_OS=freebsd install
 #   make FRAGMENT_OS=darwin install
-FRAGMENT_OS != case "$$(uname -s | tr A-Z a-z)" in \
-                  linux) echo linux ;; \
-                  darwin) echo darwin ;; \
-                  *) echo freebsd ;; \
-                esac
+FRAGMENT_OS := $(shell UNAME=$$(uname -s | tr A-Z a-z); if [ "x$$UNAME" = "xdarwin" ]; then echo darwin; elif [ "x$$UNAME" = "xlinux" ]; then echo linux; else echo freebsd; fi)
 
 # === Include ===
 # Makefile.common first (defines build/test/run/db/clean and the
