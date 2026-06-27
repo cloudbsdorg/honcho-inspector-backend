@@ -11,6 +11,7 @@ import com.revytechinc.honchoinspector.honcho.HonchoClientFactory;
 import com.revytechinc.honchoinspector.model.ErrorResponse;
 import com.revytechinc.honchoinspector.model.HonchoContext;
 import com.revytechinc.honchoinspector.service.HonchoProxyService;
+import org.springframework.http.MediaType;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -32,7 +33,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api")
+@RequestMapping(value = "/api", produces = MediaType.APPLICATION_JSON_VALUE)
 @Tag(name = OpenApiConfig.TAG_HONCHO_PROXY,
     description = """
         Pass-through proxy to the Honcho v3 REST API. Every endpoint requires both `X-Session-Id` (current user) AND `X-Honcho-Profile-Id` (which encrypted Honcho profile to use).
@@ -530,7 +531,7 @@ public class HonchoController {
         });
     }
 
-    private ResponseEntity<?> call(HttpServletRequest req, HonchoCall call) {
+    private ResponseEntity<Object> call(HttpServletRequest req, HonchoCall call) {
         var current = (AuthService.CurrentUser) req.getAttribute(SessionAuthFilter.CURRENT_USER_ATTR);
         if (current == null) {
             return ResponseEntity.status(401).body(new ErrorResponse("not authenticated"));
@@ -554,7 +555,7 @@ public class HonchoController {
         );
         try {
             var result = call.invoke(ctx, ctx.workspaceId());
-            return ResponseEntity.ok(result);
+            return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(result);
         } catch (HonchoCallException e) {
             return ResponseEntity.status(e.status() >= 500 ? 502 : e.status())
                 .body(Map.of("error", e.getMessage(), "body", e.body() == null ? "" : e.body()));
