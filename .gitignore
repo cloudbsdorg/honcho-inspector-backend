@@ -14,3 +14,14 @@ login-page.png
 # fpm scratch
 /tmp/fpm-*/
 .run/
+
+# Workspace-local SQLite DBs (dev mode). The live config at
+# /etc/honcho-inspector/honcho-inspector.db is on the operator's
+# machine, not in the repo; this is the workspace's accidental
+# dev-mode DB plus its rotated journal/wal/shm sidecars and any
+# .stale-* rename.
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.db.stale-*
