@@ -62,6 +62,16 @@ spring:
     properties:
       hibernate.format_sql: false
       hibernate.show_sql: false
+  web:
+    resources:
+      # Spring Boot's default welcome-page lookup looks in the classpath
+      # only. The all-in-one image serves index.html from a filesystem
+      # path (the Angular dist baked at container build time), so we
+      # tell Boot to look for a welcome page called /index.html at any
+      # of the static locations UiStaticConfig registers. The
+      # WelcomePageHandlerMapping is wired in automatically when this
+      # is non-empty.
+      welcome-page: /index.html
 
 # Honcho upstream. The base URL is also accepted per-login via the LoginInput,
 # but these defaults are used for the startup banner and any default-fallback calls.
@@ -114,6 +124,15 @@ honcho:
     # rough. Set HONCHO_UI_CHAT_ENABLED=true to surface the
     # button + popout + SSE endpoint.
     chat-enabled: ${HONCHO_UI_CHAT_ENABLED:false}
+    # Path to the static Angular dist when running in the
+    # all-in-one image (Containerfile.all-in-one). When the
+    # directory does not exist (standalone backend image with a
+    # separately-deployed UI), UiStaticConfig short-circuits and
+    # the SPA-serving handler is a no-op. The default points at
+    # the path the all-in-one image bakes the UI into; operators
+    # who want SPA serving on a custom image can override via
+    # HONCHO_UI_DIST=/srv/ui.
+    dist: ${HONCHO_UI_DIST:/usr/local/share/honcho-inspector/ui}
 
 # CORS allowed origins. Comma-separated list.
 cors:
