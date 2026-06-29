@@ -102,6 +102,7 @@ All config is externalized. Priority (high → low):
 | `HONCHO_AUDIT_RETENTION_DAYS`   | `90`                                   | Age cap for `audit_log` rows; rows older than this are purged daily |
 | `HONCHO_AUDIT_MAX_ROWS`         | `1000000`                              | Size cap; if `COUNT(*) > max-rows`, oldest rows are deleted until the cap is satisfied |
 | `HONCHO_AUDIT_PURGE_CRON`       | `0 0 3 * * *`                          | Cron for the retention sweep (3:00 AM local). Manual trigger via `POST /api/admin/maintenance/audit/purge` |
+| `HONCHO_UI_CHAT_ENABLED`        | `false`                                | UI feature toggle. When `false` (the default), the chat popout + chat button are hidden in the UI and `POST /api/peers/{peerId}/chat/stream` returns 404. Set `true` to surface the chat feature. The flag is exposed via `GET /api/health` as `chatEnabled` so the UI can hide the button. |
 
 Logs are emitted as **structured JSONL** (one JSON event per line) to
 `$HONCHO_CONFIG_DIR/logs/honcho-inspector.jsonl` and stdout, with API

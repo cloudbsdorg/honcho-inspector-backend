@@ -64,6 +64,14 @@ public class HonchoController {
     private final RestClient honchoRestClient;
     private final ObjectMapper json;
     private final HonchoMetrics metrics;
+    /**
+     * UI feature toggle. When false, {@code /api/peers/{peerId}/chat/stream}
+     * returns 404 so the SSE endpoint is unreachable, and the
+     * frontend hides every chat button + popout (the frontend
+     * reads the same value via {@code /api/health}). Default
+     * false — operators opt in by setting {@code HONCHO_UI_CHAT_ENABLED=true}.
+     */
+    private final boolean chatEnabled;
 
     public HonchoController(
         HonchoProxyService honcho,
@@ -72,7 +80,8 @@ public class HonchoController {
         AdminAudit audit,
         RestClient honchoRestClient,
         ObjectMapper json,
-        HonchoMetrics metrics
+        HonchoMetrics metrics,
+        @org.springframework.beans.factory.annotation.Value("${honcho.ui.chat-enabled:false}") boolean chatEnabled
     ) {
         this.honcho = honcho;
         this.profiles = profiles;
@@ -81,6 +90,7 @@ public class HonchoController {
         this.honchoRestClient = honchoRestClient;
         this.json = json;
         this.metrics = metrics;
+        this.chatEnabled = chatEnabled;
     }
 
     @GetMapping("/peers")
@@ -259,6 +269,15 @@ public class HonchoController {
     ) {
         // Bypasses HonchoProxyService: the dispatch pipeline buffers
         // into a typed Object; SSE would defeat the purpose.
+        // Feature gate: chat is opt-in via honcho.ui.chat-enabled.
+        // Default false — the frontend should never show the chat
+        // button or popout, and direct API calls return 404 so the
+        // endpoint is unreachable. The 404 message intentionally
+        // does NOT leak the existence of the feature to a
+        // probing caller.
+        if (!chatEnabled) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "not found");
+        }
         AuthService.CurrentUser current = (AuthService.CurrentUser) req.getAttribute(SessionAuthFilter.CURRENT_USER_ATTR);
         if (current == null) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "not authenticated");

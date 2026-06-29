@@ -29,6 +29,7 @@ public class StartupInfoLogger {
     private final long honchoTimeoutMs;
     private final String corsOrigins;
     private final long sessionTtlMinutes;
+    private final boolean chatEnabled;
 
     public StartupInfoLogger(
         Environment env,
@@ -38,7 +39,8 @@ public class StartupInfoLogger {
         @Value("${honcho.api-version:v3}") String honchoApiVersion,
         @Value("${honcho.request-timeout-ms:30000}") long honchoTimeoutMs,
         @Value("${cors.allowed-origins:http://localhost:4200}") String corsOrigins,
-        @Value("${session.ttl-minutes:0}") long sessionTtlMinutes
+        @Value("${session.ttl-minutes:0}") long sessionTtlMinutes,
+        @Value("${honcho.ui.chat-enabled:false}") boolean chatEnabled
     ) {
         this.env = env;
         this.configDir = configDir;
@@ -48,6 +50,7 @@ public class StartupInfoLogger {
         this.honchoTimeoutMs = honchoTimeoutMs;
         this.corsOrigins = corsOrigins;
         this.sessionTtlMinutes = sessionTtlMinutes;
+        this.chatEnabled = chatEnabled;
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -58,8 +61,8 @@ public class StartupInfoLogger {
         var profileStr = profiles.isEmpty() ? "default" : profiles;
         var configDirEntry = formatConfigDir(configDir);
         log.info(
-            "honcho-inspector backend ready: port={}, profiles=[{}], config-dir={}, honcho={} (api={}, timeout={}ms), cors={}, session-ttl={}m",
-            port, profileStr, configDirEntry, honchoBaseUrl, honchoApiVersion, honchoTimeoutMs, corsOrigins, sessionTtlMinutes
+            "honcho-inspector backend ready: port={}, profiles=[{}], config-dir={}, honcho={} (api={}, timeout={}ms), cors={}, session-ttl={}m, chat-enabled={}",
+            port, profileStr, configDirEntry, honchoBaseUrl, honchoApiVersion, honchoTimeoutMs, corsOrigins, sessionTtlMinutes, chatEnabled
         );
     }
 

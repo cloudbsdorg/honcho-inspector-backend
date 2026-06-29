@@ -262,6 +262,17 @@ class AuthControllerTest {
     }
 
     @Test
+    void health_chat_enabled_defaults_to_false() throws Exception {
+        // Default behavior (no HONCHO_UI_CHAT_ENABLED override in
+        // this test class): chat-enabled is false so the UI hides
+        // the chat button + popout by default. Operators opt in
+        // by setting HONCHO_UI_CHAT_ENABLED=true.
+        mvc.perform(get("/api/health"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.chatEnabled").value(false));
+    }
+
+    @Test
     void profiles_endpoint_requires_session() throws Exception {
         mvc.perform(get("/api/profiles"))
             .andExpect(status().isUnauthorized());
