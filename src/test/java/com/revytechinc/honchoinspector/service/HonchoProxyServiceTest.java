@@ -356,6 +356,55 @@ class HonchoProxyServiceTest {
     }
 
     @Test
+    void typed_listWorkspaceConclusions_wrapsFiltersInEnvelopeAndOmitsObservedId() {
+        HonchoClientFactory factory = v3Factory();
+        HonchoProxyService svc = service(factory);
+
+        svc.listWorkspaceConclusions(CTX_V3, Map.of("size", 10));
+
+        ArgumentCaptor<Object> bodyCap = ArgumentCaptor.forClass(Object.class);
+        verify(clientOf(factory)).call(
+            org.mockito.ArgumentMatchers.eq(HonchoOperation.LIST_PEER_CONCLUSIONS),
+            org.mockito.ArgumentMatchers.eq(CTX_V3),
+            bodyCap.capture(),
+            org.mockito.ArgumentMatchers.isNull(),
+            org.mockito.ArgumentMatchers.isNull()
+        );
+        @SuppressWarnings("unchecked")
+        Map<String, Object> body = (Map<String, Object>) bodyCap.getValue();
+        assertThat(body)
+            .as("listWorkspaceConclusions must wrap the inbound filters in Honcho's {filters:{...}} envelope")
+            .containsOnlyKeys("filters");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> filters = (Map<String, Object>) body.get("filters");
+        assertThat(filters)
+            .containsEntry("size", 10)
+            .doesNotContainKey("observed_id");
+    }
+
+    @Test
+    void typed_listWorkspaceConclusions_handlesNullBody() {
+        HonchoClientFactory factory = v3Factory();
+        HonchoProxyService svc = service(factory);
+
+        svc.listWorkspaceConclusions(CTX_V3, null);
+
+        ArgumentCaptor<Object> bodyCap = ArgumentCaptor.forClass(Object.class);
+        verify(clientOf(factory)).call(
+            org.mockito.ArgumentMatchers.eq(HonchoOperation.LIST_PEER_CONCLUSIONS),
+            org.mockito.ArgumentMatchers.eq(CTX_V3),
+            bodyCap.capture(),
+            org.mockito.ArgumentMatchers.isNull(),
+            org.mockito.ArgumentMatchers.isNull()
+        );
+        @SuppressWarnings("unchecked")
+        Map<String, Object> body = (Map<String, Object>) bodyCap.getValue();
+        @SuppressWarnings("unchecked")
+        Map<String, Object> filters = (Map<String, Object>) body.get("filters");
+        assertThat(filters).isEmpty();
+    }
+
+    @Test
     void typed_listPeerSessions_passesPeerIdAndFiltersAsBody() {
         HonchoClientFactory factory = v3Factory();
         HonchoProxyService svc = service(factory);

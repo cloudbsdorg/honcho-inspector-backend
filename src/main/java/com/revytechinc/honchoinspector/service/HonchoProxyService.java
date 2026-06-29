@@ -191,6 +191,43 @@ public class HonchoProxyService {
         return call(HonchoOperation.LIST_PEER_CONCLUSIONS, ctx, envelope, null, null);
     }
 
+    /**
+     * Workspace-level conclusions listing (no peer filter).
+     *
+     * <p>Honcho v3 exposes the conclusions list at the workspace level
+     * ({@code POST /v3/workspaces/{ws}/conclusions/list}); omitting
+     * {@code observed_id} from the filter returns every conclusion in
+     * the workspace. The UI uses this to populate an empty-state view
+     * before the operator has chosen a peer.
+     *
+     * <p>The incoming body may be a Honcho envelope ({@code {filters:
+     * {...}}}), a flat filter map ({@code {observed_id: "alice"}}),
+     * or {@code null} for an unfiltered workspace-wide query. The shape
+     * is normalized into a single {@code {filters: {...}}} envelope
+     * here so the v3 provider can apply its whitelist without ambiguity.
+     */
+    public Object listWorkspaceConclusions(HonchoContext ctx, Object body) throws HonchoCallException {
+        Map<String, Object> envelope = new LinkedHashMap<>();
+        Map<String, Object> filterMap = new LinkedHashMap<>();
+        if (body instanceof Map<?, ?> raw) {
+            if (raw.get("filters") instanceof Map<?, ?> supplied) {
+                for (Map.Entry<?, ?> e : supplied.entrySet()) {
+                    if (e.getValue() != null && e.getKey() != null) {
+                        filterMap.put(e.getKey().toString(), e.getValue());
+                    }
+                }
+            } else {
+                for (Map.Entry<?, ?> e : raw.entrySet()) {
+                    if (e.getValue() != null && e.getKey() != null) {
+                        filterMap.put(e.getKey().toString(), e.getValue());
+                    }
+                }
+            }
+        }
+        envelope.put("filters", filterMap);
+        return call(HonchoOperation.LIST_PEER_CONCLUSIONS, ctx, envelope, null, null);
+    }
+
     public Object listPeerSessions(HonchoContext ctx, String peerId, Map<String, ?> filters) throws HonchoCallException {
         return call(HonchoOperation.LIST_PEER_SESSIONS, ctx, filters, pathVar("peerId", peerId), null);
     }
