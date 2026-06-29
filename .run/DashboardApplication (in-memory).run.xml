@@ -1,14 +1,13 @@
 <component name="ProjectRunConfigurationManager">
-  <configuration default="false" name="DashboardApplication (dev)" type="SpringBootApplicationConfigurationType" factoryName="Spring Boot">
+  <configuration default="false" name="DashboardApplication (in-memory)" type="SpringBootApplicationConfigurationType" factoryName="Spring Boot">
     <module name="honcho-inspector-backend" />
     <option name="SPRING_BOOT_MAIN_CLASS" value="com.revytechinc.honchoinspector.DashboardApplication" />
     <option name="VM_PARAMETERS" value="-Xms64m -Xmx256m" />
     <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
     <envs>
-      <env name="HONCHO_CONFIG_DIR" value=".etc" />
-      <env name="HONCHO_DB_PATH" value="jdbc:sqlite:.run-data/honcho-inspector.db" />
-      <env name="HONCHO_LOG_DIR" value=".var-log" />
-      <env name="server.address" value="127.0.0.1" />
+      <env name="HONCHO_CONFIG_DIR" value=".run-data-inmem" />
+      <env name="HONCHO_DB_PATH" value="jdbc:sqlite::memory:" />
+      <env name="HONCHO_CRYPTO_KEY" value="dsS5YEomp9AYvwLdTHhhARr1uZKzRR+Ydvui+Z/FoXM=" />
     </envs>
     <method v="2">
       <option name="Make" enabled="true" />
