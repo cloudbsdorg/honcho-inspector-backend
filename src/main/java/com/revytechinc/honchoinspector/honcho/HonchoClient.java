@@ -49,6 +49,29 @@ public interface HonchoClient {
     Object createPeer(HonchoContext ctx, Object createPeerRequest) throws HonchoCallException;
 
     /**
+     * Update an existing peer's mutable fields (e.g. metadata).
+     * Corresponds to {@link HonchoOperation#UPDATE_PEER}.
+     */
+    Object updatePeer(HonchoContext ctx, String peerId, Object updatePeerRequest) throws HonchoCallException;
+
+    /**
+     * Batch-create one or more conclusions in the workspace.
+     * Corresponds to {@link HonchoOperation#CREATE_CONCLUSIONS}.
+     *
+     * <p>The {@code requestBody} is Honcho's {@code ConclusionBatchCreate}
+     * envelope ({@code {conclusions: [...]}}); implementations forward
+     * it verbatim to the workspace-level
+     * {@code POST /conclusions} endpoint.
+     */
+    Object createConclusions(HonchoContext ctx, Object conclusionsBatch) throws HonchoCallException;
+
+    /**
+     * Delete a single conclusion by id.
+     * Corresponds to {@link HonchoOperation#DELETE_CONCLUSION}.
+     */
+    Object deleteConclusion(HonchoContext ctx, String conclusionId) throws HonchoCallException;
+
+    /**
      * Fetch the peer card (biographical facts) for {@code peerId}.
      * Corresponds to {@link HonchoOperation#GET_PEER_CARD}.
      */
@@ -128,6 +151,12 @@ public interface HonchoClient {
     Object deleteSession(HonchoContext ctx, String sessionId) throws HonchoCallException;
 
     /**
+     * Update a session's mutable fields (e.g. metadata, configuration).
+     * Corresponds to {@link HonchoOperation#UPDATE_SESSION}.
+     */
+    Object updateSession(HonchoContext ctx, String sessionId, Object updateSessionRequest) throws HonchoCallException;
+
+    /**
      * List messages in a session, with optional filters.
      * Corresponds to {@link HonchoOperation#LIST_SESSION_MESSAGES}.
      */
@@ -138,6 +167,12 @@ public interface HonchoClient {
      * Corresponds to {@link HonchoOperation#ADD_MESSAGE}.
      */
     Object addMessage(HonchoContext ctx, String sessionId, Object messageRequest) throws HonchoCallException;
+
+    /**
+     * Update a single message in a session.
+     * Corresponds to {@link HonchoOperation#UPDATE_MESSAGE}.
+     */
+    Object updateMessage(HonchoContext ctx, String sessionId, String messageId, Object updateMessageRequest) throws HonchoCallException;
 
     /**
      * Build a context window for the session, suitable for LLM prompts.

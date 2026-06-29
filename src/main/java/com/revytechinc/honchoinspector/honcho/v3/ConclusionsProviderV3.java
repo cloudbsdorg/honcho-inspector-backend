@@ -30,25 +30,39 @@ import com.revytechinc.honchoinspector.model.HonchoContext;
  * {@code filters.observer_id}) per the
  * {@code ConclusionGet} schema in Honcho's OpenAPI spec.
  *
- * <p>This provider owns exactly one operation &mdash;
- * {@link HonchoOperation#LIST_PEER_CONCLUSIONS} &mdash; and is deliberately
- * split out from {@link PeerQueryProviderV3} because the upstream path is
- * at the workspace level, not under {@code /peers/{peerId}/...}.
+ * <p>This provider owns the three workspace-level conclusions operations:
+ * <ul>
+ *   <li>{@link HonchoOperation#LIST_PEER_CONCLUSIONS} &mdash;
+ *       {@code POST /v3/workspaces/{ws}/conclusions/list}, the
+ *       v3 list endpoint.</li>
+ *   <li>{@link HonchoOperation#CREATE_CONCLUSIONS} &mdash;
+ *       {@code POST /v3/workspaces/{ws}/conclusions}, the batch-create
+ *       endpoint that accepts up to 100 conclusions per call.</li>
+ *   <li>{@link HonchoOperation#DELETE_CONCLUSION} &mdash;
+ *       {@code DELETE /v3/workspaces/{ws}/conclusions/{conclusionId}}.</li>
+ * </ul>
  *
- * <p>Request body shape (per Honcho v3 OpenAPI):
+ * <p>Request body shape for list (per Honcho v3 OpenAPI):
  * <pre>
  * { "filters": { "observed_id": "&lt;peerId&gt;", "size": 50, ... } }
  * </pre>
  *
- * <p>Response shape: {@code Page<Conclusion>} ({@code items, total, page,
- * size, pages}). The proxy forwards this Honcho envelope to the browser
- * unchanged.
+ * <p>Request body shape for create:
+ * <pre>
+ * { "conclusions": [ { "content": "...", "observer_id": "...", "observed_id": "...", "session_id": "..." }, ... ] }
+ * </pre>
+ *
+ * <p>Response shape (list / create): {@code Page<Conclusion>} ({@code items,
+ * total, page, size, pages}). The proxy forwards this Honcho envelope to
+ * the browser unchanged. Delete is a 204 No Content.
  */
 @Component
 public class ConclusionsProviderV3 implements HonchoProvider {
 
     private static final Set<HonchoOperation> OPS = EnumSet.of(
-        HonchoOperation.LIST_PEER_CONCLUSIONS
+        HonchoOperation.LIST_PEER_CONCLUSIONS,
+        HonchoOperation.CREATE_CONCLUSIONS,
+        HonchoOperation.DELETE_CONCLUSION
     );
 
     private final RestClient http;
@@ -71,6 +85,8 @@ public class ConclusionsProviderV3 implements HonchoProvider {
     public String pathTemplate(HonchoOperation op) {
         return switch (op) {
             case LIST_PEER_CONCLUSIONS -> "workspaces/{ws}/conclusions/list";
+            case CREATE_CONCLUSIONS   -> "workspaces/{ws}/conclusions";
+            case DELETE_CONCLUSION    -> "workspaces/{ws}/conclusions/{conclusionId}";
             default -> throw new UnsupportedOperationException(
                 "ConclusionsProviderV3 has no path template for " + op);
         };
@@ -79,7 +95,8 @@ public class ConclusionsProviderV3 implements HonchoProvider {
     @Override
     public HttpMethod httpMethod(HonchoOperation op) {
         return switch (op) {
-            case LIST_PEER_CONCLUSIONS -> HttpMethod.POST;
+            case LIST_PEER_CONCLUSIONS, CREATE_CONCLUSIONS -> HttpMethod.POST;
+            case DELETE_CONCLUSION                          -> HttpMethod.DELETE;
             default -> throw new UnsupportedOperationException(
                 "ConclusionsProviderV3 has no HTTP method for " + op);
         };
@@ -100,15 +117,27 @@ public class ConclusionsProviderV3 implements HonchoProvider {
         }
         String substituted = V3ProviderSupport.substitutePath(pathTemplate(op), ctx, pathVars);
         String url = V3ProviderSupport.buildUrl(ctx.baseUrl(), ctx.apiVersion().pathPrefix(), substituted, queryParams);
-        Map<String, Object> body = buildFiltersBody(requestBody, queryParams, pathVars);
         try {
-            ResponseEntity<Object> response = http.method(httpMethod(op))
+            // LIST_PEER_CONCLUSIONS wraps the inbound filter map in Honcho's
+            // {filters:{...}} envelope (buildFiltersBody). CREATE_CONCLUSIONS
+            // forwards the inbound {conclusions:[...]} body verbatim (we may
+            // need to default to an empty list when the UI sends nothing).
+            // DELETE_CONCLUSION has no body and no query params.
+            Object effectiveBody;
+            if (op == HonchoOperation.LIST_PEER_CONCLUSIONS) {
+                effectiveBody = buildFiltersBody(requestBody, queryParams, pathVars);
+            } else if (op == HonchoOperation.CREATE_CONCLUSIONS) {
+                effectiveBody = requestBody != null ? requestBody : Map.of("conclusions", java.util.List.of());
+            } else {
+                effectiveBody = null;
+            }
+            var spec = http.method(httpMethod(op))
                 .uri(url)
                 .headers(h -> V3ProviderSupport.applyAuth(h, ctx))
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(body)
-                .retrieve()
-                .toEntity(Object.class);
+                .contentType(MediaType.APPLICATION_JSON);
+            ResponseEntity<Object> response = (effectiveBody != null)
+                ? spec.body(effectiveBody).retrieve().toEntity(Object.class)
+                : spec.retrieve().toEntity(Object.class);
             return response.getBody();
         } catch (HttpStatusCodeException e) {
             throw V3ProviderSupport.toHonchoCallException(e);

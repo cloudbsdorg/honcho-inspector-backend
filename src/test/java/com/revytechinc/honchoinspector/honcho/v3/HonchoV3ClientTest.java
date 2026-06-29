@@ -186,6 +186,20 @@ class HonchoV3ClientTest {
     }
 
     @Test
+    void updatePeer_forwardsPeerIdAndBody() {
+        CapturingProvider provider = newFixture();
+        Object update = Map.of("metadata", Map.of("k", "v"));
+
+        clientOf(provider).updatePeer(CTX, "p-99", update);
+
+        assertThat(provider.lastOp).isEqualTo(HonchoOperation.UPDATE_PEER);
+        assertThat(provider.lastPathVars)
+            .containsOnlyKeys("peerId")
+            .containsEntry("peerId", "p-99");
+        assertThat(provider.lastBody).isSameAs(update);
+    }
+
+    @Test
     void getPeerRepresentation_forwardsPeerIdAndBody() {
         CapturingProvider provider = newFixture();
         Object body = Map.of();
@@ -332,6 +346,20 @@ class HonchoV3ClientTest {
     }
 
     @Test
+    void updateSession_forwardsSessionIdAndBody() {
+        CapturingProvider provider = newFixture();
+        Object update = Map.of("metadata", Map.of("k", "v"));
+
+        clientOf(provider).updateSession(CTX, "s-7", update);
+
+        assertThat(provider.lastOp).isEqualTo(HonchoOperation.UPDATE_SESSION);
+        assertThat(provider.lastPathVars)
+            .containsOnlyKeys("sessionId")
+            .containsEntry("sessionId", "s-7");
+        assertThat(provider.lastBody).isSameAs(update);
+    }
+
+    @Test
     void getSessionContext_forwardsSessionIdTokensAndSummary() {
         CapturingProvider provider = newFixture();
 
@@ -419,6 +447,21 @@ class HonchoV3ClientTest {
     }
 
     @Test
+    void updateMessage_forwardsSessionIdMessageIdAndBody() {
+        CapturingProvider provider = newFixture();
+        Object body = Map.of("metadata", Map.of("k", "v"));
+
+        clientOf(provider).updateMessage(CTX, "s-7", "m-9", body);
+
+        assertThat(provider.lastOp).isEqualTo(HonchoOperation.UPDATE_MESSAGE);
+        assertThat(provider.lastPathVars)
+            .containsOnlyKeys("sessionId", "messageId")
+            .containsEntry("sessionId", "s-7")
+            .containsEntry("messageId", "m-9");
+        assertThat(provider.lastBody).isSameAs(body);
+    }
+
+    @Test
     void searchSessionMessages_forwardsSessionIdAndBody() {
         CapturingProvider provider = newFixture();
         Object body = Map.of("q", "needle");
@@ -496,6 +539,31 @@ class HonchoV3ClientTest {
 
         assertThat(client.supportedVersions())
             .containsExactly(HonchoApiVersion.V3);
+    }
+
+    @Test
+    void createConclusions_forwardsBodyAndNoPathVars() {
+        CapturingProvider provider = newFixture();
+        Object body = Map.of("conclusions", List.of(Map.of("content", "x")));
+
+        clientOf(provider).createConclusions(CTX, body);
+
+        assertThat(provider.lastOp).isEqualTo(HonchoOperation.CREATE_CONCLUSIONS);
+        assertThat(provider.lastPathVars).isNull();
+        assertThat(provider.lastBody).isSameAs(body);
+    }
+
+    @Test
+    void deleteConclusion_forwardsConclusionIdAndNoBody() {
+        CapturingProvider provider = newFixture();
+
+        clientOf(provider).deleteConclusion(CTX, "c-99");
+
+        assertThat(provider.lastOp).isEqualTo(HonchoOperation.DELETE_CONCLUSION);
+        assertThat(provider.lastPathVars)
+            .containsOnlyKeys("conclusionId")
+            .containsEntry("conclusionId", "c-99");
+        assertThat(provider.lastBody).isNull();
     }
 
     @Test

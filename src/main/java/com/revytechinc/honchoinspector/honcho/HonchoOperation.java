@@ -46,6 +46,9 @@ public enum HonchoOperation {
     /** POST {@code /api/peers/{id}/conclusions/query} → POST {@code /v3/workspaces/{ws}/peers/{id}/conclusions/query}. */
     QUERY_PEER_CONCLUSIONS,
 
+    /** PUT {@code /api/peers/{id}} → PUT {@code /v3/workspaces/{ws}/peers/{id}}. */
+    UPDATE_PEER,
+
     /** GET {@code /api/sessions} → GET {@code /v3/workspaces/{ws}/sessions}. */
     LIST_SESSIONS,
 
@@ -58,11 +61,17 @@ public enum HonchoOperation {
     /** DELETE {@code /api/sessions/{id}} → DELETE {@code /v3/workspaces/{ws}/sessions/{id}}. */
     DELETE_SESSION,
 
+    /** PUT {@code /api/sessions/{id}} → PUT {@code /v3/workspaces/{ws}/sessions/{id}}. */
+    UPDATE_SESSION,
+
     /** GET {@code /api/sessions/{id}/messages} → GET {@code /v3/workspaces/{ws}/sessions/{id}/messages}. */
     LIST_SESSION_MESSAGES,
 
     /** POST {@code /api/sessions/{id}/messages} → POST {@code /v3/workspaces/{ws}/sessions/{id}/messages}. */
     ADD_MESSAGE,
+
+    /** PUT {@code /api/sessions/{sid}/messages/{mid}} → PUT {@code /v3/workspaces/{ws}/sessions/{sid}/messages/{mid}}. */
+    UPDATE_MESSAGE,
 
     /** GET {@code /api/sessions/{id}/context} → GET {@code /v3/workspaces/{ws}/sessions/{id}/context}. */
     GET_SESSION_CONTEXT,
@@ -86,5 +95,11 @@ public enum HonchoOperation {
     SCHEDULE_DREAM,
 
     /** GET {@code /api/workspace/info} → GET {@code /v3/workspaces/{ws}}. */
-    GET_WORKSPACE_INFO
+    GET_WORKSPACE_INFO,
+
+    /** POST {@code /api/conclusions/create} → POST {@code /v3/workspaces/{ws}/conclusions}. */
+    CREATE_CONCLUSIONS,
+
+    /** DELETE {@code /api/conclusions/{id}} → DELETE {@code /v3/workspaces/{ws}/conclusions/{id}}. */
+    DELETE_CONCLUSION
 }

@@ -63,6 +63,7 @@ public class SessionsProviderV3 implements HonchoProvider {
             HonchoOperation.CREATE_SESSION,
             HonchoOperation.GET_SESSION,
             HonchoOperation.DELETE_SESSION,
+            HonchoOperation.UPDATE_SESSION,
             HonchoOperation.GET_SESSION_CONTEXT,
             HonchoOperation.GET_SESSION_SUMMARIES,
             HonchoOperation.GET_SESSION_PEERS
@@ -79,7 +80,7 @@ public class SessionsProviderV3 implements HonchoProvider {
         return switch (op) {
             case LIST_SESSIONS -> "workspaces/{ws}/sessions/list";
             case CREATE_SESSION -> "workspaces/{ws}/sessions";
-            case DELETE_SESSION -> "workspaces/{ws}/sessions/{sessionId}";
+            case DELETE_SESSION, UPDATE_SESSION -> "workspaces/{ws}/sessions/{sessionId}";
             // GET_SESSION shares LIST_SESSIONS's path so we can use the
             // list-then-filter endpoint to look up a single session.
             case GET_SESSION -> "workspaces/{ws}/sessions/list";
@@ -102,6 +103,7 @@ public class SessionsProviderV3 implements HonchoProvider {
                  GET_SESSION_SUMMARIES,
                  GET_SESSION_PEERS -> HttpMethod.GET;
             case DELETE_SESSION -> HttpMethod.DELETE;
+            case UPDATE_SESSION -> HttpMethod.PUT;
             default -> throw new UnsupportedOperationException(
                 "SessionsProviderV3 has no HTTP method for " + op);
         };

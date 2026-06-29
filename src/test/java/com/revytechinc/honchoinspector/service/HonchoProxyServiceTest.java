@@ -290,6 +290,19 @@ class HonchoProxyServiceTest {
     }
 
     @Test
+    void typed_updatePeer_passesPeerIdAndBody() {
+        HonchoClientFactory factory = v3Factory();
+        HonchoProxyService svc = service(factory);
+        Object update = Map.of("metadata", Map.of("k", "v"));
+
+        svc.updatePeer(CTX_V3, "p-1", update);
+
+        verify(clientOf(factory)).call(
+            HonchoOperation.UPDATE_PEER, CTX_V3, update, Map.of("peerId", "p-1"), null
+        );
+    }
+
+    @Test
     void typed_getPeerRepresentation_passesPeerIdAndBody() {
         HonchoClientFactory factory = v3Factory();
         HonchoProxyService svc = service(factory);
@@ -484,6 +497,19 @@ class HonchoProxyServiceTest {
     }
 
     @Test
+    void typed_updateSession_passesSessionIdAndBody() {
+        HonchoClientFactory factory = v3Factory();
+        HonchoProxyService svc = service(factory);
+        Object update = Map.of("metadata", Map.of("k", "v"));
+
+        svc.updateSession(CTX_V3, "s-7", update);
+
+        verify(clientOf(factory)).call(
+            HonchoOperation.UPDATE_SESSION, CTX_V3, update, Map.of("sessionId", "s-7"), null
+        );
+    }
+
+    @Test
     void typed_listSessionMessages_passesSessionIdAndFilters() {
         HonchoClientFactory factory = v3Factory();
         HonchoProxyService svc = service(factory);
@@ -507,6 +533,25 @@ class HonchoProxyServiceTest {
         verify(clientOf(factory)).call(
             HonchoOperation.ADD_MESSAGE, CTX_V3, body, Map.of("sessionId", "s-7"), null
         );
+    }
+
+    @Test
+    void typed_updateMessage_passesSessionIdMessageIdAndBody() {
+        HonchoClientFactory factory = v3Factory();
+        HonchoProxyService svc = service(factory);
+        Object body = Map.of("metadata", Map.of("k", "v"));
+
+        svc.updateMessage(CTX_V3, "s-7", "m-9", body);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, String>> pathCap = ArgumentCaptor.forClass(Map.class);
+        verify(clientOf(factory)).call(
+            eq(HonchoOperation.UPDATE_MESSAGE), eq(CTX_V3), eq(body), pathCap.capture(), isNull()
+        );
+        assertThat(pathCap.getValue())
+            .containsEntry("sessionId", "s-7")
+            .containsEntry("messageId", "m-9")
+            .containsOnlyKeys("sessionId", "messageId");
     }
 
     @Test
@@ -653,6 +698,33 @@ class HonchoProxyServiceTest {
 
         verify(clientOf(factory)).call(
             HonchoOperation.GET_WORKSPACE_INFO, CTX_V3, null, null, null
+        );
+    }
+
+    @Test
+    void typed_createConclusions_passesBody() {
+        HonchoClientFactory factory = v3Factory();
+        HonchoProxyService svc = service(factory);
+        Object body = Map.of("conclusions", List.of(
+            Map.of("content", "a", "observer_id", "alice", "observed_id", "bob")
+        ));
+
+        svc.createConclusions(CTX_V3, body);
+
+        verify(clientOf(factory)).call(
+            HonchoOperation.CREATE_CONCLUSIONS, CTX_V3, body, null, null
+        );
+    }
+
+    @Test
+    void typed_deleteConclusion_passesConclusionId() {
+        HonchoClientFactory factory = v3Factory();
+        HonchoProxyService svc = service(factory);
+
+        svc.deleteConclusion(CTX_V3, "c-99");
+
+        verify(clientOf(factory)).call(
+            HonchoOperation.DELETE_CONCLUSION, CTX_V3, null, Map.of("conclusionId", "c-99"), null
         );
     }
 

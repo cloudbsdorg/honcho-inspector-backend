@@ -108,23 +108,28 @@ class HonchoProviderRegistryTest {
 
     /**
      * Build the 9 V3 providers matching the layout the real T10–T13
-     * implementations will produce. 5 + 4 + 1 + 4 + 2 + 4 + 2 + 1 + 1 = 24 ops,
+     * implementations will produce. 6 + 4 + 3 + 5 + 3 + 4 + 2 + 1 + 1 = 29 ops,
      * matching {@link HonchoOperation#values()} count. {@code LIST_PEER_CONCLUSIONS}
      * moved to its own single-op provider (ConclusionsProviderV3) because the
      * v3 endpoint is at the workspace level.
      */
-    private static List<HonchoProvider> nineV3ProvidersCoveringAll24Ops() {
+    private static List<HonchoProvider> nineV3ProvidersCoveringAll29Ops() {
         return List.of(
             v3(EnumSet.of(HonchoOperation.LIST_PEERS, HonchoOperation.CREATE_PEER,
+                HonchoOperation.UPDATE_PEER,
                 HonchoOperation.GET_PEER_CARD, HonchoOperation.UPDATE_PEER_CARD,
                 HonchoOperation.GET_REPRESENTATION)),
             v3(EnumSet.of(HonchoOperation.PEER_CHAT, HonchoOperation.SEARCH_PEERS,
                 HonchoOperation.LIST_PEER_SESSIONS,
                 HonchoOperation.QUERY_PEER_CONCLUSIONS)),
-            v3(EnumSet.of(HonchoOperation.LIST_PEER_CONCLUSIONS)),
+            v3(EnumSet.of(HonchoOperation.LIST_PEER_CONCLUSIONS,
+                HonchoOperation.CREATE_CONCLUSIONS,
+                HonchoOperation.DELETE_CONCLUSION)),
             v3(EnumSet.of(HonchoOperation.LIST_SESSIONS, HonchoOperation.CREATE_SESSION,
-                HonchoOperation.GET_SESSION, HonchoOperation.DELETE_SESSION)),
-            v3(EnumSet.of(HonchoOperation.LIST_SESSION_MESSAGES, HonchoOperation.ADD_MESSAGE)),
+                HonchoOperation.GET_SESSION, HonchoOperation.DELETE_SESSION,
+                HonchoOperation.UPDATE_SESSION)),
+            v3(EnumSet.of(HonchoOperation.LIST_SESSION_MESSAGES, HonchoOperation.ADD_MESSAGE,
+                HonchoOperation.UPDATE_MESSAGE)),
             v3(EnumSet.of(HonchoOperation.GET_SESSION_CONTEXT, HonchoOperation.GET_SESSION_SUMMARIES,
                 HonchoOperation.GET_SESSION_PEERS, HonchoOperation.SEARCH_SESSION_MESSAGES)),
             v3(EnumSet.of(HonchoOperation.GET_WORKSPACE_INFO, HonchoOperation.GET_QUEUE_STATUS)),
@@ -135,9 +140,9 @@ class HonchoProviderRegistryTest {
 
     @Test
     void filtersByVersion() {
-        // Mix 9 V3 providers (covering all 24 ops) with one V4-only provider.
+        // Mix 9 V3 providers (covering all 29 ops) with one V4-only provider.
         // A V3 registry must include only the V3 ones.
-        List<HonchoProvider> all = new ArrayList<>(nineV3ProvidersCoveringAll24Ops());
+        List<HonchoProvider> all = new ArrayList<>(nineV3ProvidersCoveringAll29Ops());
         all.add(v4(EnumSet.of(HonchoOperation.GET_WORKSPACE_INFO)));
 
         HonchoProviderRegistry v3Registry = new HonchoProviderRegistry(HonchoApiVersion.V3, all);

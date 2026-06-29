@@ -75,6 +75,7 @@ public class MessagesProviderV3 implements HonchoProvider {
         return EnumSet.of(
             HonchoOperation.LIST_SESSION_MESSAGES,
             HonchoOperation.ADD_MESSAGE,
+            HonchoOperation.UPDATE_MESSAGE,
             HonchoOperation.SEARCH_SESSION_MESSAGES
         );
     }
@@ -89,6 +90,7 @@ public class MessagesProviderV3 implements HonchoProvider {
         return switch (op) {
             case LIST_SESSION_MESSAGES -> "workspaces/{ws}/sessions/{sessionId}/messages/list";
             case ADD_MESSAGE -> "workspaces/{ws}/sessions/{sessionId}/messages";
+            case UPDATE_MESSAGE -> "workspaces/{ws}/sessions/{sessionId}/messages/{messageId}";
             case SEARCH_SESSION_MESSAGES -> "workspaces/{ws}/sessions/{sessionId}/search";
             default -> throw new UnsupportedOperationException(
                 "MessagesProviderV3 has no path template for " + op);
@@ -99,6 +101,7 @@ public class MessagesProviderV3 implements HonchoProvider {
     public HttpMethod httpMethod(HonchoOperation op) {
         return switch (op) {
             case LIST_SESSION_MESSAGES, ADD_MESSAGE, SEARCH_SESSION_MESSAGES -> HttpMethod.POST;
+            case UPDATE_MESSAGE -> HttpMethod.PUT;
             default -> throw new UnsupportedOperationException(
                 "MessagesProviderV3 has no HTTP method for " + op);
         };
