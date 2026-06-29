@@ -802,6 +802,55 @@ paths:
             '*/*':
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /api/peers/{peerId}/chat/stream:
+    post:
+      tags:
+      - honcho-proxy
+      summary: Stream a chat reply from a peer
+      description: 'Proxies `POST /v3/workspaces/{workspaceId}/peers/{peerId}/chat`
+        with `Accept: text/event-stream`. Reads Honcho''s SSE chunks line by line,
+        strips `...` chain-of-thought blocks, and emits one `{data, error, meta}`
+        envelope per chunk as `data: {...}\n\n`. Terminal event:
+        `data: {data:{text:""}, meta:{done:true}}\n\n`. Recorded in the audit
+        log as `chat.stream` AFTER the upstream response completes.
+
+        '
+      operationId: peerChatStream
+      parameters:
+      - name: peerId
+        in: path
+        description: Honcho peer id
+        required: true
+        schema:
+          type: string
+        example: alice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: 'Stream of per-chunk SSE envelopes. Each event is one envelope
+            shaped `{data:{text:"<visible>"}, error:null, meta:{done:false, peerId:<peerId>}}`
+            and is terminated by a final `{data:{text:""}, error:null, meta:{done:true}}`.'
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '400':
+          description: Missing `X-Honcho-Profile-Id` header
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Profile not found / not owned by current user
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /api/peers/{peerId}/search:
     post:
       tags:
