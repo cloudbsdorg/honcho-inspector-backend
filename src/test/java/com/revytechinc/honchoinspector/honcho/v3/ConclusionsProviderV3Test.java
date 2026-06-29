@@ -53,9 +53,15 @@ class ConclusionsProviderV3Test {
     }
 
     @Test
-    void buildFiltersBody_wrapsFlatFiltersInEnvelope() {
+    void buildFiltersBody_wrapsFlatFiltersInEnvelope_andFiltersToWhitelist() {
+        // The whitelist excludes fields that Honcho v3 doesn't know
+        // about (e.g. "size" / "limit" are PAGE envelope fields, not
+        // filter columns — forwarding them triggers 422 "Column size
+        // does not exist on Document"). observed_id is filled in from
+        // the peerId path variable so callers can target a specific
+        // peer without spelling it out in the body.
         Map<String, Object> body = ConclusionsProviderV3.buildFiltersBody(
-            Map.of("size", 10),
+            Map.of("observed_id", "alice", "size", 10, "garbage_key", "x"),
             null,
             Map.of("peerId", "p-99")
         );
@@ -63,19 +69,60 @@ class ConclusionsProviderV3Test {
         @SuppressWarnings("unchecked")
         Map<String, Object> filters = (Map<String, Object>) body.get("filters");
         assertThat(filters)
-            .containsEntry("size", 10)
-            .containsEntry("observed_id", "p-99");
+            .as("Only whitelisted filter keys survive; peerId fills observed_id when absent")
+            .containsEntry("observed_id", "alice")
+            .doesNotContainKey("size")
+            .doesNotContainKey("garbage_key");
+        assertThat(filters.get("observed_id")).isEqualTo("alice");
     }
 
     @Test
-    void buildFiltersBody_passesPreWrappedBodyThroughVerbatim() {
+    void buildFiltersBody_passesPreWrappedBodyThroughVerbatimButStillFiltersUnwhitelistedKeys() {
+        // PreWrapped body: the wrapper's inner filters map is passed
+        // through verbatim (caller might be using a custom Honcho key
+        // the proxy doesn't know about), but observed_id is backfilled
+        // from pathVars IF absent — the controller's contract says
+        // "POST {} and get a peer's full list", and that path needs
+        // observed_id to be set somewhere.
         Map<String, Object> preWrapped = Map.of(
-            "filters", Map.of("observer_id", "p-1", "size", 5)
+            "filters", Map.of("observer_id", "p-1", "size", 5, "garbage_key", "x")
         );
         Map<String, Object> body = ConclusionsProviderV3.buildFiltersBody(
             preWrapped, null, Map.of("peerId", "p-99")
         );
-        assertThat(body).isSameAs(preWrapped);
+        // Inner filters map is preserved + observed_id is backfilled.
+        // The OUTER map is a different object (we had to rebuild it
+        // to update the inner).
+        assertThat(body).isNotSameAs(preWrapped);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> filters = (Map<String, Object>) body.get("filters");
+        assertThat(filters)
+            .containsEntry("observer_id", "p-1")
+            .containsEntry("size", 5)
+            .containsEntry("garbage_key", "x")
+            .containsEntry("observed_id", "p-99");
+    }
+
+    @Test
+    void buildFiltersBody_preWrappedDoesNotBackfillWhenObservedIdPresent() {
+        // If the caller already specified observed_id, the proxy
+        // should NOT backfill — the caller is the source of truth.
+        // The preWrapped body is preserved verbatim (size flows
+        // through here because it's a preWrapped case; only the FLAT
+        // body path applies the whitelist).
+        Map<String, Object> preWrapped = Map.of(
+            "filters", Map.of("observed_id", "alice", "size", 5)
+        );
+        Map<String, Object> body = ConclusionsProviderV3.buildFiltersBody(
+            preWrapped, null, Map.of("peerId", "p-99")
+        );
+        @SuppressWarnings("unchecked")
+        Map<String, Object> filters = (Map<String, Object>) body.get("filters");
+        assertThat(filters).containsEntry("observed_id", "alice");
+        // observed_id is alice (caller's value), NOT p-99 (pathVar).
+        assertThat(filters.get("observed_id")).isEqualTo("alice");
+        // The whole body is unchanged (no backfill needed).
+        assertThat(body).isEqualTo(preWrapped);
     }
 
     @Test
@@ -87,6 +134,22 @@ class ConclusionsProviderV3Test {
         @SuppressWarnings("unchecked")
         Map<String, Object> filters = (Map<String, Object>) body.get("filters");
         assertThat(filters).isEmpty();
+    }
+
+    @Test
+    void buildFiltersBody_includesObservedIdFromPathVarWhenAbsent() {
+        // pathVars is the canonical way to target a specific peer; if
+        // the caller doesn't spell out observed_id we backfill it from
+        // the path variable. This matches the controller's documented
+        // "POST {} and get the peer's full list" path.
+        Map<String, Object> body = ConclusionsProviderV3.buildFiltersBody(
+            Map.of(),
+            null,
+            Map.of("peerId", "p-42")
+        );
+        @SuppressWarnings("unchecked")
+        Map<String, Object> filters = (Map<String, Object>) body.get("filters");
+        assertThat(filters).containsEntry("observed_id", "p-42");
     }
 
     private static ConclusionsProviderV3 newProvider() {

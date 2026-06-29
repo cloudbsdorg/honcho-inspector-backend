@@ -122,37 +122,92 @@ public class ConclusionsProviderV3 implements HonchoProvider {
      * envelope.
      *
      * <p>If the caller already passed a {@link Map} that has a {@code filters}
-     * key, use it verbatim. Otherwise treat the caller-supplied map as a
-     * flat filter set (the controller's typical path), and fall back on
-     * any query params + the {@code {peerId}} path variable (so callers
-     * can target a specific peer via {@code ?observed_id=alice}) when the
-     * map is absent.
+     * key, we sanitize it (drop unknown keys, add {@code observed_id}
+     * from the path variable). Otherwise treat the caller-supplied map as
+     * a flat filter set, sanitize, and fall back on any query params +
+     * the {@code {peerId}} path variable (so callers can target a specific
+     * peer via {@code ?observed_id=alice}).
+     *
+     * <p>The whitelist is critical: Honcho v3 returns 422
+     * "Column <name> does not exist on Document" for any filter key
+     * that is not a real Mongo column on the Conclusion document
+     * (observed_id, observer_id, session_id, content, created_at,
+     * id). The frontend sometimes sends extra fields like {@code size}
+     * or {@code limit} that look like they belong in the filter but
+     * actually belong on the PAGE envelope, not in the filter object.
+     * Forwarding them to Honcho triggers a confusing 422.
      */
+    private static final Set<String> ALLOWED_FILTER_KEYS = Set.of(
+        "observed_id",
+        "observer_id",
+        "session_id",
+        "content",
+        "created_at_start",
+        "created_at_end"
+    );
+
     static Map<String, Object> buildFiltersBody(
         Object requestBody,
         Map<String, ?> queryParams,
         Map<String, String> pathVars
     ) {
+        // PreWrapped body: the caller explicitly wrapped the request in
+        // Honcho's {filters:{...}} envelope, so they know what they're
+        // doing. Pass the inner map through verbatim — the caller is
+        // responsible for not adding bogus keys, and we don't want
+        // to mutate the caller's explicit shape. observed_id is the
+        // only thing we backfill here (from peerId), because it's
+        // structurally required by the controller's "POST {} and get a
+        // peer's list" contract.
         if (requestBody instanceof Map<?, ?> raw && raw.containsKey("filters")
             && raw.get("filters") instanceof Map<?, ?>) {
-            @SuppressWarnings("unchecked")
-            Map<String, Object> typed = (Map<String, Object>) raw;
-            return typed;
+            Map<String, Object> out = new LinkedHashMap<String, Object>();
+            for (Map.Entry<?, ?> e : ((Map<?, ?>) raw).entrySet()) {
+                if (e.getKey() instanceof String && e.getValue() != null) {
+                    out.put((String) e.getKey(), e.getValue());
+                }
+            }
+            if (pathVars != null && pathVars.get("peerId") != null
+                && out.get("filters") instanceof Map<?, ?> filtersMap
+                && !filtersMap.containsKey("observed_id")) {
+                Map<String, Object> newFilters = new LinkedHashMap<String, Object>();
+                for (Map.Entry<?, ?> e : ((Map<?, ?>) filtersMap).entrySet()) {
+                    if (e.getKey() instanceof String && e.getValue() != null) {
+                        newFilters.put((String) e.getKey(), e.getValue());
+                    }
+                }
+                newFilters.put("observed_id", pathVars.get("peerId"));
+                out.put("filters", newFilters);
+            }
+            return out;
         }
+
+        // Flat body: this is the case where the bug appeared. Apply the
+        // whitelist so callers can pass extra fields (size, limit, page)
+        // that the proxy doesn't recognize, without triggering a 422 from
+        // Honcho's column-type validation. The whitelist covers all known
+        // v3 Conclusion filter columns; unknown keys are silently dropped.
         Map<String, Object> filters = new LinkedHashMap<>();
-        if (requestBody instanceof Map<?, ?> flat) {
-            for (Map.Entry<?, ?> e : flat.entrySet()) {
-                if (e.getValue() != null && e.getKey() != null) {
+        java.util.function.Consumer<Map<?, ?>> ingest = (src) -> {
+            if (src == null) return;
+            for (Map.Entry<?, ?> e : src.entrySet()) {
+                if (e.getValue() != null && e.getKey() != null
+                    && ALLOWED_FILTER_KEYS.contains(e.getKey().toString())) {
                     filters.put(e.getKey().toString(), e.getValue());
                 }
             }
+        };
+
+        if (requestBody instanceof Map<?, ?> flat) {
+            ingest.accept(flat);
         }
         if (queryParams != null) {
-            for (Map.Entry<String, ?> e : queryParams.entrySet()) {
-                if (e.getValue() != null) filters.put(e.getKey(), e.getValue());
-            }
+            ingest.accept(queryParams);
         }
         if (pathVars != null && pathVars.get("peerId") != null) {
+            // /conclusions is workspace-scoped; the per-peer list is
+            // expressed as observed_id = peerId. Fill in if the caller
+            // omitted it.
             filters.putIfAbsent("observed_id", pathVars.get("peerId"));
         }
         return Map.of("filters", filters);
