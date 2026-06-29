@@ -1,5 +1,6 @@
 package com.revytechinc.honchoinspector.controller;
 
+import com.revytechinc.honchoinspector.auth.AdminAudit;
 import com.revytechinc.honchoinspector.auth.AuthService;
 import com.revytechinc.honchoinspector.auth.ProfileService;
 import com.revytechinc.honchoinspector.config.HonchoProperties;
@@ -25,11 +26,13 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 @RestController
@@ -49,11 +52,18 @@ public class HonchoController {
     private final HonchoProxyService honcho;
     private final ProfileService profiles;
     private final HonchoProperties properties;
+    private final AdminAudit audit;
 
-    public HonchoController(HonchoProxyService honcho, ProfileService profiles, HonchoProperties properties) {
+    public HonchoController(
+        HonchoProxyService honcho,
+        ProfileService profiles,
+        HonchoProperties properties,
+        AdminAudit audit
+    ) {
         this.honcho = honcho;
         this.profiles = profiles;
         this.properties = properties;
+        this.audit = audit;
     }
 
     @GetMapping("/peers")
@@ -110,10 +120,10 @@ public class HonchoController {
         return call(req, (ctx, ws) -> honcho.getPeerCard(ctx, peerId));
     }
 
-    @PostMapping("/peers/{peerId}/card")
+    @PutMapping("/peers/{peerId}/card")
     @Operation(
         summary = "Replace a peer's card",
-        description = "Proxies `POST /v3/workspaces/{workspaceId}/peers/{peerId}/card`. The body (an array of fact strings) is forwarded to Honcho."
+        description = "Proxies `PUT /v3/workspaces/{workspaceId}/peers/{peerId}/card`. The body (an array of fact strings) is forwarded to Honcho. Recorded in the audit log as `peer_card.update` on success."
     )
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Honcho response"),
@@ -128,7 +138,41 @@ public class HonchoController {
         @PathVariable String peerId,
         @RequestBody Object body
     ) {
-        return call(req, (ctx, ws) -> honcho.updatePeerCard(ctx, peerId, body));
+        Map<String, Object> metadata = Map.of("peerId", peerId, "factCount", body instanceof java.util.List<?> l ? l.size() : -1);
+        return auditAndCall(
+            req,
+            "peer_card.update",
+            "peer_card:" + peerId,
+            (ctx, ws) -> honcho.updatePeerCard(ctx, peerId, body),
+            metadata
+        );
+    }
+
+    @PutMapping("/peers/{peerId}")
+    @Operation(
+        summary = "Update an existing peer",
+        description = "Proxies `PUT /v3/workspaces/{workspaceId}/peers/{peerId}`. Body (Honcho v3 `PeerUpdate` shape) is forwarded to Honcho. Recorded in the audit log as `peer.update` on success."
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Honcho response (updated peer record)"),
+        @ApiResponse(responseCode = "400", description = "Missing `X-Honcho-Profile-Id` header",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "404", description = "Profile not found / not owned by current user",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    public ResponseEntity<?> updatePeer(
+        HttpServletRequest req,
+        @Parameter(description = "Honcho peer id", example = "alice")
+        @PathVariable String peerId,
+        @RequestBody Object body
+    ) {
+        return auditAndCall(
+            req,
+            "peer.update",
+            "peer:" + peerId,
+            (ctx, ws) -> honcho.updatePeer(ctx, peerId, body),
+            Map.of("peerId", peerId)
+        );
     }
 
     @PostMapping("/peers/{peerId}/representation")
@@ -234,6 +278,59 @@ public class HonchoController {
         return call(req, (ctx, ws) -> honcho.listWorkspaceConclusions(ctx, body));
     }
 
+    @PostMapping("/conclusions/create")
+    @Operation(
+        summary = "Batch-create conclusions in the workspace",
+        description = "Proxies `POST /v3/workspaces/{workspaceId}/conclusions`. Body should be Honcho's `ConclusionBatchCreate` envelope: `{conclusions: [{content, observer_id, observed_id, session_id?}, ...]}` with up to 100 conclusions per call. The body is forwarded to Honcho verbatim — no field rewriting happens. Recorded in the audit log as `conclusion.create` on success; the `conclusionCount` metadata records how many were included in the batch. NOTE: the conclusion content itself is NOT echoed to the audit table (PII)."
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Honcho response (a `Page<Conclusion>` envelope with the created rows)"),
+        @ApiResponse(responseCode = "400", description = "Missing `X-Honcho-Profile-Id` header",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "404", description = "Profile not found / not owned by current user",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    public ResponseEntity<?> createConclusions(
+        HttpServletRequest req,
+        @RequestBody Object body
+    ) {
+        int count = (body instanceof Map<?, ?> m && m.get("conclusions") instanceof java.util.List<?> l) ? l.size() : -1;
+        Map<String, Object> metadata = Map.of("conclusionCount", count);
+        return auditAndCall(
+            req,
+            "conclusion.create",
+            "conclusion",
+            (ctx, ws) -> honcho.createConclusions(ctx, body),
+            metadata
+        );
+    }
+
+    @DeleteMapping("/conclusions/{conclusionId}")
+    @Operation(
+        summary = "Delete a single conclusion by id",
+        description = "Proxies `DELETE /v3/workspaces/{workspaceId}/conclusions/{conclusionId}`. Honcho returns 204 No Content on success. Recorded in the audit log as `conclusion.delete` on success."
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Honcho response (typically empty on success)"),
+        @ApiResponse(responseCode = "400", description = "Missing `X-Honcho-Profile-Id` header",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "404", description = "Profile not found / not owned by current user",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    public ResponseEntity<?> deleteConclusion(
+        HttpServletRequest req,
+        @Parameter(description = "Honcho conclusion id", example = "concl_abc123")
+        @PathVariable String conclusionId
+    ) {
+        return auditAndCall(
+            req,
+            "conclusion.delete",
+            "conclusion:" + conclusionId,
+            (ctx, ws) -> honcho.deleteConclusion(ctx, conclusionId),
+            Map.of("conclusionId", conclusionId)
+        );
+    }
+
     @GetMapping("/peers/{peerId}/sessions")
     @Operation(
         summary = "List sessions a peer participates in",
@@ -334,7 +431,7 @@ public class HonchoController {
     @DeleteMapping("/sessions/{sessionId}")
     @Operation(
         summary = "Delete a session",
-        description = "Proxies `DELETE /v3/workspaces/{workspaceId}/sessions/{sessionId}`."
+        description = "Proxies `DELETE /v3/workspaces/{workspaceId}/sessions/{sessionId}`. Recorded in the audit log as `session.delete` on success."
     )
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Honcho response (typically empty on success)"),
@@ -348,7 +445,40 @@ public class HonchoController {
         @Parameter(description = "Honcho session id", example = "sess_abc123")
         @PathVariable String sessionId
     ) {
-        return call(req, (ctx, ws) -> honcho.deleteSession(ctx, sessionId));
+        return auditAndCall(
+            req,
+            "session.delete",
+            "session:" + sessionId,
+            (ctx, ws) -> honcho.deleteSession(ctx, sessionId),
+            Map.of("sessionId", sessionId)
+        );
+    }
+
+    @PutMapping("/sessions/{sessionId}")
+    @Operation(
+        summary = "Update an existing session",
+        description = "Proxies `PUT /v3/workspaces/{workspaceId}/sessions/{sessionId}`. Body (Honcho v3 `SessionUpdate` shape — e.g. `{metadata, configuration}`) is forwarded to Honcho. Recorded in the audit log as `session.update` on success."
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Honcho response (updated session record)"),
+        @ApiResponse(responseCode = "400", description = "Missing `X-Honcho-Profile-Id` header",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "404", description = "Profile not found / not owned by current user",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    public ResponseEntity<?> updateSession(
+        HttpServletRequest req,
+        @Parameter(description = "Honcho session id", example = "sess_abc123")
+        @PathVariable String sessionId,
+        @RequestBody Object body
+    ) {
+        return auditAndCall(
+            req,
+            "session.update",
+            "session:" + sessionId,
+            (ctx, ws) -> honcho.updateSession(ctx, sessionId, body),
+            Map.of("sessionId", sessionId)
+        );
     }
 
     @GetMapping("/sessions/{sessionId}/messages")
@@ -392,6 +522,35 @@ public class HonchoController {
         @RequestBody Object body
     ) {
         return call(req, (ctx, ws) -> honcho.addMessage(ctx, sessionId, body));
+    }
+
+    @PutMapping("/sessions/{sessionId}/messages/{messageId}")
+    @Operation(
+        summary = "Update a single message in a session",
+        description = "Proxies `PUT /v3/workspaces/{workspaceId}/sessions/{sessionId}/messages/{messageId}`. Body (Honcho v3 `MessageUpdate` shape — typically `{metadata}` or `{content}`) is forwarded to Honcho. The body is NOT echoed in the audit record — only the message id and a body length are. Recorded in the audit log as `message.update` on success."
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Honcho response (updated message record)"),
+        @ApiResponse(responseCode = "400", description = "Missing `X-Honcho-Profile-Id` header",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "404", description = "Profile not found / not owned by current user",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    public ResponseEntity<?> updateMessage(
+        HttpServletRequest req,
+        @Parameter(description = "Honcho session id", example = "sess_abc123")
+        @PathVariable String sessionId,
+        @Parameter(description = "Honcho message id", example = "msg_def456")
+        @PathVariable String messageId,
+        @RequestBody Object body
+    ) {
+        return auditAndCall(
+            req,
+            "message.update",
+            "message:" + messageId,
+            (ctx, ws) -> honcho.updateMessage(ctx, sessionId, messageId, body),
+            Map.of("sessionId", sessionId, "messageId", messageId)
+        );
     }
 
     @GetMapping("/sessions/{sessionId}/context")
@@ -581,6 +740,94 @@ public class HonchoController {
         } catch (Exception e) {
             return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
         }
+    }
+
+    /**
+     * Wrap {@link #call(HttpServletRequest, HonchoCall)} so that a
+     * successful (2xx) upstream Honcho call also records an entry in the
+     * {@code audit_log} table via {@link AdminAudit#record}. Used on
+     * every write-path endpoint (PUT/POST/DELETE) so the admin audit
+     * surface has a permanent record of who did what, when.
+     *
+     * <p>The audit record is fire-and-forget — {@link AdminAudit#record}
+     * already swallows {@code JacksonException} and {@code RuntimeException}
+     * internally, so a broken audit table can never raise an exception
+     * out of this method (it might log a WARN, which is the correct
+     * behavior for an audit-trail anomaly).
+     *
+     * <p>Audit is recorded <strong>only on 2xx</strong>. We don't want
+     * failed/attempted (4xx) calls in the audit trail — they represent
+     * attempts that did not actually mutate Honcho state, and a noisy
+     * audit table dilutes signal. The upstream Honcho status is forwarded
+     * to the client as-is via {@link #call} so the operator still sees
+     * the failure.
+     *
+     * @param req the inbound HTTP request (used to read session + IP)
+     * @param action short free-text audit action (e.g. {@code peer.update})
+     * @param targetResource the free-form resource identifier (e.g.
+     *                       {@code peer:<peerId>}). Must be non-blank.
+     * @param call the upstream dispatch lambda (built from the typed
+     *             convenience methods on {@link HonchoProxyService})
+     * @param metadata extra non-PII context for the audit row
+     *                 (e.g. {@code {"peerId": "p-1"}})
+     */
+    private ResponseEntity<?> auditAndCall(
+        HttpServletRequest req,
+        String action,
+        String targetResource,
+        HonchoCall call,
+        Map<String, ?> metadata
+    ) {
+        ResponseEntity<?> result = call(req, call);
+        if (result.getStatusCode().is2xxSuccessful()) {
+            var current = (AuthService.CurrentUser) req.getAttribute(SessionAuthFilter.CURRENT_USER_ATTR);
+            String actorId = current != null && current.user() != null ? current.user().id() : null;
+            String sessionId = req.getHeader(SessionAuthFilter.SESSION_HEADER);
+            String ip = resolveClientIp(req);
+            // Wrap metadata in a LinkedHashMap so AdminAudit (which calls
+            // ObjectMapper.writeValueAsString on its 7th argument) sees a
+            // JSON-serializable map. Map.of() returns an immutable
+            // empty-map; passing a populated immutable Map.of() works
+            // because Jackson can serialize any Map. Using a
+            // LinkedHashMap here keeps a stable key order in the
+            // serialized audit JSON for human inspection.
+            Map<String, Object> serializableMetadata;
+            if (metadata == null) {
+                serializableMetadata = new LinkedHashMap<>();
+            } else if (metadata instanceof LinkedHashMap) {
+                serializableMetadata = (LinkedHashMap<String, Object>) metadata;
+            } else {
+                serializableMetadata = new LinkedHashMap<>(metadata);
+            }
+            audit.record(
+                actorId,
+                action,
+                null,
+                targetResource,
+                ip,
+                sessionId,
+                serializableMetadata
+            );
+        }
+        return result;
+    }
+
+    /**
+     * Best-effort client-IP resolution: honour the first hop in
+     * {@code X-Forwarded-For} when present (a Trust-Manager-style reverse
+     * proxy), fall back to {@link HttpServletRequest#getRemoteAddr()}
+     * otherwise. A blank header is ignored. Returns {@code null} only if
+     * both sources are unavailable — {@link AdminAudit#record} stores
+     * the {@code ip} column as nullable.
+     */
+    private static String resolveClientIp(HttpServletRequest req) {
+        String xff = req.getHeader("X-Forwarded-For");
+        if (xff != null && !xff.isBlank()) {
+            int comma = xff.indexOf(',');
+            String first = (comma >= 0 ? xff.substring(0, comma) : xff).trim();
+            if (!first.isEmpty()) return first;
+        }
+        return req.getRemoteAddr();
     }
 
     /**

@@ -1,6 +1,7 @@
 package com.revytechinc.honchoinspector.controller;
 
 import tools.jackson.databind.ObjectMapper;
+import com.revytechinc.honchoinspector.auth.AdminAudit;
 import com.revytechinc.honchoinspector.auth.AuthController;
 import com.revytechinc.honchoinspector.auth.PasswordHasher;
 import com.revytechinc.honchoinspector.auth.Profile;
@@ -36,6 +37,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -94,6 +96,7 @@ class HonchoControllerTest {
     @Autowired ProfileService profiles;
     @Autowired PasswordHasher hasher;
     @MockitoBean HonchoProxyService honchoProxy;
+    @MockitoBean AdminAudit adminAudit;
 
     private String sessionId;
     private String profileId;
@@ -159,6 +162,7 @@ class HonchoControllerTest {
         // capture a return value distinct from the marker.
         when(honchoProxy.listPeers(any(), any())).thenReturn(marker);
         when(honchoProxy.createPeer(any(), any())).thenReturn(marker);
+        when(honchoProxy.updatePeer(any(), any(), any())).thenReturn(marker);
         when(honchoProxy.getPeerCard(any(), any())).thenReturn(marker);
         when(honchoProxy.updatePeerCard(any(), any(), any())).thenReturn(marker);
         when(honchoProxy.getPeerRepresentation(any(), any(), any())).thenReturn(marker);
@@ -171,8 +175,10 @@ class HonchoControllerTest {
         when(honchoProxy.createSession(any(), any())).thenReturn(marker);
         when(honchoProxy.getSession(any(), any())).thenReturn(marker);
         when(honchoProxy.deleteSession(any(), any())).thenReturn(marker);
+        when(honchoProxy.updateSession(any(), any(), any())).thenReturn(marker);
         when(honchoProxy.listSessionMessages(any(), any(), any())).thenReturn(marker);
         when(honchoProxy.addMessage(any(), any(), any())).thenReturn(marker);
+        when(honchoProxy.updateMessage(any(), any(), any(), any())).thenReturn(marker);
         when(honchoProxy.getSessionContext(any(), any(), any(), any())).thenReturn(marker);
         when(honchoProxy.getSessionSummaries(any(), any())).thenReturn(marker);
         when(honchoProxy.getSessionPeers(any(), any())).thenReturn(marker);
@@ -181,6 +187,8 @@ class HonchoControllerTest {
         when(honchoProxy.searchMessages(any(), any())).thenReturn(marker);
         when(honchoProxy.scheduleDream(any(), any(), any())).thenReturn(marker);
         when(honchoProxy.getWorkspaceInfo(any())).thenReturn(marker);
+        when(honchoProxy.createConclusions(any(), any())).thenReturn(marker);
+        when(honchoProxy.deleteConclusion(any(), any())).thenReturn(marker);
     }
 
     // ------------------------------------------------------------------
@@ -256,12 +264,72 @@ class HonchoControllerTest {
         Object body = List.of("fact a", "fact b");
         when(honchoProxy.updatePeerCard(any(), eq("p-1"), eq(body))).thenReturn(body);
 
-        mvc.perform(withHeaders(post("/api/peers/p-1/card")
+        // Honcho v3 exposes this as PUT, so the proxy uses PutMapping.
+        mvc.perform(withHeaders(put("/api/peers/p-1/card")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(json.writeValueAsBytes(body))))
             .andExpect(status().isOk());
 
         verify(honchoProxy).updatePeerCard(any(), eq("p-1"), eq(body));
+    }
+
+    @Test
+    void updatePeerCard_auditsPeerCardUpdateOnSuccess() throws Exception {
+        Object body = List.of("fact a");
+        when(honchoProxy.updatePeerCard(any(), eq("p-1"), any())).thenReturn(body);
+
+        mvc.perform(withHeaders(put("/api/peers/p-1/card")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsBytes(body))))
+            .andExpect(status().isOk());
+
+        verify(adminAudit).record(
+            org.mockito.ArgumentMatchers.eq(profileOwnerId()),
+            org.mockito.ArgumentMatchers.eq("peer_card.update"),
+            org.mockito.ArgumentMatchers.isNull(),
+            org.mockito.ArgumentMatchers.eq("peer_card:p-1"),
+            org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.eq(sessionId),
+            org.mockito.ArgumentMatchers.argThat((java.util.Map<String, ?> m) ->
+                "p-1".equals(m.get("peerId")) && Integer.valueOf(1).equals(m.get("factCount"))
+            )
+        );
+    }
+
+    @Test
+    void updatePeer_delegatesToHonchoUpdatePeer() throws Exception {
+        Object body = Map.of("metadata", Map.of("k", "v"));
+        when(honchoProxy.updatePeer(any(), eq("p-1"), eq(body))).thenReturn(Map.of("id", "p-1"));
+
+        mvc.perform(withHeaders(put("/api/peers/p-1")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsBytes(body))))
+            .andExpect(status().isOk());
+
+        verify(honchoProxy).updatePeer(any(), eq("p-1"), eq(body));
+    }
+
+    @Test
+    void updatePeer_auditsPeerUpdateOnSuccess() throws Exception {
+        Object body = Map.of("metadata", Map.of("k", "v"));
+        when(honchoProxy.updatePeer(any(), eq("p-1"), any())).thenReturn(Map.of("id", "p-1"));
+
+        mvc.perform(withHeaders(put("/api/peers/p-1")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsBytes(body))))
+            .andExpect(status().isOk());
+
+        verify(adminAudit).record(
+            org.mockito.ArgumentMatchers.eq(profileOwnerId()),
+            org.mockito.ArgumentMatchers.eq("peer.update"),
+            org.mockito.ArgumentMatchers.isNull(),
+            org.mockito.ArgumentMatchers.eq("peer:p-1"),
+            org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.eq(sessionId),
+            org.mockito.ArgumentMatchers.argThat((java.util.Map<String, ?> m) ->
+                "p-1".equals(m.get("peerId"))
+            )
+        );
     }
 
     @Test
@@ -345,6 +413,77 @@ class HonchoControllerTest {
     }
 
     @Test
+    void createConclusions_delegatesToHonchoCreateConclusions() throws Exception {
+        Object body = Map.of("conclusions", List.of(
+            Map.of("content", "a", "observer_id", "alice", "observed_id", "bob"),
+            Map.of("content", "b", "observer_id", "alice", "observed_id", "bob")
+        ));
+        when(honchoProxy.createConclusions(any(), eq(body))).thenReturn(Map.of("items", "c"));
+
+        mvc.perform(withHeaders(post("/api/conclusions/create")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsBytes(body))))
+            .andExpect(status().isOk());
+
+        verify(honchoProxy).createConclusions(any(), eq(body));
+    }
+
+    @Test
+    void createConclusions_auditsConclusionCreateOnSuccess() throws Exception {
+        Object body = Map.of("conclusions", List.of(
+            Map.of("content", "a", "observer_id", "alice", "observed_id", "bob")
+        ));
+        when(honchoProxy.createConclusions(any(), any())).thenReturn(Map.of("items", "c"));
+
+        mvc.perform(withHeaders(post("/api/conclusions/create")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsBytes(body))))
+            .andExpect(status().isOk());
+
+        verify(adminAudit).record(
+            org.mockito.ArgumentMatchers.eq(profileOwnerId()),
+            org.mockito.ArgumentMatchers.eq("conclusion.create"),
+            org.mockito.ArgumentMatchers.isNull(),
+            org.mockito.ArgumentMatchers.eq("conclusion"),
+            org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.eq(sessionId),
+            org.mockito.ArgumentMatchers.argThat((java.util.Map<String, ?> m) ->
+                Integer.valueOf(1).equals(m.get("conclusionCount"))
+            )
+        );
+    }
+
+    @Test
+    void deleteConclusion_delegatesToHonchoDeleteConclusion() throws Exception {
+        when(honchoProxy.deleteConclusion(any(), eq("c-99"))).thenReturn(null);
+
+        mvc.perform(withHeaders(delete("/api/conclusions/c-99")))
+            .andExpect(status().isOk());
+
+        verify(honchoProxy).deleteConclusion(any(), eq("c-99"));
+    }
+
+    @Test
+    void deleteConclusion_auditsConclusionDeleteOnSuccess() throws Exception {
+        when(honchoProxy.deleteConclusion(any(), eq("c-99"))).thenReturn(null);
+
+        mvc.perform(withHeaders(delete("/api/conclusions/c-99")))
+            .andExpect(status().isOk());
+
+        verify(adminAudit).record(
+            org.mockito.ArgumentMatchers.eq(profileOwnerId()),
+            org.mockito.ArgumentMatchers.eq("conclusion.delete"),
+            org.mockito.ArgumentMatchers.isNull(),
+            org.mockito.ArgumentMatchers.eq("conclusion:c-99"),
+            org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.eq(sessionId),
+            org.mockito.ArgumentMatchers.argThat((java.util.Map<String, ?> m) ->
+                "c-99".equals(m.get("conclusionId"))
+            )
+        );
+    }
+
+    @Test
     void peerSessions_delegatesToHonchoListPeerSessions() throws Exception {
         when(honchoProxy.listPeerSessions(any(), eq("p-1"), any()))
             .thenReturn(Map.of("items", "s"));
@@ -414,6 +553,62 @@ class HonchoControllerTest {
     }
 
     @Test
+    void deleteSession_auditsSessionDeleteOnSuccess() throws Exception {
+        when(honchoProxy.deleteSession(any(), eq("s-7"))).thenReturn(Map.of("ok", "true"));
+
+        mvc.perform(withHeaders(delete("/api/sessions/s-7")))
+            .andExpect(status().isOk());
+
+        verify(adminAudit).record(
+            org.mockito.ArgumentMatchers.eq(profileOwnerId()),
+            org.mockito.ArgumentMatchers.eq("session.delete"),
+            org.mockito.ArgumentMatchers.isNull(),
+            org.mockito.ArgumentMatchers.eq("session:s-7"),
+            org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.eq(sessionId),
+            org.mockito.ArgumentMatchers.argThat((java.util.Map<String, ?> m) ->
+                "s-7".equals(m.get("sessionId"))
+            )
+        );
+    }
+
+    @Test
+    void updateSession_delegatesToHonchoUpdateSession() throws Exception {
+        Object body = Map.of("metadata", Map.of("k", "v"));
+        when(honchoProxy.updateSession(any(), eq("s-7"), eq(body))).thenReturn(Map.of("id", "s-7"));
+
+        mvc.perform(withHeaders(put("/api/sessions/s-7")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsBytes(body))))
+            .andExpect(status().isOk());
+
+        verify(honchoProxy).updateSession(any(), eq("s-7"), eq(body));
+    }
+
+    @Test
+    void updateSession_auditsSessionUpdateOnSuccess() throws Exception {
+        Object body = Map.of("metadata", Map.of("k", "v"));
+        when(honchoProxy.updateSession(any(), eq("s-7"), any())).thenReturn(Map.of("id", "s-7"));
+
+        mvc.perform(withHeaders(put("/api/sessions/s-7")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsBytes(body))))
+            .andExpect(status().isOk());
+
+        verify(adminAudit).record(
+            org.mockito.ArgumentMatchers.eq(profileOwnerId()),
+            org.mockito.ArgumentMatchers.eq("session.update"),
+            org.mockito.ArgumentMatchers.isNull(),
+            org.mockito.ArgumentMatchers.eq("session:s-7"),
+            org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.eq(sessionId),
+            org.mockito.ArgumentMatchers.argThat((java.util.Map<String, ?> m) ->
+                "s-7".equals(m.get("sessionId"))
+            )
+        );
+    }
+
+    @Test
     void listMessages_delegatesToHonchoListSessionMessages() throws Exception {
         when(honchoProxy.listSessionMessages(any(), eq("s-7"), any()))
             .thenReturn(Map.of("items", "msgs"));
@@ -435,6 +630,44 @@ class HonchoControllerTest {
             .andExpect(status().isOk());
 
         verify(honchoProxy).addMessage(any(), eq("s-7"), eq(body));
+    }
+
+    @Test
+    void updateMessage_delegatesToHonchoUpdateMessage() throws Exception {
+        Object body = Map.of("metadata", Map.of("k", "v"));
+        when(honchoProxy.updateMessage(any(), eq("s-7"), eq("m-9"), eq(body)))
+            .thenReturn(Map.of("id", "m-9"));
+
+        mvc.perform(withHeaders(put("/api/sessions/s-7/messages/m-9")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsBytes(body))))
+            .andExpect(status().isOk());
+
+        verify(honchoProxy).updateMessage(any(), eq("s-7"), eq("m-9"), eq(body));
+    }
+
+    @Test
+    void updateMessage_auditsMessageUpdateOnSuccess() throws Exception {
+        Object body = Map.of("metadata", Map.of("k", "v"));
+        when(honchoProxy.updateMessage(any(), eq("s-7"), eq("m-9"), any()))
+            .thenReturn(Map.of("id", "m-9"));
+
+        mvc.perform(withHeaders(put("/api/sessions/s-7/messages/m-9")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsBytes(body))))
+            .andExpect(status().isOk());
+
+        verify(adminAudit).record(
+            org.mockito.ArgumentMatchers.eq(profileOwnerId()),
+            org.mockito.ArgumentMatchers.eq("message.update"),
+            org.mockito.ArgumentMatchers.isNull(),
+            org.mockito.ArgumentMatchers.eq("message:m-9"),
+            org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.eq(sessionId),
+            org.mockito.ArgumentMatchers.argThat((java.util.Map<String, ?> m) ->
+                "s-7".equals(m.get("sessionId")) && "m-9".equals(m.get("messageId"))
+            )
+        );
     }
 
     @Test

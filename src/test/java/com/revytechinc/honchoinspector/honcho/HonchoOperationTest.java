@@ -20,14 +20,15 @@ import static org.assertj.core.api.Assertions.fail;
 class HonchoOperationTest {
 
     /**
-     * Mirror of the 24 endpoints exposed by the legacy HonchoController.
+     * Mirror of the 29 endpoints exposed by the legacy HonchoController.
      * The controller's {@code @Get|Post|Put|Delete}Mapping count is the
      * source of truth — see HonchoController.java. If this list grows
-     * beyond 24, the controller must grow with it (or vice versa).
+     * beyond 29, the controller must grow with it (or vice versa).
      */
-    private static final Set<HonchoOperation> EXPECTED_24 = EnumSet.of(
+    private static final Set<HonchoOperation> EXPECTED_OPERATIONS = EnumSet.of(
         HonchoOperation.LIST_PEERS,
         HonchoOperation.CREATE_PEER,
+        HonchoOperation.UPDATE_PEER,
         HonchoOperation.GET_PEER_CARD,
         HonchoOperation.UPDATE_PEER_CARD,
         HonchoOperation.GET_REPRESENTATION,
@@ -40,8 +41,10 @@ class HonchoOperationTest {
         HonchoOperation.CREATE_SESSION,
         HonchoOperation.GET_SESSION,
         HonchoOperation.DELETE_SESSION,
+        HonchoOperation.UPDATE_SESSION,
         HonchoOperation.LIST_SESSION_MESSAGES,
         HonchoOperation.ADD_MESSAGE,
+        HonchoOperation.UPDATE_MESSAGE,
         HonchoOperation.GET_SESSION_CONTEXT,
         HonchoOperation.GET_SESSION_SUMMARIES,
         HonchoOperation.GET_SESSION_PEERS,
@@ -49,7 +52,9 @@ class HonchoOperationTest {
         HonchoOperation.GET_QUEUE_STATUS,
         HonchoOperation.SEARCH_MESSAGES,
         HonchoOperation.SCHEDULE_DREAM,
-        HonchoOperation.GET_WORKSPACE_INFO
+        HonchoOperation.GET_WORKSPACE_INFO,
+        HonchoOperation.CREATE_CONCLUSIONS,
+        HonchoOperation.DELETE_CONCLUSION
     );
 
     private static Map<String, String> javadocByConstant = Map.of();
@@ -91,16 +96,16 @@ class HonchoOperationTest {
     }
 
     @Test
-    void enumHasExactly24Constants() {
+    void enumHasExactly29Constants() {
         assertThat(HonchoOperation.values())
-            .as("HonchoOperation must mirror the 24 endpoints in HonchoController.java")
-            .hasSize(24);
+            .as("HonchoOperation must mirror the 29 endpoints in HonchoController.java")
+            .hasSize(29);
     }
 
     @Test
     void enumMatchesExpectedInventoryExactly() {
         Set<HonchoOperation> actual = EnumSet.allOf(HonchoOperation.class);
-        assertThat(actual).containsExactlyInAnyOrderElementsOf(EXPECTED_24);
+        assertThat(actual).containsExactlyInAnyOrderElementsOf(EXPECTED_OPERATIONS);
     }
 
     @Test

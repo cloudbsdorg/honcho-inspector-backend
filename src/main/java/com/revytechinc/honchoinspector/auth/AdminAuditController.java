@@ -53,8 +53,12 @@ public class AdminAuditController {
         @RequestParam(required = false) String actor,
         @Parameter(description = "Filter by target user id (the user the action was performed ON)")
         @RequestParam(required = false) String target,
-        @Parameter(description = "Filter by action (e.g. 'user.create', 'user.delete', 'user.sessions.revoke', 'user.password.reset', 'audit.purge', 'sessions.purge')")
+        @Parameter(description = "Filter by action (e.g. 'user.create', 'user.delete', 'conclusion.create', 'conclusion.delete', 'peer.update', 'peer_card.update', 'session.update', 'session.delete', 'message.update')")
         @RequestParam(required = false) String action,
+        @Parameter(description = "Filter by Honcho resource type (matches `target_resource` starting with `<resource>:` — e.g. `conclusion` matches `conclusion:abc123`). Combine with `id` for an exact resource match.")
+        @RequestParam(required = false) String resource,
+        @Parameter(description = "Optional resource id to combine with `resource` for an exact `target_resource = <resource>:<id>` match. When supplied without `resource`, matched exactly.")
+        @RequestParam(required = false) String id,
         @Parameter(description = "Filter to entries at or after this ISO-8601 instant", example = "2026-06-01T00:00:00Z")
         @RequestParam(required = false) String since,
         @RequestParam(defaultValue = "0") int page,
@@ -71,7 +75,7 @@ public class AdminAuditController {
         var p = PageSize.parse(pageSize);
         int rows = p.rows;
         int offset = page * rows;
-        var spec = AuditLogSpecifications.all(action, actor, target, sinceInstant);
+        var spec = AuditLogSpecifications.all(action, actor, target, resource, id, sinceInstant);
         var pageResult = repo.findAll(
             spec,
             org.springframework.data.domain.PageRequest.of(

@@ -102,6 +102,11 @@ public class HonchoV3Client implements HonchoClient {
     }
 
     @Override
+    public Object updatePeer(HonchoContext ctx, String peerId, Object updatePeerRequest) throws HonchoCallException {
+        return call(HonchoOperation.UPDATE_PEER, ctx, updatePeerRequest, pathVars("peerId", peerId), null);
+    }
+
+    @Override
     public Object getPeerCard(HonchoContext ctx, String peerId) throws HonchoCallException {
         return call(HonchoOperation.GET_PEER_CARD, ctx, null, pathVars("peerId", peerId), null);
     }
@@ -170,6 +175,11 @@ public class HonchoV3Client implements HonchoClient {
     }
 
     @Override
+    public Object updateSession(HonchoContext ctx, String sessionId, Object updateSessionRequest) throws HonchoCallException {
+        return call(HonchoOperation.UPDATE_SESSION, ctx, updateSessionRequest, pathVars("sessionId", sessionId), null);
+    }
+
+    @Override
     public Object getSessionContext(HonchoContext ctx, String sessionId, Integer tokens, Boolean summary) throws HonchoCallException {
         return call(HonchoOperation.GET_SESSION_CONTEXT, ctx, null, pathVars("sessionId", sessionId), contextQueryParams(tokens, summary));
     }
@@ -199,6 +209,17 @@ public class HonchoV3Client implements HonchoClient {
     }
 
     @Override
+    public Object updateMessage(HonchoContext ctx, String sessionId, String messageId, Object updateMessageRequest) throws HonchoCallException {
+        return call(
+            HonchoOperation.UPDATE_MESSAGE,
+            ctx,
+            updateMessageRequest,
+            pathVars("sessionId", sessionId, "messageId", messageId),
+            null
+        );
+    }
+
+    @Override
     public Object searchSessionMessages(HonchoContext ctx, String sessionId, Object searchRequest) throws HonchoCallException {
         return call(HonchoOperation.SEARCH_SESSION_MESSAGES, ctx, searchRequest, pathVars("sessionId", sessionId), null);
     }
@@ -225,6 +246,27 @@ public class HonchoV3Client implements HonchoClient {
     @Override
     public Object getWorkspaceInfo(HonchoContext ctx) throws HonchoCallException {
         return call(HonchoOperation.GET_WORKSPACE_INFO, ctx, null, null, null);
+    }
+
+    // ------------------------------------------------------------------
+    // Workspace-level conclusions write surface (create batch + delete one)
+    // ------------------------------------------------------------------
+
+    @Override
+    public Object createConclusions(HonchoContext ctx, Object conclusionsBatch) throws HonchoCallException {
+        // Provider handles envelope wrapping (defaults to {conclusions:[]}
+        // when the caller passes null). The proxy passes the body through
+        // verbatim so the UI can supply its own filtered batch.
+        return call(HonchoOperation.CREATE_CONCLUSIONS, ctx, conclusionsBatch, null, null);
+    }
+
+    @Override
+    public Object deleteConclusion(HonchoContext ctx, String conclusionId) throws HonchoCallException {
+        // Honcho v3 returns 204 No Content on delete. The provider's
+        // execute() does NOT receive a body for DELETE operations,
+        // so the dispatcher returns null; the proxy service normalizes
+        // that null into a {data: null} envelope per ResponseEnvelopeAdvice.
+        return call(HonchoOperation.DELETE_CONCLUSION, ctx, null, pathVars("conclusionId", conclusionId), null);
     }
 
 // ------------------------------------------------------------------
@@ -281,10 +323,20 @@ public class HonchoV3Client implements HonchoClient {
      * Build a pathVars map from alternating key/value pairs. Centralised
      * so the 24 dispatch methods stay one-liners and so a future change
      * to the pathVars shape (e.g. switching to {@code Map.of} with a
-     * null check) lives in one place.
+     * null check) lives in one place. Supports one or two path
+     * placeholders — the latter is needed by
+     * {@link HonchoOperation#UPDATE_MESSAGE}
+     * ({@code sessions/{sessionId}/messages/{messageId}}).
      */
     private static Map<String, String> pathVars(String k1, String v1) {
         return Map.of(k1, v1);
+    }
+
+    private static Map<String, String> pathVars(String k1, String v1, String k2, String v2) {
+        Map<String, String> m = new java.util.LinkedHashMap<>();
+        m.put(k1, v1);
+        m.put(k2, v2);
+        return m;
     }
 
     /**

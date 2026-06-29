@@ -19,8 +19,10 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static com.revytechinc.honchoinspector.honcho.HonchoOperation.ADD_MESSAGE;
+import static com.revytechinc.honchoinspector.honcho.HonchoOperation.CREATE_CONCLUSIONS;
 import static com.revytechinc.honchoinspector.honcho.HonchoOperation.CREATE_PEER;
 import static com.revytechinc.honchoinspector.honcho.HonchoOperation.CREATE_SESSION;
+import static com.revytechinc.honchoinspector.honcho.HonchoOperation.DELETE_CONCLUSION;
 import static com.revytechinc.honchoinspector.honcho.HonchoOperation.DELETE_SESSION;
 import static com.revytechinc.honchoinspector.honcho.HonchoOperation.GET_PEER_CARD;
 import static com.revytechinc.honchoinspector.honcho.HonchoOperation.GET_QUEUE_STATUS;
@@ -41,7 +43,10 @@ import static com.revytechinc.honchoinspector.honcho.HonchoOperation.SCHEDULE_DR
 import static com.revytechinc.honchoinspector.honcho.HonchoOperation.SEARCH_MESSAGES;
 import static com.revytechinc.honchoinspector.honcho.HonchoOperation.SEARCH_PEERS;
 import static com.revytechinc.honchoinspector.honcho.HonchoOperation.SEARCH_SESSION_MESSAGES;
+import static com.revytechinc.honchoinspector.honcho.HonchoOperation.UPDATE_MESSAGE;
+import static com.revytechinc.honchoinspector.honcho.HonchoOperation.UPDATE_PEER;
 import static com.revytechinc.honchoinspector.honcho.HonchoOperation.UPDATE_PEER_CARD;
+import static com.revytechinc.honchoinspector.honcho.HonchoOperation.UPDATE_SESSION;
 
 /**
  * Test fixture-backed mock {@link HonchoClient} + factory.
@@ -140,6 +145,7 @@ public class HonchoMockConfig {
             Map<HonchoOperation, String> m = new EnumMap<>(HonchoOperation.class);
             m.put(HonchoOperation.LIST_PEERS,               "list-peers.json");
             m.put(HonchoOperation.CREATE_PEER,              "create-peer.json");
+            m.put(HonchoOperation.UPDATE_PEER,              "create-peer.json");
             m.put(HonchoOperation.GET_PEER_CARD,            "get-peer-card.json");
             m.put(HonchoOperation.UPDATE_PEER_CARD,         "update-peer-card.json");
             m.put(HonchoOperation.GET_REPRESENTATION,       "get-peer-representation.json");
@@ -151,8 +157,10 @@ public class HonchoMockConfig {
             m.put(HonchoOperation.LIST_SESSIONS,            "list-sessions.json");
             m.put(HonchoOperation.CREATE_SESSION,           "create-session.json");
             m.put(HonchoOperation.GET_SESSION,              "get-session.json");
+            m.put(HonchoOperation.UPDATE_SESSION,           "create-session.json");
             m.put(HonchoOperation.LIST_SESSION_MESSAGES,    "list-session-messages.json");
             m.put(HonchoOperation.ADD_MESSAGE,              "add-message.json");
+            m.put(HonchoOperation.UPDATE_MESSAGE,           "add-message.json");
             m.put(HonchoOperation.GET_SESSION_CONTEXT,      "get-session-context.json");
             m.put(HonchoOperation.GET_SESSION_SUMMARIES,    "get-session-summaries.json");
             m.put(HonchoOperation.GET_SESSION_PEERS,        "get-session-peers.json");
@@ -161,6 +169,8 @@ public class HonchoMockConfig {
             m.put(HonchoOperation.SEARCH_MESSAGES,          "search-messages.json");
             m.put(HonchoOperation.SCHEDULE_DREAM,           "schedule-dream.json");
             m.put(HonchoOperation.GET_WORKSPACE_INFO,       "workspace-info.json");
+            m.put(HonchoOperation.CREATE_CONCLUSIONS,       "list-peer-conclusions.json");
+            m.put(HonchoOperation.DELETE_CONCLUSION,        "delete-session.json");
             FIXTURE_FOR_OP = Map.copyOf(m);
         }
 
@@ -174,6 +184,7 @@ public class HonchoMockConfig {
 
         @Override public Object listPeers(HonchoContext ctx, Map<String, ?> filters)                          { return load(LIST_PEERS); }
         @Override public Object createPeer(HonchoContext ctx, Object createPeerRequest)                       { return load(CREATE_PEER); }
+        @Override public Object updatePeer(HonchoContext ctx, String peerId, Object updatePeerRequest)        { return load(UPDATE_PEER); }
         @Override public Object getPeerCard(HonchoContext ctx, String peerId)                                 { return load(GET_PEER_CARD); }
         @Override public Object updatePeerCard(HonchoContext ctx, String peerId, Object cardData)             { return load(UPDATE_PEER_CARD); }
         @Override public Object getPeerRepresentation(HonchoContext ctx, String peerId, Object body)         { return load(GET_REPRESENTATION); }
@@ -186,8 +197,10 @@ public class HonchoMockConfig {
         @Override public Object createSession(HonchoContext ctx, Object createSessionRequest)                 { return load(CREATE_SESSION); }
         @Override public Object getSession(HonchoContext ctx, String sessionId)                               { return load(GET_SESSION); }
         @Override public Object deleteSession(HonchoContext ctx, String sessionId)                            { return load(DELETE_SESSION); }
+        @Override public Object updateSession(HonchoContext ctx, String sessionId, Object updateSessionRequest){ return load(UPDATE_SESSION); }
         @Override public Object listSessionMessages(HonchoContext ctx, String sessionId, Map<String, ?> f)    { return load(LIST_SESSION_MESSAGES); }
         @Override public Object addMessage(HonchoContext ctx, String sessionId, Object messageRequest)        { return load(ADD_MESSAGE); }
+        @Override public Object updateMessage(HonchoContext ctx, String sessionId, String messageId, Object r){ return load(UPDATE_MESSAGE); }
         @Override public Object getSessionContext(HonchoContext ctx, String sessionId, Integer t, Boolean s)   { return load(GET_SESSION_CONTEXT); }
         @Override public Object getSessionSummaries(HonchoContext ctx, String sessionId)                      { return load(GET_SESSION_SUMMARIES); }
         @Override public Object getSessionPeers(HonchoContext ctx, String sessionId)                          { return load(GET_SESSION_PEERS); }
@@ -196,6 +209,8 @@ public class HonchoMockConfig {
         @Override public Object searchMessages(HonchoContext ctx, Object searchRequest)                       { return load(SEARCH_MESSAGES); }
         @Override public Object scheduleDream(HonchoContext ctx, String peerId, Object dreamRequest)          { return load(SCHEDULE_DREAM); }
         @Override public Object getWorkspaceInfo(HonchoContext ctx)                                           { return load(GET_WORKSPACE_INFO); }
+        @Override public Object createConclusions(HonchoContext ctx, Object conclusionsBatch)                 { return load(CREATE_CONCLUSIONS); }
+        @Override public Object deleteConclusion(HonchoContext ctx, String conclusionId)                       { return load(DELETE_CONCLUSION); }
 
         @Override
         public Object call(HonchoOperation op, HonchoContext ctx, Object requestBody,

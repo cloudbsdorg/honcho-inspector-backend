@@ -143,6 +143,16 @@ public class HonchoProxyService {
         return call(HonchoOperation.CREATE_PEER, ctx, createPeerRequest, null, null);
     }
 
+    /**
+     * Update an existing peer's mutable fields (e.g. metadata). Honcho v3
+     * accepts an {@link HonchoOperation#UPDATE_PEER}
+     * {@code PUT /peers/{peerId}} body with any subset of the fields
+     * supported by the peer schema.
+     */
+    public Object updatePeer(HonchoContext ctx, String peerId, Object updatePeerRequest) throws HonchoCallException {
+        return call(HonchoOperation.UPDATE_PEER, ctx, updatePeerRequest, pathVar("peerId", peerId), null);
+    }
+
     public Object getPeerCard(HonchoContext ctx, String peerId) throws HonchoCallException {
         return call(HonchoOperation.GET_PEER_CARD, ctx, null, pathVar("peerId", peerId), null);
     }
@@ -252,12 +262,37 @@ public class HonchoProxyService {
         return call(HonchoOperation.DELETE_SESSION, ctx, null, pathVar("sessionId", sessionId), null);
     }
 
+    /**
+     * Update an existing session's mutable fields (e.g. metadata,
+     * configuration). Honcho v3 accepts an
+     * {@link HonchoOperation#UPDATE_SESSION}
+     * {@code PUT /sessions/{sessionId}} body with any subset of the
+     * fields supported by the session schema.
+     */
+    public Object updateSession(HonchoContext ctx, String sessionId, Object updateSessionRequest) throws HonchoCallException {
+        return call(HonchoOperation.UPDATE_SESSION, ctx, updateSessionRequest, pathVar("sessionId", sessionId), null);
+    }
+
     public Object listSessionMessages(HonchoContext ctx, String sessionId, Map<String, ?> filters) throws HonchoCallException {
         return call(HonchoOperation.LIST_SESSION_MESSAGES, ctx, null, pathVar("sessionId", sessionId), filters);
     }
 
     public Object addMessage(HonchoContext ctx, String sessionId, Object messageRequest) throws HonchoCallException {
         return call(HonchoOperation.ADD_MESSAGE, ctx, messageRequest, pathVar("sessionId", sessionId), null);
+    }
+
+    /**
+     * Update an existing message in a session. Honcho v3 accepts an
+     * {@link HonchoOperation#UPDATE_MESSAGE}
+     * {@code PUT /sessions/{sessionId}/messages/{messageId}} body
+     * with any subset of the fields supported by the message
+     * schema (typically {@code metadata}, less commonly {@code content}).
+     */
+    public Object updateMessage(HonchoContext ctx, String sessionId, String messageId, Object updateMessageRequest) throws HonchoCallException {
+        Map<String, String> pathVars = new LinkedHashMap<>(2);
+        pathVars.put("sessionId", sessionId);
+        pathVars.put("messageId", messageId);
+        return call(HonchoOperation.UPDATE_MESSAGE, ctx, updateMessageRequest, pathVars, null);
     }
 
     public Object getSessionContext(HonchoContext ctx, String sessionId, Integer tokens, Boolean summary) throws HonchoCallException {
@@ -296,6 +331,32 @@ public class HonchoProxyService {
 
     public Object getWorkspaceInfo(HonchoContext ctx) throws HonchoCallException {
         return call(HonchoOperation.GET_WORKSPACE_INFO, ctx, null, null, null);
+    }
+
+    // ------------------------------------------------------------------
+    // Workspace-level conclusions write surface (create batch + delete one)
+    // ------------------------------------------------------------------
+
+    /**
+     * Batch-create one or more conclusions in the workspace. The Honcho
+     * v3 endpoint accepts up to 100 conclusions per call and returns a
+     * {@code Page<Conclusion>} envelope (same shape as the list
+     * endpoint). The caller supplies Honcho's
+     * {@code ConclusionBatchCreate} envelope ({@code {conclusions: [...]}})
+     * verbatim — no field rewriting happens here.
+     */
+    public Object createConclusions(HonchoContext ctx, Object conclusionsBatch) throws HonchoCallException {
+        return call(HonchoOperation.CREATE_CONCLUSIONS, ctx, conclusionsBatch, null, null);
+    }
+
+    /**
+     * Delete a single conclusion by id. Honcho v3 returns 204 No Content
+     * for this endpoint; the proxy returns the empty body unchanged and
+     * the controller's {@code ResponseEnvelopeAdvice} wraps it as
+     * {@code {data: null, error: null, meta: null}}.
+     */
+    public Object deleteConclusion(HonchoContext ctx, String conclusionId) throws HonchoCallException {
+        return call(HonchoOperation.DELETE_CONCLUSION, ctx, null, pathVar("conclusionId", conclusionId), null);
     }
 
     // ------------------------------------------------------------------

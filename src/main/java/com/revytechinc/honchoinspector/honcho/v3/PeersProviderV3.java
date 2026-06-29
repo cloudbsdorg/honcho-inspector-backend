@@ -52,6 +52,7 @@ public class PeersProviderV3 implements HonchoProvider {
     private static final Set<HonchoOperation> OPS = EnumSet.of(
         HonchoOperation.LIST_PEERS,
         HonchoOperation.CREATE_PEER,
+        HonchoOperation.UPDATE_PEER,
         HonchoOperation.GET_PEER_CARD,
         HonchoOperation.UPDATE_PEER_CARD,
         HonchoOperation.GET_REPRESENTATION
@@ -78,6 +79,7 @@ public class PeersProviderV3 implements HonchoProvider {
         return switch (op) {
             case LIST_PEERS                -> "workspaces/{ws}/peers/list";
             case CREATE_PEER               -> "workspaces/{ws}/peers";
+            case UPDATE_PEER               -> "workspaces/{ws}/peers/{peerId}";
             case GET_PEER_CARD, UPDATE_PEER_CARD -> "workspaces/{ws}/peers/{peerId}/card";
             case GET_REPRESENTATION        -> "workspaces/{ws}/peers/{peerId}/representation";
             default -> throw new UnsupportedOperationException(
@@ -89,7 +91,7 @@ public class PeersProviderV3 implements HonchoProvider {
     public HttpMethod httpMethod(HonchoOperation op) {
         return switch (op) {
             case LIST_PEERS, CREATE_PEER, GET_REPRESENTATION -> HttpMethod.POST;
-            case UPDATE_PEER_CARD                             -> HttpMethod.PUT;
+            case UPDATE_PEER, UPDATE_PEER_CARD               -> HttpMethod.PUT;
             case GET_PEER_CARD                                -> HttpMethod.GET;
             default -> throw new UnsupportedOperationException(
                 "PeersProviderV3 has no HTTP method for " + op);

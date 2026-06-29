@@ -26,8 +26,8 @@ import static org.mockito.Mockito.when;
  *   <li>{@code providerCount() == 9} — exactly the nine V3 provider
  *       beans contribute to the V3 registry.</li>
  *   <li>Sum of {@code operations().size()} across all 9 providers is
- *       {@code 24} — every {@link HonchoOperation} is covered.</li>
- *   <li>{@code coveredOperations()} returns all 24 enum constants.</li>
+ *       {@code 29} — every {@link HonchoOperation} is covered.</li>
+ *   <li>{@code coveredOperations()} returns all 29 enum constants.</li>
  * </ul>
  *
  * <p>Complements the per-op structural tests in
@@ -94,22 +94,22 @@ class V3ProviderParameterizedTest {
     }
 
     @Test
-    void registry_totalCoveredOperationsAcrossAllProvidersIs24() {
+    void registry_totalCoveredOperationsAcrossAllProvidersIs29() {
         List<HonchoProvider> providers = allV3Providers();
         int totalOps = providers.stream()
             .mapToInt(p -> p.operations().size())
             .sum();
 
         assertThat(totalOps)
-            .as("9 providers must collectively cover all 24 HonchoOperation constants")
-            .isEqualTo(24);
+            .as("9 providers must collectively cover all 29 HonchoOperation constants")
+            .isEqualTo(29);
         assertThat(HonchoOperation.values())
-            .as("HonchoOperation enum sanity check — 24 constants")
-            .hasSize(24);
+            .as("HonchoOperation enum sanity check — 29 constants")
+            .hasSize(29);
     }
 
     @Test
-    void registry_coveredOperationsContainsAll24EnumConstants() {
+    void registry_coveredOperationsContainsAll29EnumConstants() {
         HonchoProviderRegistry registry =
             new HonchoProviderRegistry(HonchoApiVersion.V3, allV3Providers());
 

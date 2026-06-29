@@ -39,8 +39,10 @@ class HonchoClientFactoryTest {
         @Override public Object createSession(HonchoContext ctx, Object createSessionRequest) { return null; }
         @Override public Object getSession(HonchoContext ctx, String sessionId) { return null; }
         @Override public Object deleteSession(HonchoContext ctx, String sessionId) { return null; }
+        @Override public Object updateSession(HonchoContext ctx, String sessionId, Object updateSessionRequest) { return null; }
         @Override public Object listSessionMessages(HonchoContext ctx, String sessionId, Map<String, ?> filters) { return null; }
         @Override public Object addMessage(HonchoContext ctx, String sessionId, Object messageRequest) { return null; }
+        @Override public Object updateMessage(HonchoContext ctx, String sessionId, String messageId, Object updateMessageRequest) { return null; }
         @Override public Object getSessionContext(HonchoContext ctx, String sessionId, Integer tokens, Boolean summary) { return null; }
         @Override public Object getSessionSummaries(HonchoContext ctx, String sessionId) { return null; }
         @Override public Object getSessionPeers(HonchoContext ctx, String sessionId) { return null; }
@@ -49,6 +51,9 @@ class HonchoClientFactoryTest {
         @Override public Object searchMessages(HonchoContext ctx, Object searchRequest) { return null; }
         @Override public Object scheduleDream(HonchoContext ctx, String peerId, Object dreamRequest) { return null; }
         @Override public Object getWorkspaceInfo(HonchoContext ctx) { return null; }
+        @Override public Object updatePeer(HonchoContext ctx, String peerId, Object updatePeerRequest) { return null; }
+        @Override public Object createConclusions(HonchoContext ctx, Object conclusionsBatch) { return null; }
+        @Override public Object deleteConclusion(HonchoContext ctx, String conclusionId) { return null; }
         @Override public Object call(com.revytechinc.honchoinspector.honcho.HonchoOperation op, HonchoContext ctx, Object requestBody, Map<String, String> pathVars, Map<String, ?> queryParams) { return null; }
     }
 
