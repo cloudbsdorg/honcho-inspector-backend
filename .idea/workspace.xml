@@ -1,0 +1,264 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="c21cec74-e712-417b-8444-415c14a5920b" name="Changes" comment="Updated .gitignore">
+      <change afterPath="$PROJECT_DIR$/.idea/.gitignore" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/compiler.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/dataSources.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/encodings.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/jarRepositories.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.run/DashboardApplication (dev).run.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.run/DashboardApplication (dev).run.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.run/make start.run.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.run/make start.run.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/honcho-inspector.db" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packaging/regression/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/packaging/regression/.gitignore" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/packaging/regression/report-20260625-025016.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packaging/regression/report-20260625-131320.md" beforeDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="EmbeddingIndexingInfo">
+    <option name="cachedIndexableFilesCount" value="45" />
+    <option name="fileBasedEmbeddingIndicesEnabled" value="true" />
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="McpProjectServerCommands">
+    <commands />
+    <urls />
+  </component>
+  <component name="NextEditCompletionFeaturesState">
+    <decayedCancelled>
+      <entry key="MS100" value="1.4886617907688178" />
+      <entry key="MS500" value="3.8345944157882204" />
+      <entry key="S2" value="5.898320546231054" />
+      <entry key="S5" value="6.525593590019732" />
+      <entry key="S10" value="6.756746840838543" />
+      <entry key="S30" value="6.917528820871113" />
+      <entry key="S60" value="6.958588342825391" />
+      <entry key="M2" value="6.979284750482379" />
+      <entry key="M5" value="7.079759673687749" />
+      <entry key="M10" value="9.705690225009992" />
+      <entry key="M15" value="16.035389578436074" />
+      <entry key="M30" value="38.86864839919973" />
+      <entry key="H1" value="70.4288205548915" />
+      <entry key="H2" value="99.51757232660019" />
+      <entry key="H4" value="120.18557579746712" />
+      <entry key="D1" value="142.01115784442052" />
+      <entry key="W1" value="146.2731138919351" />
+    </decayedCancelled>
+    <decayedSelected>
+      <entry key="MS100" value="0.0" />
+      <entry key="MS500" value="0.0" />
+      <entry key="S2" value="0.0" />
+      <entry key="S5" value="0.0" />
+      <entry key="S10" value="0.0" />
+      <entry key="S30" value="5.457286427516647E-124" />
+      <entry key="S60" value="2.3360835660388192E-62" />
+      <entry key="M2" value="1.5284251915088326E-31" />
+      <entry key="M5" value="4.717345386601891E-13" />
+      <entry key="M10" value="6.868293373613196E-7" />
+      <entry key="M15" value="7.78453289693468E-5" />
+      <entry key="M30" value="0.00882299999826288" />
+      <entry key="H1" value="0.0939308256019446" />
+      <entry key="H2" value="0.30648136256866326" />
+      <entry key="H4" value="0.553607588973148" />
+      <entry key="D1" value="0.9061505098617926" />
+      <entry key="W1" value="0.9860200877847597" />
+    </decayedSelected>
+    <decayedShown>
+      <entry key="MS100" value="1.4350708018290808" />
+      <entry key="MS500" value="3.7942097473013554" />
+      <entry key="S2" value="5.881846890745572" />
+      <entry key="S5" value="6.518253328756451" />
+      <entry key="S10" value="6.752939570331729" />
+      <entry key="S30" value="6.916228053087671" />
+      <entry key="S60" value="6.957933921733596" />
+      <entry key="M2" value="6.9789565215639655" />
+      <entry key="M5" value="7.079624452416725" />
+      <entry key="M10" value="9.705554873560011" />
+      <entry key="M15" value="16.035237280840047" />
+      <entry key="M30" value="38.87692227949944" />
+      <entry key="H1" value="70.52192894566375" />
+      <entry key="H2" value="99.8232700487335" />
+      <entry key="H4" value="120.73862791335358" />
+      <entry key="D1" value="142.91718274386827" />
+      <entry key="W1" value="147.2591150465275" />
+    </decayedShown>
+  </component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 8,
+  &quot;fromUser&quot;: false
+}</component>
+  <component name="ProjectId" id="3EuPaj0LCRui6rhrB4OH0gkHzbN" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "RequestMappingsPanelOrder0": "0",
+    "RequestMappingsPanelOrder1": "1",
+    "RequestMappingsPanelWidth0": "75",
+    "RequestMappingsPanelWidth1": "75",
+    "RunOnceActivity.MCP Project settings loaded": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "RunOnceActivity.typescript.service.memoryLimit.init": "true",
+    "SHARE_PROJECT_CONFIGURATION_FILES": "true",
+    "Spring Boot.DashboardApplication (dev).executor": "Debug",
+    "Spring Boot.DashboardApplication (in-memory).executor": "Debug",
+    "codeWithMe.voiceChat.enabledByDefault": "false",
+    "com.intellij.ml.llm.matterhorn.ej.ui.settings.DefaultModelSelectionForGA.v1": "true",
+    "git-widget-placeholder": "main",
+    "junie.onboarding.icon.badge.shown": "true",
+    "kotlin-language-version-configured": "true",
+    "last_opened_file_path": "/Users/mlapointe/git/honcho-self-backend",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "to.speed.mode.migration.done": "true",
+    "vue.rearranger.settings.migration": "true"
+  }
+}]]></component>
+  <component name="RunManager" selected="Spring Boot.DashboardApplication (dev)">
+    <configuration name="make run-jar" type="ShConfigurationType">
+      <option name="SCRIPT_TEXT" value="make run-jar" />
+      <option name="INDEPENDENT_SCRIPT_PATH" value="true" />
+      <option name="SCRIPT_PATH" value="" />
+      <option name="SCRIPT_OPTIONS" value="" />
+      <option name="INDEPENDENT_SCRIPT_WORKING_DIRECTORY" value="true" />
+      <option name="SCRIPT_WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+      <option name="INDEPENDENT_INTERPRETER_PATH" value="true" />
+      <option name="INTERPRETER_PATH" value="/bin/bash" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="EXECUTE_IN_TERMINAL" value="true" />
+      <option name="EXECUTE_SCRIPT_FILE" value="false" />
+      <envs />
+      <method v="2" />
+    </configuration>
+    <configuration name="make start" type="ShConfigurationType">
+      <option name="SCRIPT_TEXT" value="make start" />
+      <option name="INDEPENDENT_SCRIPT_PATH" value="true" />
+      <option name="SCRIPT_PATH" value="" />
+      <option name="SCRIPT_OPTIONS" value="" />
+      <option name="INDEPENDENT_SCRIPT_WORKING_DIRECTORY" value="true" />
+      <option name="SCRIPT_WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+      <option name="INDEPENDENT_INTERPRETER_PATH" value="true" />
+      <option name="INTERPRETER_PATH" value="/bin/bash" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="EXECUTE_IN_TERMINAL" value="true" />
+      <option name="EXECUTE_SCRIPT_FILE" value="false" />
+      <envs />
+      <method v="2" />
+    </configuration>
+    <configuration name="DashboardApplication (dev)" type="SpringBootApplicationConfigurationType" factoryName="Spring Boot">
+      <envs>
+        <env name="HONCHO_CONFIG_DIR" value=".etc" />
+        <env name="HONCHO_DB_PATH" value="jdbc:sqlite:.run-data/honcho-inspector.db" />
+        <env name="HONCHO_LOG_DIR" value=".var-log" />
+        <env name="server.address" value="127.0.0.1" />
+      </envs>
+      <module name="dashboard-backend" />
+      <option name="SPRING_BOOT_MAIN_CLASS" value="com.revytechinc.honchoinspector.DashboardApplication" />
+      <option name="VM_PARAMETERS" value="-Xms64m -Xmx256m" />
+      <option name="WORKING_DIRECTORY" value="file://$PROJECT_DIR$" />
+      <method v="2">
+        <option name="Make" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="DashboardApplication (in-memory)" type="SpringBootApplicationConfigurationType" factoryName="Spring Boot">
+      <option name="ALTERNATIVE_JRE_PATH" value="25" />
+      <envs>
+        <env name="HONCHO_CONFIG_DIR" value=".run-data-inmem" />
+        <env name="HONCHO_DB_PATH" value="jdbc:sqlite::memory:" />
+        <env name="HONCHO_CRYPTO_KEY" value="dsS5YEomp9AYvwLdTHhhARr1uZKzRR+Ydvui+Z/FoXM=" />
+      </envs>
+      <module name="dashboard-backend" />
+      <option name="SPRING_BOOT_MAIN_CLASS" value="com.revytechinc.honchoinspector.DashboardApplication" />
+      <option name="VM_PARAMETERS" value="-Xms64m -Xmx256m" />
+      <option name="WORKING_DIRECTORY" value="file://$PROJECT_DIR$" />
+      <method v="2">
+        <option name="Make" enabled="true" />
+      </method>
+    </configuration>
+    <list>
+      <item itemvalue="Shell Script.make run-jar" />
+      <item itemvalue="Shell Script.make start" />
+      <item itemvalue="Spring Boot.DashboardApplication (dev)" />
+      <item itemvalue="Spring Boot.DashboardApplication (in-memory)" />
+    </list>
+  </component>
+  <component name="SharedIndexes">
+    <attachedChunks>
+      <set>
+        <option value="bundled-jdk-30f59d01ecdd-37e91769500f-intellij.indexing.shared.core-IU-261.25134.95" />
+        <option value="bundled-js-predefined-d6986cc7102b-31caf2ab9e3c-JavaScript-IU-261.25134.95" />
+      </set>
+    </attachedChunks>
+  </component>
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="c21cec74-e712-417b-8444-415c14a5920b" name="Changes" comment="" />
+      <created>1781025546994</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1781025546994</updated>
+      <workItem from="1781025548610" duration="3551000" />
+      <workItem from="1781735263976" duration="556000" />
+      <workItem from="1782762927383" duration="7801000" />
+    </task>
+    <task id="LOCAL-00001" summary="add: portable Makefile with help menu and key build/test operations&#10;&#10;- Supports both GNU Make and BSD Make&#10;- Includes self-documenting `help` target&#10;- Defines core targets for building, testing, running, and packaging&#10;- Implements database utilities (shell, vacuum, reset) for SQLite&#10;- Provides OS-specific install targets (Linux, FreeBSD, macOS)">
+      <option name="closed" value="true" />
+      <created>1781302219851</created>
+      <option name="number" value="00001" />
+      <option name="presentableId" value="LOCAL-00001" />
+      <option name="project" value="LOCAL" />
+      <updated>1781302219851</updated>
+    </task>
+    <task id="LOCAL-00002" summary="Updated .gitignore">
+      <option name="closed" value="true" />
+      <created>1782763902084</created>
+      <option name="number" value="00002" />
+      <option name="presentableId" value="LOCAL-00002" />
+      <option name="project" value="LOCAL" />
+      <updated>1782763902085</updated>
+    </task>
+    <option name="localTasksCounter" value="3" />
+    <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
+  </component>
+  <component name="VcsManagerConfiguration">
+    <option name="CHECK_CODE_SMELLS_BEFORE_PROJECT_COMMIT" value="false" />
+    <option name="CHECK_NEW_TODO" value="false" />
+    <MESSAGE value="add: portable Makefile with help menu and key build/test operations&#10;&#10;- Supports both GNU Make and BSD Make&#10;- Includes self-documenting `help` target&#10;- Defines core targets for building, testing, running, and packaging&#10;- Implements database utilities (shell, vacuum, reset) for SQLite&#10;- Provides OS-specific install targets (Linux, FreeBSD, macOS)" />
+    <MESSAGE value="Updated .gitignore" />
+    <option name="LAST_COMMIT_MESSAGE" value="Updated .gitignore" />
+  </component>
+  <component name="XDebuggerManager">
+    <breakpoint-manager>
+      <breakpoints>
+        <line-breakpoint type="java-line">
+          <url>file://$PROJECT_DIR$/src/main/java/com/revytechinc/honchoinspector/auth/AuthService.java</url>
+          <line>81</line>
+          <option name="timeStamp" value="2" />
+        </line-breakpoint>
+      </breakpoints>
+    </breakpoint-manager>
+  </component>
+</project>
