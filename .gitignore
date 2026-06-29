@@ -1,4 +1,5 @@
 .idea/
+.etc/
 target/
 .playwright-mcp/
 login-page.png
