@@ -37,13 +37,28 @@ public class AuthController {
     private final AuthSessionRepository sessions;
     private final ProfileRepository profiles;
     private final AdminAudit audit;
+    /**
+     * Mirrors {@code honcho.ui.chat-enabled} so the frontend
+     * knows whether to show the chat button + popout. Default
+     * false — operators opt in by setting
+     * {@code HONCHO_UI_CHAT_ENABLED=true}.
+     */
+    private final boolean chatEnabled;
 
-    public AuthController(AuthService auth, UserRepository users, AuthSessionRepository sessions, ProfileRepository profiles, AdminAudit audit) {
+    public AuthController(
+        AuthService auth,
+        UserRepository users,
+        AuthSessionRepository sessions,
+        ProfileRepository profiles,
+        AdminAudit audit,
+        @org.springframework.beans.factory.annotation.Value("${honcho.ui.chat-enabled:false}") boolean chatEnabled
+    ) {
         this.auth = auth;
         this.users = users;
         this.sessions = sessions;
         this.profiles = profiles;
         this.audit = audit;
+        this.chatEnabled = chatEnabled;
     }
 
     /**
@@ -210,16 +225,17 @@ public class AuthController {
     @GetMapping("/health")
     @Operation(
         summary = "Liveness / readiness probe",
-        description = "Public unauthenticated health endpoint. Returns only the service status, a `first_run` boolean, and a `needs_register` alias. The UI uses `first_run` to decide whether to render the bootstrap wizard on first launch. Once any user exists, both flags are false. The previous version leaked user/session/profile counts to unauthenticated callers; those have been moved to the admin-only dashboard overview."
+        description = "Public unauthenticated health endpoint. Returns the service status, a `first_run` boolean (and `needs_register` alias), and a `chat_enabled` boolean. The UI uses `first_run` to decide whether to render the bootstrap wizard on first launch. The UI uses `chat_enabled` to hide the chat button + popout when the server has chat disabled (the operator's `HONCHO_UI_CHAT_ENABLED` env var is false, which is the default). Once any user exists, both `firstRun` flags are false. The previous version leaked user/session/profile counts to unauthenticated callers; those have been moved to the admin-only dashboard overview."
     )
     @ApiResponse(responseCode = "200", description = "Service is up",
-        content = @Content(schema = @Schema(example = "{\"ok\":true,\"firstRun\":false,\"needsRegister\":false}")))
+        content = @Content(schema = @Schema(example = "{\"ok\":true,\"firstRun\":false,\"needsRegister\":false,\"chatEnabled\":false}")))
     public ResponseEntity<?> health() {
         boolean firstRun = auth.isFirstUser();
         return ResponseEntity.ok(Map.of(
             "ok", true,
             "firstRun", firstRun,
-            "needsRegister", firstRun
+            "needsRegister", firstRun,
+            "chatEnabled", chatEnabled
         ));
     }
 }

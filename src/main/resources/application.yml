@@ -101,6 +101,19 @@ honcho:
     retention-days: ${HONCHO_AUDIT_RETENTION_DAYS:90}
     max-rows: ${HONCHO_AUDIT_MAX_ROWS:1000000}
     purge-cron: ${HONCHO_AUDIT_PURGE_CRON:0 0 3 * * *}
+  # UI feature toggles. These are read by the controller layer
+  # to gate features that the operator may want to disable without
+  # recompiling the jar. The frontend reads the same values via
+  # the public `/api/health` endpoint so the UI can hide buttons
+  # for disabled features (otherwise the user clicks a "Chat"
+  # button and gets a 404 from the disabled endpoint, which is
+  # worse UX than not showing the button at all).
+  ui:
+    # Default false: the chat popout + chat button are hidden by
+    # default because the streaming chat experience is currently
+    # rough. Set HONCHO_UI_CHAT_ENABLED=true to surface the
+    # button + popout + SSE endpoint.
+    chat-enabled: ${HONCHO_UI_CHAT_ENABLED:false}
 
 # CORS allowed origins. Comma-separated list.
 cors:

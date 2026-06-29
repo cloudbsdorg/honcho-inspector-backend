@@ -1046,4 +1046,28 @@ class HonchoControllerTest {
             .as("a 502 /api/sessions/s-7/messages must not bump honcho.inspector.messages.sent")
             .isEqualTo(before);
     }
+
+    @Test
+    void peerChatStream_returns_404_when_chat_disabled_by_default() throws Exception {
+        // The test class's @TestPropertySource does not override
+        // honcho.ui.chat-enabled, so it inherits the default value
+        // (false). Verify the feature gate works: a request to
+        // /api/peers/{id}/chat/stream returns 404 with no upstream
+        // call. The 404 must not leak the existence of the feature
+        // (the response body should not say "chat is disabled" or
+        // "set HONCHO_UI_CHAT_ENABLED=true") — a probe-caller
+        // looking for disabled-but-present features would otherwise
+        // be able to fingerprint the toggle.
+        Map<String, Object> body = Map.of("query", "hi", "stream", true);
+        mvc.perform(withHeaders(post("/api/peers/alice/chat/stream"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsBytes(body)))
+            .andExpect(status().isNotFound());
+        // The 404 must come from the feature gate, not from
+        // upstream — if the gate is bypassed, the call would
+        // hit https://api.honcho.dev (or whatever the profile's
+        // baseUrl is) and return 502 BAD_GATEWAY instead. Verify
+        // the proxy was NOT called.
+        verify(honchoProxy, org.mockito.Mockito.never()).peerChat(any(), any(), any());
+    }
 }
