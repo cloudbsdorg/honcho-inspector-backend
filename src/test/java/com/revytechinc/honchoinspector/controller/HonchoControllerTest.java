@@ -8,6 +8,7 @@ import com.revytechinc.honchoinspector.auth.Profile;
 import com.revytechinc.honchoinspector.auth.ProfileService;
 import com.revytechinc.honchoinspector.honcho.HonchoApiVersion;
 import com.revytechinc.honchoinspector.honcho.HonchoCallException;
+import com.revytechinc.honchoinspector.honcho.HonchoMetrics;
 import com.revytechinc.honchoinspector.model.HonchoContext;
 import com.revytechinc.honchoinspector.service.HonchoProxyService;
 import org.junit.jupiter.api.BeforeEach;
@@ -907,5 +908,142 @@ class HonchoControllerTest {
         mvc.perform(withHeaders(get("/api/peers")))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.hello").value("world"));
+    }
+
+    // ------------------------------------------------------------------
+    // Counter wiring — confirms the controller increments the named
+    // Micrometer counters on a 2xx response (and ONLY on a 2xx response)
+    // for the three endpoints the dashboard reads as "all-time count":
+    //   - POST /api/search                       -> honcho.inspector.searches
+    //   - POST /api/dream                        -> honcho.inspector.dreams.scheduled
+    //   - POST /api/sessions/{id}/messages       -> honcho.inspector.messages.sent
+    //
+    // The counter is the source of truth the dashboard's "Searches /
+    // Dreams scheduled / Messages sent" KPI cards read. A test that
+    // pins the increment here is the regression guard against the
+    // "counter randomly reverts" symptom that motivated the fix.
+    // ------------------------------------------------------------------
+
+    @Autowired HonchoMetrics honchoMetrics;
+
+    @Test
+    void counter_search_incrementsOnSuccessfulWorkspaceSearch() throws Exception {
+        Object body = Map.of("q", "global");
+        when(honchoProxy.searchMessages(any(), eq(body))).thenReturn(Map.of("results", "all"));
+        double before = honchoMetrics.searchesCounter().count();
+
+        mvc.perform(withHeaders(post("/api/search")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsBytes(body))))
+            .andExpect(status().isOk());
+
+        double after = honchoMetrics.searchesCounter().count();
+        assertThat(after - before)
+            .as("a successful /api/search should bump honcho.inspector.searches by exactly 1")
+            .isEqualTo(1.0);
+    }
+
+    @Test
+    void counter_search_doesNotIncrementWhenUpstreamFails() throws Exception {
+        Object body = Map.of("q", "global");
+        when(honchoProxy.searchMessages(any(), any()))
+            .thenThrow(new HonchoCallException("upstream 502", 502, ""));
+        double before = honchoMetrics.searchesCounter().count();
+
+        mvc.perform(withHeaders(post("/api/search")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsBytes(body))))
+            .andExpect(status().isBadGateway());
+
+        double after = honchoMetrics.searchesCounter().count();
+        assertThat(after)
+            .as("a failed /api/search must not bump honcho.inspector.searches")
+            .isEqualTo(before);
+    }
+
+    @Test
+    void counter_dream_incrementsOnSuccessfulDreamSchedule() throws Exception {
+        Object body = Map.of("peerId", "p-1");
+        when(honchoProxy.scheduleDream(any(), eq("p-1"), eq(body))).thenReturn(Map.of("scheduled", true));
+        double before = honchoMetrics.dreamsCounter("p-1").count();
+
+        mvc.perform(withHeaders(post("/api/dream")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsBytes(body))))
+            .andExpect(status().isOk());
+
+        double after = honchoMetrics.dreamsCounter("p-1").count();
+        assertThat(after - before)
+            .as("a successful /api/dream should bump honcho.inspector.dreams.scheduled{observer=p-1} by exactly 1")
+            .isEqualTo(1.0);
+    }
+
+    @Test
+    void counter_dream_doesNotIncrementWhenPeerIdMissing() throws Exception {
+        Object body = Map.of("lookback", "7d");
+        double aliceBefore = honchoMetrics.dreamsCounter("alice").count();
+
+        mvc.perform(withHeaders(post("/api/dream")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsBytes(body))))
+            .andExpect(status().isBadRequest());
+
+        double aliceAfter = honchoMetrics.dreamsCounter("alice").count();
+        assertThat(aliceAfter)
+            .as("a 400 /api/dream (missing peerId) must not bump any dreams counter")
+            .isEqualTo(aliceBefore);
+    }
+
+    @Test
+    void counter_dream_doesNotIncrementWhenUpstreamFails() throws Exception {
+        Object body = Map.of("peerId", "p-2");
+        when(honchoProxy.scheduleDream(any(), any(), any()))
+            .thenThrow(new HonchoCallException("not found", 404, "{}"));
+        double before = honchoMetrics.dreamsCounter("p-2").count();
+
+        mvc.perform(withHeaders(post("/api/dream")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsBytes(body))))
+            .andExpect(status().isNotFound());
+
+        double after = honchoMetrics.dreamsCounter("p-2").count();
+        assertThat(after)
+            .as("a 404 /api/dream must not bump honcho.inspector.dreams.scheduled")
+            .isEqualTo(before);
+    }
+
+    @Test
+    void counter_messageSent_incrementsOnSuccessfulAddMessages() throws Exception {
+        Object body = Map.of("messages", List.of(Map.of("content", "hi")));
+        when(honchoProxy.addMessage(any(), eq("s-7"), eq(body))).thenReturn(Map.of("ok", "true"));
+        double before = honchoMetrics.messagesCounter("s-7").count();
+
+        mvc.perform(withHeaders(post("/api/sessions/s-7/messages")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsBytes(body))))
+            .andExpect(status().isOk());
+
+        double after = honchoMetrics.messagesCounter("s-7").count();
+        assertThat(after - before)
+            .as("a successful /api/sessions/s-7/messages should bump honcho.inspector.messages.sent{session=s-7} by exactly 1")
+            .isEqualTo(1.0);
+    }
+
+    @Test
+    void counter_messageSent_doesNotIncrementWhenUpstreamFails() throws Exception {
+        Object body = Map.of("messages", List.of(Map.of("content", "hi")));
+        when(honchoProxy.addMessage(any(), any(), any()))
+            .thenThrow(new HonchoCallException("upstream 5xx", 500, ""));
+        double before = honchoMetrics.messagesCounter("s-7").count();
+
+        mvc.perform(withHeaders(post("/api/sessions/s-7/messages")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsBytes(body))))
+            .andExpect(status().isBadGateway());
+
+        double after = honchoMetrics.messagesCounter("s-7").count();
+        assertThat(after)
+            .as("a 502 /api/sessions/s-7/messages must not bump honcho.inspector.messages.sent")
+            .isEqualTo(before);
     }
 }

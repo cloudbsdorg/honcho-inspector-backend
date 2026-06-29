@@ -9,9 +9,12 @@ import com.revytechinc.honchoinspector.filter.SessionAuthFilter;
 import com.revytechinc.honchoinspector.honcho.HonchoApiVersion;
 import com.revytechinc.honchoinspector.honcho.HonchoCallException;
 import com.revytechinc.honchoinspector.honcho.HonchoClientFactory;
+import com.revytechinc.honchoinspector.honcho.HonchoMetrics;
+import com.revytechinc.honchoinspector.honcho.StreamingChatService;
 import com.revytechinc.honchoinspector.model.ErrorResponse;
 import com.revytechinc.honchoinspector.model.HonchoContext;
 import com.revytechinc.honchoinspector.service.HonchoProxyService;
+import tools.jackson.databind.ObjectMapper;
 import org.springframework.http.MediaType;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -21,7 +24,9 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -31,7 +36,10 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.client.RestClient;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
+import java.io.InputStream;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -53,17 +61,26 @@ public class HonchoController {
     private final ProfileService profiles;
     private final HonchoProperties properties;
     private final AdminAudit audit;
+    private final RestClient honchoRestClient;
+    private final ObjectMapper json;
+    private final HonchoMetrics metrics;
 
     public HonchoController(
         HonchoProxyService honcho,
         ProfileService profiles,
         HonchoProperties properties,
-        AdminAudit audit
+        AdminAudit audit,
+        RestClient honchoRestClient,
+        ObjectMapper json,
+        HonchoMetrics metrics
     ) {
         this.honcho = honcho;
         this.profiles = profiles;
         this.properties = properties;
         this.audit = audit;
+        this.honchoRestClient = honchoRestClient;
+        this.json = json;
+        this.metrics = metrics;
     }
 
     @GetMapping("/peers")
@@ -215,6 +232,107 @@ public class HonchoController {
         @RequestBody Object body
     ) {
         return call(req, (ctx, ws) -> honcho.peerChat(ctx, peerId, body));
+    }
+
+    @PostMapping(value = "/peers/{peerId}/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    @Operation(
+        summary = "Stream a chat reply from a peer",
+        description = "Proxies `POST /v3/workspaces/{workspaceId}/peers/{peerId}/chat` "
+            + "with `Accept: text/event-stream`. Reads Honcho's SSE chunks line by line, "
+            + "strips `...` chain-of-thought blocks, and emits one `{data, error, meta}` "
+            + "envelope per chunk as `data: {...}\\n\\n`. Terminal event: "
+            + "`data: {data:{text:\"\"}, meta:{done:true}}\\n\\n`. Recorded in the audit "
+            + "log as `chat.stream` AFTER the upstream response completes."
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Stream of per-chunk SSE envelopes"),
+        @ApiResponse(responseCode = "400", description = "Missing `X-Honcho-Profile-Id` header"),
+        @ApiResponse(responseCode = "404", description = "Profile not found / not owned by current user")
+    })
+    public ResponseEntity<StreamingResponseBody> peerChatStream(
+        HttpServletRequest req,
+        @Parameter(description = "Honcho peer id", example = "alice")
+        @PathVariable String peerId,
+        @RequestBody(required = false) Object body
+    ) {
+        // Bypasses HonchoProxyService: the dispatch pipeline buffers
+        // into a typed Object; SSE would defeat the purpose.
+        AuthService.CurrentUser current = (AuthService.CurrentUser) req.getAttribute(SessionAuthFilter.CURRENT_USER_ATTR);
+        if (current == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "not authenticated");
+        }
+        String profileIdHeader = req.getHeader(PROFILE_HEADER);
+        if (profileIdHeader == null || profileIdHeader.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "missing " + PROFILE_HEADER + " header");
+        }
+        var pwk = profiles.getWithKey(current.user().id(), profileIdHeader).orElse(null);
+        if (pwk == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "profile not found");
+        }
+        HonchoApiVersion apiVersion = HonchoClientFactory.resolveVersion(
+            pwk.profile().apiVersion(),
+            HonchoApiVersion.fromString(properties.apiVersion())
+        );
+        HonchoContext ctx = new HonchoContext(
+            pwk.apiKey(), pwk.profile().baseUrl(),
+            pwk.profile().workspaceId(), pwk.profile().honchoUserName(),
+            apiVersion, profileIdHeader
+        );
+        String actorId = current.user() != null ? current.user().id() : null;
+        String sessionId = req.getHeader(SessionAuthFilter.SESSION_HEADER);
+        String ip = resolveClientIp(req);
+        Object streamBody = body;
+        if (streamBody instanceof Map<?, ?> rawMap) {
+            Map<String, Object> merged = new LinkedHashMap<String, Object>();
+            for (Map.Entry<?, ?> e : rawMap.entrySet()) {
+                if (e.getKey() != null && e.getValue() != null) {
+                    merged.put(e.getKey().toString(), e.getValue());
+                }
+            }
+            merged.putIfAbsent("stream", true);
+            streamBody = merged;
+        } else {
+            streamBody = Map.of("stream", true);
+        }
+        String url = ctx.baseUrl() + "/" + ctx.apiVersion().pathPrefix()
+            + "/workspaces/" + ctx.workspaceId()
+            + "/peers/" + peerId + "/chat";
+        ResponseEntity<InputStream> upstream;
+        try {
+            upstream = honchoRestClient.post()
+                .uri(url)
+                .header("Authorization", "Bearer " + ctx.apiKey())
+                .header("X-Honcho-User-Name", ctx.userName())
+                .header("Accept", "text/event-stream")
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(streamBody)
+                .retrieve()
+                .toEntity(InputStream.class);
+        } catch (Exception e) {
+            audit.record(actorId, "chat.stream", null, "peer:" + peerId, ip, sessionId,
+                Map.of("peerId", peerId, "chunks", 0, "status", "err"));
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "upstream error: " + e.getMessage());
+        }
+        return ResponseEntity.ok()
+            .header("X-Accel-Buffering", "no")
+            .header("Cache-Control", "no-cache")
+            .body((StreamingResponseBody) out -> {
+                long chunks = 0;
+                String status = "ok";
+                try (InputStream honchoStream = upstream.getBody()) {
+                    chunks = StreamingChatService.stream(out, honchoStream, peerId, json);
+                } catch (Throwable t) {
+                    status = "err";
+                    throw new RuntimeException(t);
+                } finally {
+                    Map<String, Object> auditMeta = new LinkedHashMap<>();
+                    auditMeta.put("peerId", peerId);
+                    auditMeta.put("chunks", chunks);
+                    auditMeta.put("status", status);
+                    auditMeta.put("apiVersion", ctx.apiVersion().pathPrefix());
+                    audit.record(actorId, "chat.stream", null, "peer:" + peerId, ip, sessionId, auditMeta);
+                }
+            });
     }
 
     @PostMapping("/peers/{peerId}/search")
@@ -521,7 +639,11 @@ public class HonchoController {
         @PathVariable String sessionId,
         @RequestBody Object body
     ) {
-        return call(req, (ctx, ws) -> honcho.addMessage(ctx, sessionId, body));
+        ResponseEntity<?> result = call(req, (ctx, ws) -> honcho.addMessage(ctx, sessionId, body));
+        if (result.getStatusCode().is2xxSuccessful()) {
+            metrics.recordMessageSent(sessionId);
+        }
+        return result;
     }
 
     @PutMapping("/sessions/{sessionId}/messages/{messageId}")
@@ -665,7 +787,11 @@ public class HonchoController {
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
     public ResponseEntity<?> workspaceSearch(HttpServletRequest req, @RequestBody Object body) {
-        return call(req, (ctx, ws) -> honcho.searchMessages(ctx, body));
+        ResponseEntity<?> result = call(req, (ctx, ws) -> honcho.searchMessages(ctx, body));
+        if (result.getStatusCode().is2xxSuccessful()) {
+            metrics.recordSearch();
+        }
+        return result;
     }
 
     @PostMapping("/dream")
@@ -687,7 +813,11 @@ public class HonchoController {
                 .body(new ErrorResponse("request body must include a non-blank 'peerId' field"));
         }
         var peerId = body.get("peerId").toString();
-        return call(req, (ctx, ws) -> honcho.scheduleDream(ctx, peerId, body));
+        ResponseEntity<?> result = call(req, (ctx, ws) -> honcho.scheduleDream(ctx, peerId, body));
+        if (result.getStatusCode().is2xxSuccessful()) {
+            metrics.recordDream(peerId);
+        }
+        return result;
     }
 
     @GetMapping("/workspace/info")
