@@ -1,0 +1,178 @@
+# Containerfile for the honcho-inspector "all-in-one" image.
+#
+# Three stages:
+#   1. backend-builder -- `mvn package` against the local source tree
+#      to produce the Spring Boot fat jar. Uses the existing
+#      packaging/container/Containerfile's first stage unchanged.
+#   2. ui-builder -- `git clone` + `npm ci` + `ng build` against a
+#      pinned git ref of the honcho-inspector-ui repo, to produce
+#      `dist/honcho-inspector-ui/browser/` (the static assets the
+#      browser will load).
+#   3. runtime -- eclipse-temurin:25-jre-alpine + the backend jar +
+#      the UI's static dist + a small Spring WebMvcConfigurer that
+#      serves the UI assets under `/` and falls back to `index.html`
+#      for SPA routing (so Angular's router takes every non-/api
+#      path). The Spring Boot app already exposes `/api/*` and
+#      `/actuator/*`; the all-in-one layer adds `/` -> the SPA.
+#
+# The result is one container that brings up the whole product on a
+# single port (8080). Operator workflow becomes:
+#
+#   podman run --rm -p 127.0.0.1:8080:8080 \
+#       -v honcho-inspector-data:/var/lib/honcho-inspector \
+#       -v honcho-inspector-logs:/var/log/honcho-inspector \
+#       -v honcho-inspector-cfg:/etc/honcho-inspector \
+#       revytechinc/honcho-inspector-backend:0.1.0-SNAPSHOT-all-in-one
+#
+# then point a browser at http://localhost:8080.
+#
+# Build (multi-arch via qemu; works on this dev box cross-compiling
+# to arm64 too):
+#
+#   podman build \
+#     --platform linux/amd64,linux/arm64 \
+#     --build-arg UI_GIT_REF=v0.1.0-SNAPSHOT \
+#     --build-arg UI_GIT_REPO=https://github.com/cloudbsdorg/honcho-inspector-ui.git \
+#     -t honcho-inspector-backend:dev-all-in-one \
+#     -f packaging/container/Containerfile.all-in-one .
+#
+# Multi-arch manifest push:
+#
+#   packaging/scripts/build-image.sh honcho-inspector-backend all-in-one
+#
+# Override the UI pin via env:
+#   UI_GIT_REF=main make push-all-in-one
+#
+# Why a third Containerfile rather than reusing packaging/container/Containerfile?
+# The current backend runtime Containerfile ships the fat jar + systemd +
+# manpage into a JRE image. The all-in-one needs to additionally bake the
+# UI's static dist into the same image and configure Spring to serve it
+# as a SPA at `/`. That's a different runtime surface, so it gets its
+# own Containerfile. The backend-builder stage is identical to the
+# existing one.
+
+# ====== stage 1: backend jar =====================================
+FROM docker.io/library/maven:3.9-eclipse-temurin-25 AS backend-builder
+
+WORKDIR /build
+
+# Same layer cache hint as the existing backend Containerfile -- copy
+# the project metadata first so dependency resolution is its own layer.
+COPY pom.xml ./
+COPY src ./src
+COPY docs ./docs
+
+RUN mvn -B -ntp -DskipTests package \
+ && cp target/honcho-inspector-backend-*.jar /build/honcho-inspector-backend.jar \
+ && rm -f /build/honcho-inspector-backend-*.jar.original
+
+# ====== stage 2: ui dist =========================================
+# Pinned by UI_GIT_REF (default: main). Override via
+#   --build-arg UI_GIT_REF=v0.1.0-SNAPSHOT
+# for a reproducible all-in-one build that doesn't drift when main
+# moves. Pushing a new all-in-one image therefore becomes "bump the
+# pin + rebuild" instead of "the UI drifted under us and we have
+# to scrub".
+#
+# Branch / tag / SHA all accepted -- Git's CLI treats refs
+# uniformly.
+FROM docker.io/library/node:22-alpine AS ui-builder
+
+ARG UI_GIT_REPO=https://github.com/cloudbsdorg/honcho-inspector-ui.git
+ARG UI_GIT_REF=main
+
+# git for the clone; the rest are gone after the build.
+RUN apk add --no-cache git
+
+WORKDIR /src
+RUN git clone --depth 1 --branch "${UI_GIT_REF}" "${UI_GIT_REPO}" /src \
+ && npm ci --no-audit --no-fund \
+ && npm run build \
+ && ls -la dist/honcho-inspector-ui/
+
+# ====== stage 3: runtime =========================================
+# Same alpine + JRE base as the standalone backend runtime. Tini
+# as PID 1 for signal forwarding. The Spring Boot jar is launched
+# with `-Dhoncho.ui.dist=/usr/local/share/honcho-inspector-ui/dist`
+# so the bundled `WebMvcConfigurer` (see src/.../WebConfig.java)
+# knows where to serve the SPA from.
+FROM docker.io/eclipse-temurin:25-jre-alpine AS runtime
+
+LABEL org.opencontainers.image.title="honcho-inspector (all-in-one)" \
+      org.opencontainers.image.description="Backend + UI bundled on a single port (8080). Spring Boot serves /api/* and the Angular SPA is served from /." \
+      org.opencontainers.image.source="https://github.com/cloudbsdorg/honcho-inspector-backend" \
+      org.opencontainers.image.licenses="BSD-3-Clause"
+
+RUN apk add --no-cache \
+        sqlite \
+        curl \
+        shadow \
+        tini \
+    && rm -rf /var/cache/apk/*
+
+STOPSIGNAL SIGTERM
+ENTRYPOINT ["/sbin/tini", "--"]
+
+# Backend jar (from stage 1).
+COPY --from=backend-builder /build/honcho-inspector-backend.jar \
+     /usr/local/lib/honcho-inspector/honcho-inspector-backend.jar
+
+# UI static dist (from stage 2). The Angular `ng build` output dir
+# is `dist/honcho-inspector-ui/browser/` (the `browser/` subdir is
+# the entry-pointed static asset tree).
+COPY --from=ui-builder /src/dist/honcho-inspector-ui/browser/ \
+     /usr/local/share/honcho-inspector/ui/
+
+# Operator-facing files (same as the standalone backend runtime so
+# the package installation paths line up regardless of which image
+# the operator pulls).
+COPY bin/honcho-inspector                                          /usr/local/bin/honcho-inspector
+COPY etc/systemd/honcho-inspector.service                          /etc/systemd/system/honcho-inspector.service
+COPY etc/default/honcho-inspector                                  /etc/default/honcho-inspector
+COPY etc/honcho-inspector/application.yml.example                  /usr/local/share/honcho-inspector/etc/honcho-inspector/application.yml.example
+COPY docs/honcho-inspector.1                                       /usr/local/share/man/man1/honcho-inspector.1
+
+# Eclipse-temurin:25-jre-alpine is a JRE-only image, so most BusyBox
+# shadow utilities (adduser/addgroup) aren't installed and there's
+# no pre-created www-data. We use BusyBox's `addgroup` + `adduser`
+# from the `shadow` package we installed earlier in this Dockerfile;
+# those commands tolerate the "group already exists" case (Alpine
+# ships nobody:nogroup at uid 65534) by exiting non-zero, which
+# short-circuits `&&`, so we explicitly `|| true`.
+RUN ( addgroup -S www-data 2>/dev/null || true ) \
+ && ( adduser -S -G www-data -h /var/lib/honcho-inspector \
+        -s /sbin/nologin -H -D www-data 2>/dev/null || true ) \
+ && mkdir -p /etc/honcho-inspector \
+ && install -d -m 0750 -o www-data -g www-data /var/lib/honcho-inspector \
+ && install -d -m 0750 -o www-data -g www-data /var/log/honcho-inspector \
+ && install -d -m 0750 -o root    -g www-data /etc/honcho-inspector/logs \
+ && chmod 0640 /etc/default/honcho-inspector \
+ && chown root:www-data /etc/default/honcho-inspector \
+ && gzip -9nf /usr/local/share/man/man1/honcho-inspector.1 || true
+
+COPY etc/systemd/honcho-inspector.service /etc/systemd/honcho-inspector.service
+
+# honcho.ui.dist is consumed by com.revytechinc.honchoinspector.config.UiStaticConfig
+# (a WebMvcConfigurer that mounts the Angular dist + SPA fallback at /).
+# When this directory is absent (standalone backend image), UiStaticConfig
+# short-circuits and the SPA-serving handler is a no-op.
+ENV HONCHO_DB_PATH=jdbc:sqlite:/var/lib/honcho-inspector/honcho-inspector.db
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+    CMD curl -fsS http://127.0.0.1:8080/api/health || exit 1
+
+# The all-in-one image is meant to be exposed via port-publishing
+# (`podman run -p 8080:8080 …`), so Spring binds to all container
+# interfaces (0.0.0.0, the default). The standalone backend
+# Containerfile explicitly binds to 127.0.0.1 because it expects a
+# reverse proxy / systemd socket-activation on the host's loopback;
+# we drop that here -- the all-in-one has no such reverse proxy.
+CMD ["java", \
+     "-Xms64m", "-Xmx256m", \
+     "-Dhoncho.config.dir=/etc/honcho-inspector", \
+     "-Dlogging.file.name=/var/log/honcho-inspector/honcho-inspector-backend.log", \
+     "-jar", "/usr/local/lib/honcho-inspector/honcho-inspector-backend.jar"]
+
+VOLUME ["/var/lib/honcho-inspector", "/etc/honcho-inspector", "/var/log/honcho-inspector"]
+
+EXPOSE 8080

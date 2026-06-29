@@ -43,6 +43,8 @@ JAR          = target/$(PROJECT_NAME)-0.1.0-SNAPSHOT.jar
 .PHONY: help build package compile validate test verify \
         run start run-jar \
         packages packages-all packages-debian packages-rocky packages-suse packages-alpine packages-arch packages-void packages-clean \
+        image-build image-build-backend-only image-build-all-in-one image-build-clean \
+        image-push image-push-backend-only image-push-all-in-one \
         db-shell db-vacuum db-reset \
         lint format outdated \
         clean distclean
@@ -130,6 +132,20 @@ verify: ## Full verify (tests + integration)
 #   make packages-all        build all of the above, in order
 #   make packages            alias for packages-all
 #
+# Targets (container image, multi-arch):
+#   make image-build-backend-only     build backend-only (amd64 + arm64)
+#   make image-build-all-in-one        build all-in-one (bundles UI)
+#   make image-build                  both
+#   make image-build-clean            drop locally-built per-arch images
+#   make image-push-backend-only      build + push backend-only manifest
+#   make image-push-all-in-one         build + push all-in-one manifest
+#   make image-push                   both
+#
+# Override the registry / version / platforms:
+#   make image-push RUNTIME_REPO=docker.io/myorg/myproject RUNTIME_VER=1.0.0
+#   make image-push PLATFORMS=linux/amd64
+#   make image-push-all-in-one UI_GIT_REF=v0.1.0-SNAPSHOT
+#
 # Override the build args to pick up a different source tree (the
 # script defaults to $PWD):
 #   make packages-debian BUILD_PACKAGE_EXTRA_ARGS="--no-cache"
@@ -172,6 +188,62 @@ packages-clean: ## Remove dist/packages/ (Linux package output)
 	else \
 		printf "no dist/packages/ -- nothing to do\n"; \
 	fi
+
+# === Container image ===
+#
+# Multi-arch (linux/amd64 + linux/arm64) container build + push.
+# Cross-compilation to arm64 on an amd64 host needs qemu-user-static +
+# binfmt-support (Debian/Ubuntu: `apt install qemu-user qemu-user-binfmt`).
+#
+# Two Containerfiles live under packaging/container/:
+#   - Containerfile           backend-only, used for deployments where
+#                             the operator runs the UI separately
+#   - Containerfile.all-in-one bundles the Angular UI dist into the
+#                             same image; serves /api/* and the SPA
+#                             over a single :8080 port.
+#
+# The script (packaging/scripts/build-image.sh) handles per-arch build
+# + manifest list creation + registry push. Override RUNTIME_REPO,
+# RUNTIME_VER, PLATFORMS, UI_GIT_REF via env or `make VAR=...` syntax.
+
+IMAGE_NAME      = honcho-inspector-backend
+IMAGE_BUILD_SCRIPT = packaging/scripts/build-image.sh
+
+image-build: image-build-backend-only image-build-all-in-one ## Build both modes, multi-arch (no push)
+
+image-build-backend-only: ## Build the backend-only runtime for every PLATFORM (no push)
+	$(IMAGE_BUILD_SCRIPT) $(IMAGE_NAME) backend-only build
+
+image-build-all-in-one: ## Build the all-in-one (backend + UI) runtime for every PLATFORM (no push)
+	$(IMAGE_BUILD_SCRIPT) $(IMAGE_NAME) all-in-one build
+
+image-build-clean: ## Drop locally-built per-arch images + the local manifest list
+	@if command -v podman >/dev/null 2>&1; then \
+		RT=podman; \
+	elif command -v docker >/dev/null 2>&1; then \
+		RT=docker; \
+	else \
+		printf "no container runtime found\n" >&2; exit 1; \
+	fi; \
+	"$$RT" image rm -f \
+		localhost/$(IMAGE_NAME):dev-amd64-backend-only \
+		localhost/$(IMAGE_NAME):dev-arm64-backend-only \
+		localhost/$(IMAGE_NAME):dev-amd64-all-in-one \
+		localhost/$(IMAGE_NAME):dev-arm64-all-in-one \
+		localhost/$(IMAGE_NAME)-all-in-one:dev-amd64-all-in-one \
+		localhost/$(IMAGE_NAME)-all-in-one:dev-arm64-all-in-one \
+		2>/dev/null || true; \
+	"$$RT" manifest rm $(IMAGE_NAME):dev-backend-only 2>/dev/null || true; \
+	"$$RT" manifest rm $(IMAGE_NAME)-all-in-one:dev-all-in-one 2>/dev/null || true; \
+	printf "ok: image-build-clean\n"
+
+image-push: image-push-backend-only image-push-all-in-one ## Build + push both modes, multi-arch
+
+image-push-backend-only: image-build-backend-only ## Build + push the backend-only multi-arch manifest list
+	$(IMAGE_BUILD_SCRIPT) $(IMAGE_NAME) backend-only push
+
+image-push-all-in-one: image-build-all-in-one ## Build + push the all-in-one multi-arch manifest list
+	$(IMAGE_BUILD_SCRIPT) $(IMAGE_NAME) all-in-one push
 
 # === Cleanup ===
 clean: ## Remove build artifacts

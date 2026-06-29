@@ -123,6 +123,20 @@ COPY etc/systemd/honcho-inspector.service /etc/systemd/honcho-inspector.service
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD curl -fsS http://127.0.0.1:8080/api/health || exit 1
 
+# Declare the state, log, and config directories as volumes so the
+# container engine creates an anonymous volume on first run and
+# preserves it across container removals (otherwise `podman rm` on
+# the old container would delete /var/lib/honcho-inspector and wipe
+# the SQLite DB + the operator's application.yml). Operators using
+# a compose stack or `podman run -v ...` get a named/bind mount at
+# the same path; named/bind mounts override the anonymous volume.
+#
+# We do NOT declare /etc/default/honcho-inspector as a VOLUME
+# because /etc/default is conventionally shipped as a conffile
+# (overridable by the operator) and is mounted by the package
+# installer rather than by the runtime container.
+VOLUME ["/var/lib/honcho-inspector", "/etc/honcho-inspector", "/var/log/honcho-inspector"]
+
 # CMD launches the JVM directly. The same hardening flags the systemd
 # unit uses are applied here: loopback bind (-Dserver.address=127.0.0.1),
 # config dir (-Dhoncho.config.dir), explicit log path (-Dlogging.file.name).
