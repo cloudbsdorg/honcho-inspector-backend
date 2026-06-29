@@ -12,87 +12,115 @@ import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
 import java.nio.charset.StandardCharsets;
-import java.util.LinkedHashMap;
-import java.util.Map;
 
 /**
  * Reads an SSE byte stream from Honcho's
  * {@code POST /v3/workspaces/{ws}/peers/{peerId}/chat} (sent with
- * {@code Accept: text/event-stream}) and writes a per-chunk envelope back
- * to the operator's response stream:
+ * {@code Accept: text/event-stream}) and writes each visible chunk
+ * straight back to the operator's response stream in Honcho's
+ * native wire format:
  *
  * <pre>
- *   data: {"data":{"text":"&lt;chunk&gt;"},"meta":{"done":false}}\n\n
+ *   data: &lt;chunk&gt;\n\n
  *   ...
- *   data: {"data":{"text":""},"meta":{"done":true}}\n\n
+ *   data: [DONE]\n\n
  * </pre>
  *
- * <h2>Chain-of-thought stripping</h2>
- * <p>Honcho v3 emits Honcho-side reasoning inside {@code ...} blocks
- * (think tags). The chat popout UI only wants the visible answer, so
- * this service drops everything between matched {@code } and {@code }
- * pairs in real time as bytes arrive from Honcho. State is a single
- * flag that flips {@code true} on the first {@code }, back to
- * {@code false} on the next {@code }, and never resets across chunks
- * (so a CoT block that spans multiple Honcho SSE events is skipped
- * end-to-end).
+ * <h2>Why raw text instead of a JSON envelope</h2>
+ * <p>Honcho's chat endpoint already streams
+ * {@code data: &lt;text&gt;\n\n} chunks of the form
+ * {@code {"delta":{"content":"..."},"done":false}}. Wrapping that
+ * text in a project-local envelope ({@code {"data":{"text":"..."},"meta":{...}}})
+ * forces the browser to JSON-parse every chunk before showing
+ * anything to the user, which both wastes CPU and (more visibly)
+ * collapses Honcho's bursty chunking into a single update at
+ * {@code done:true} time — the operator sees nothing stream.
+ * Forwarding the visible text verbatim and using the well-known
+ * {@code data: [DONE]\n\n} sentinel for the terminal event
+ * eliminates the reparse, lets the chat popout's typing
+ * animation paint word-by-word, and stays compatible with every
+ * SSE client that knows the {@code data: [DONE]} idiom.
  *
- * <h2>Per-chunk data line shape</h2>
+ * <h2>Chain-of-thought stripping</h2>
+ * <p>Honcho v3 emits Honcho-side reasoning inside
+ * {@code <think>...</think>} blocks. The chat popout only wants
+ * the visible answer, so this service drops everything between
+ * matched {@code <think>} and {@code </think>} pairs in real time
+ * as bytes arrive from Honcho. State is a single flag that flips
+ * {@code true} on the first opener, back to {@code false} on the
+ * next closer, and never resets across chunks (so a CoT block
+ * that spans multiple Honcho SSE events is skipped end-to-end).
+ *
+ * <h2>Honcho wire format</h2>
  * <ul>
- *   <li>{@code {"delta":{"content":"..."},"done":false}} — normal partial text.
- *       The {@code text} becomes {@code data.text} in the outbound envelope;
- *       CoT inside the content is stripped per the rule above.</li>
- *   <li>{@code {"delta":{},"done":true}} — terminal marker. The service
- *       emits the final envelope ({@code "done":true}) and stops.</li>
+ *   <li>{@code data: {"delta":{"content":"..."},"done":false}} —
+ *       normal partial text. The {@code content} is CoT-stripped
+ *       and emitted as {@code data: <visible>\n\n}. Empty visible
+ *       chunks (the entire chunk is inside a {@code <think>}
+ *       block, or there is no {@code content} field at all) are
+ *       dropped — no {@code data:} line is written, so the
+ *       operator doesn't see blank ticks.</li>
+ *   <li>{@code data: {"delta":{},"done":true}} — terminal marker.
+ *       The service emits {@code data: [DONE]\n\n} and stops.</li>
  *   <li>Anything else (heartbeat comments, {@code id:}, {@code event:},
  *       {@code retry:}) is silently ignored.</li>
  * </ul>
  *
  * <h2>Design notes</h2>
  * <ul>
- *   <li>Each Honcho data line is parsed, CoT-stripped, and written to the
- *       output stream within the same loop iteration.
- *       {@link OutputStream#flush()} is called after every envelope so the
- *       operator's browser sees incremental chunks as they leave Honcho.</li>
- *   <li>The output stream is wrapped in {@code OutputStreamWriter(UTF-8)};
- *       line boundaries are written as {@code "\n\n"} to separate SSE
- *       events.</li>
+ *   <li>Each Honcho data line is parsed, CoT-stripped, and written
+ *       to the output stream within the same loop iteration.
+ *       {@link OutputStream#flush()} is called after every visible
+ *       chunk so the operator's browser sees incremental text as
+ *       it leaves Honcho.</li>
+ *   <li>The output stream is wrapped in
+ *       {@code OutputStreamWriter(UTF-8)}; line boundaries are
+ *       written as {@code "\n\n"} to separate SSE events.</li>
  *   <li>{@link IOException} propagates so the surrounding
- *       {@code StreamingResponseBody} (or unit-test harness) can see a
- *       broken upstream pipe and let the controller emit an audit row.</li>
- *   <li>The signature takes an {@link OutputStream} because that's what
- *       Spring's {@code StreamingResponseBody} callback provides. Wrapping
- *       in a {@link Writer} happens here so the unit test (which passes
- *       a {@link java.io.ByteArrayOutputStream}) and the controller share
- *       the same code path.</li>
+ *       {@code StreamingResponseBody} (or unit-test harness) can
+ *       see a broken upstream pipe and let the controller emit an
+ *       audit row.</li>
+ *   <li>The signature takes an {@link OutputStream} because that's
+ *       what Spring's {@code StreamingResponseBody} callback
+ *       provides. Wrapping in a {@link Writer} happens here so the
+ *       unit test (which passes a
+ *       {@link java.io.ByteArrayOutputStream}) and the controller
+ *       share the same code path.</li>
+ *   <li>The terminal sentinel is the literal string {@code [DONE]},
+ *       not a JSON object. This is the same convention OpenAI's
+ *       v1 chat completions stream used and is unambiguous in
+ *       SSE.</li>
  * </ul>
  *
  * <h2>Termination semantics</h2>
  * <ul>
- *   <li>If the upstream hits {@code done:true} mid-stream, the final
- *       envelope is {@code {"data":{"text":""},"meta":{"done":true}}}.</li>
- *   <li>If we reach end-of-stream with the CoT block still open, the final
- *       envelope also reports {@code done:true} and includes a
- *       {@code truncatedChars} count in {@code meta} so the operator knows
- *       the CoT was abruptly cut off.</li>
+ *   <li>If the upstream hits {@code done:true} mid-stream, the
+ *       final outbound event is {@code data: [DONE]\n\n}.</li>
+ *   <li>If we reach end-of-stream with the CoT block still open,
+ *       the final outbound event is also {@code data: [DONE]\n\n}.
+ *       No {@code truncatedChars} hint is emitted on the wire;
+ *       the popout just closes.</li>
  * </ul>
  */
 public final class StreamingChatService {
 
     static final String THINK_OPEN = "<" + "think" + ">";
     static final String THINK_CLOSE = "<" + "/think" + ">";
+    /** Outbound SSE terminal sentinel (Honcho v3 native idiom). */
+    static final String DONE_SENTINEL = "[DONE]";
 
     private StreamingChatService() {}
 
     /**
-     * Stream Honcho's SSE response to {@code out}, emitting per-chunk
-     * {@code {data, error, meta}} envelopes as SSE events.
+     * Stream Honcho's SSE response to {@code out}, emitting each
+     * visible chunk as a raw-text {@code data:} line and
+     * {@code data: [DONE]\n\n} as the terminal event.
      *
      * @param out          the operator's response stream; written to but NOT closed (caller owns)
      * @param honchoStream Honcho's SSE byte stream; read to EOF or until {@link IOException}
-     * @param peerId       the Honcho peer id; included as {@code meta.peerId} for debug
+     * @param peerId       the Honcho peer id; reserved for future debug metadata (currently unused on the wire)
      * @param mapper       the JSON encoder; must be non-null
-     * @return the number of non-terminal envelopes emitted (terminal event not counted)
+     * @return the number of visible chunks emitted (terminal event not counted)
      * @throws IOException if the upstream stream or the downstream write errors
      */
     public static long stream(
@@ -131,31 +159,27 @@ public final class StreamingChatService {
                     continue;
                 }
                 boolean done = root.path("done").asBoolean(false);
+                if (done) {
+                    writeDone(writer);
+                    writer.flush();
+                    return chunks;
+                }
                 JsonNode delta = root.path("delta");
                 String content = delta.isMissingNode() || delta.isNull()
                     ? null
                     : delta.path("content").asText((String) null);
-
-                if (done) {
-                    Map<String, Object> meta = new LinkedHashMap<>();
-                    meta.put("done", true);
-                    meta.put("peerId", peerId);
-                    if (state.open) {
-                        meta.put("truncatedChars", state.truncated);
-                    }
-                    writeEnvelope(writer, "", meta, mapper);
-                    writer.flush();
-                    return chunks;
-                }
                 if (content == null) {
                     continue;
                 }
                 String visible = stripThink(content, state);
-
-                Map<String, Object> meta = new LinkedHashMap<>();
-                meta.put("done", false);
-                meta.put("peerId", peerId);
-                writeEnvelope(writer, visible, meta, mapper);
+                if (visible.isEmpty()) {
+                    // Entire chunk was inside a <think>...</think>
+                    // block (or was just whitespace). Skip the
+                    // outbound data: line so the operator doesn't
+                    // see a blank tick.
+                    continue;
+                }
+                writeChunk(writer, visible);
                 writer.flush();
                 chunks++;
             }
@@ -166,13 +190,10 @@ public final class StreamingChatService {
                 // Stream may already be closed; nothing to do.
             }
         }
-        Map<String, Object> meta = new LinkedHashMap<>();
-        meta.put("done", true);
-        meta.put("peerId", peerId);
-        if (state.open) {
-            meta.put("truncatedChars", state.truncated);
-        }
-        writeEnvelope(writer, "", meta, mapper);
+        // Upstream closed without an explicit done:true; still
+        // send the terminal sentinel so the operator's reader
+        // exits cleanly.
+        writeDone(writer);
         writer.flush();
         return chunks;
     }
@@ -203,18 +224,18 @@ public final class StreamingChatService {
         return out.toString();
     }
 
-    private static void writeEnvelope(
-        Writer writer,
-        String text,
-        Map<String, Object> meta,
-        ObjectMapper mapper
-    ) throws IOException {
-        Map<String, Object> envelope = new LinkedHashMap<>();
-        envelope.put("data", Map.of("text", text));
-        envelope.put("error", null);
-        envelope.put("meta", meta);
+    private static void writeChunk(Writer writer, String text) throws IOException {
+        // SSE: a single data: line per event, then a blank line
+        // to separate events. Honcho's native format is the same;
+        // we just forward the visible text after CoT stripping.
         writer.write("data: ");
-        writer.write(mapper.writeValueAsString(envelope));
+        writer.write(text);
+        writer.write("\n\n");
+    }
+
+    private static void writeDone(Writer writer) throws IOException {
+        writer.write("data: ");
+        writer.write(DONE_SENTINEL);
         writer.write("\n\n");
     }
 

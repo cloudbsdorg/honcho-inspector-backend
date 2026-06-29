@@ -3,9 +3,6 @@ package com.revytechinc.honchoinspector.honcho;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.ObjectMapper;
-
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -16,32 +13,33 @@ import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import tools.jackson.databind.ObjectMapper;
+
 class StreamingChatServiceTest {
 
     private final ObjectMapper mapper = new ObjectMapper();
 
     @Test
-    @DisplayName("textOnly emits every chunk verbatim and closes with done:true")
+    @DisplayName("textOnly emits every chunk verbatim and closes with data: [DONE]")
     void textOnlyStreamsEverything() throws Exception {
         var upstream = """
             data: {"delta":{"content":"Hello"},"done":false}
 
-            data: {"delta":{"content":" world"},"done":false}
+            data: {"delta":{"content":"world"},"done":false}
 
             data: {"delta":{"content":"!"},"done":false}
 
             data: {"done":true}
 
             """;
-        List<Envelope> envelopes = run(upstream);
-        assertThat(envelopes).hasSize(4);
-        assertThat(envelopes.get(0).text()).isEqualTo("Hello");
-        assertThat(envelopes.get(0).done()).isFalse();
-        assertThat(envelopes.get(1).text()).isEqualTo(" world");
-        assertThat(envelopes.get(2).text()).isEqualTo("!");
-        assertThat(envelopes.get(3).text()).isEmpty();
-        assertThat(envelopes.get(3).done()).isTrue();
-        assertThat(envelopes.get(3).truncatedChars()).isNull();
+        List<Outbound> events = run(upstream);
+        assertThat(events).hasSize(4);
+        assertThat(events.get(0).text()).isEqualTo("Hello");
+        assertThat(events.get(0).done()).isFalse();
+        assertThat(events.get(1).text()).isEqualTo("world");
+        assertThat(events.get(2).text()).isEqualTo("!");
+        assertThat(events.get(3).text()).isEqualTo(StreamingChatService.DONE_SENTINEL);
+        assertThat(events.get(3).done()).isTrue();
     }
 
     @Test
@@ -53,16 +51,16 @@ class StreamingChatServiceTest {
             + "data: {\"delta\":{\"content\":\"</think>42\"},\"done\":false}\n"
             + "data: {\"done\":true}\n"
             + "\n";
-        List<Envelope> envelopes = run(upstream);
-        assertThat(envelopes).hasSize(4);
-        assertThat(envelopes.get(0).text()).isEqualTo("ok");
-        assertThat(envelopes.get(1).text())
-            .as("chunk after opener — visible part is empty, the <think>secret text is dropped")
-            .isEmpty();
-        assertThat(envelopes.get(2).text())
-            .as("chunk that contains the </think> opener — visible starts after the close")
-            .isEqualTo("42");
-        assertThat(envelopes.get(3).done()).isTrue();
+        List<Outbound> events = run(upstream);
+        // 2 visible ("ok" + "42") + 1 done = 3 outbound events.
+        // The chunk that is entirely inside the <think> block
+        // yields no data: line; the chunk that contains the
+        // closer yields only the visible suffix.
+        assertThat(events).hasSize(3);
+        assertThat(events.get(0).text()).isEqualTo("ok");
+        assertThat(events.get(1).text()).isEqualTo("42");
+        assertThat(events.get(2).text()).isEqualTo(StreamingChatService.DONE_SENTINEL);
+        assertThat(events.get(2).done()).isTrue();
     }
 
     @Test
@@ -76,57 +74,52 @@ class StreamingChatServiceTest {
             + "data: {\"delta\":{\"content\":\"" + closer + "final\"},\"done\":false}\n"
             + "data: {\"done\":true}\n"
             + "\n";
-        List<Envelope> envelopes = run(upstream);
-        assertThat(envelopes).hasSize(4);
-        assertThat(envelopes.get(0).text()).isEqualTo("pre");
-        assertThat(envelopes.get(1).text())
-            .as("chunk after opener — visible part is empty, the CoT body is dropped")
-            .isEmpty();
-        assertThat(envelopes.get(2).text())
-            .as("chunk that contains the closer — visible starts after the close")
-            .isEqualTo("final");
-        assertThat(envelopes.get(3).done()).isTrue();
+        List<Outbound> events = run(upstream);
+        assertThat(events).hasSize(3);
+        assertThat(events.get(0).text()).isEqualTo("pre");
+        assertThat(events.get(1).text()).isEqualTo("final");
+        assertThat(events.get(2).text()).isEqualTo(StreamingChatService.DONE_SENTINEL);
+        assertThat(events.get(2).done()).isTrue();
     }
 
     @Test
-    @DisplayName("open CoT block at end-of-stream emits done:true + truncatedChars")
-    void openCotAtEofEmitsTruncatedChars() throws Exception {
+    @DisplayName("open CoT block at end-of-stream still emits a data: [DONE] terminal")
+    void openCotAtEofEmitsDone() throws Exception {
         var opener = "" + "<think" + ">";
         var upstream = ""
             + "data: {\"delta\":{\"content\":\"ok\"},\"done\":false}\n"
             + "data: {\"delta\":{\"content\":\"" + opener + "hanging\"},\"done\":false}\n"
             + "\n";
-        List<Envelope> envelopes = run(upstream);
-        assertThat(envelopes).hasSize(3);
-        assertThat(envelopes.get(0).text()).isEqualTo("ok");
-        assertThat(envelopes.get(1).text()).isEmpty();
-        assertThat(envelopes.get(2).done()).isTrue();
-        assertThat(envelopes.get(2).truncatedChars())
-            .as("7 chars of unterminated CoT (the 'hanging' text after the opener)")
-            .isEqualTo(7);
+        List<Outbound> events = run(upstream);
+        // 1 visible ("ok") + 1 done. The opener+body chunk is
+        // entirely inside the <think> block, so no data: line.
+        assertThat(events).hasSize(2);
+        assertThat(events.get(0).text()).isEqualTo("ok");
+        assertThat(events.get(1).text()).isEqualTo(StreamingChatService.DONE_SENTINEL);
+        assertThat(events.get(1).done()).isTrue();
     }
 
     @Test
-    @DisplayName("done:true midstream stops the loop without further envelopes")
+    @DisplayName("done:true midstream stops the loop without further events")
     void doneMidstreamEmitsTerminalOnly() throws Exception {
         var upstream = ""
             + "data: {\"delta\":{\"content\":\"a\"},\"done\":false}\n"
             + "data: {\"done\":true}\n"
             + "data: {\"delta\":{\"content\":\"ignore me\"},\"done\":false}\n";
-        List<Envelope> envelopes = run(upstream);
-        assertThat(envelopes).hasSize(2);
-        assertThat(envelopes.get(0).text()).isEqualTo("a");
-        assertThat(envelopes.get(1).text()).isEmpty();
-        assertThat(envelopes.get(1).done()).isTrue();
+        List<Outbound> events = run(upstream);
+        assertThat(events).hasSize(2);
+        assertThat(events.get(0).text()).isEqualTo("a");
+        assertThat(events.get(1).text()).isEqualTo(StreamingChatService.DONE_SENTINEL);
+        assertThat(events.get(1).done()).isTrue();
     }
 
     @Test
-    @DisplayName("empty input stream emits a single terminal envelope")
+    @DisplayName("empty input stream emits a single data: [DONE] terminal")
     void emptyInputEmitsOneTerminal() throws Exception {
-        List<Envelope> envelopes = run("");
-        assertThat(envelopes).hasSize(1);
-        assertThat(envelopes.get(0).done()).isTrue();
-        assertThat(envelopes.get(0).text()).isEmpty();
+        List<Outbound> events = run("");
+        assertThat(events).hasSize(1);
+        assertThat(events.get(0).text()).isEqualTo(StreamingChatService.DONE_SENTINEL);
+        assertThat(events.get(0).done()).isTrue();
     }
 
     @Test
@@ -142,10 +135,10 @@ class StreamingChatServiceTest {
             + "data: {\"delta\":{\"content\":\"visible\"},\"done\":false}\n"
             + "\n"
             + "data: {\"done\":true}\n";
-        List<Envelope> envelopes = run(upstream);
-        assertThat(envelopes).hasSize(2);
-        assertThat(envelopes.get(0).text()).isEqualTo("visible");
-        assertThat(envelopes.get(1).done()).isTrue();
+        List<Outbound> events = run(upstream);
+        assertThat(events).hasSize(2);
+        assertThat(events.get(0).text()).isEqualTo("visible");
+        assertThat(events.get(1).text()).isEqualTo(StreamingChatService.DONE_SENTINEL);
     }
 
     @Test
@@ -157,25 +150,10 @@ class StreamingChatServiceTest {
             + "data: {\"delta\":{\"content\":\"ok\"},\"done\":false}\n"
             + "data: {broken\n"
             + "data: {\"done\":true}\n";
-        List<Envelope> envelopes = run(upstream);
-        assertThat(envelopes).hasSize(2);
-        assertThat(envelopes.get(0).text()).isEqualTo("ok");
-        assertThat(envelopes.get(1).done()).isTrue();
-    }
-
-    @Test
-    @DisplayName("meta.peerId is set on every emitted envelope")
-    void metaPeerIdIsAlwaysSet() throws Exception {
-        var upstream = ""
-            + "data: {\"delta\":{\"content\":\"a\"},\"done\":false}\n"
-            + "data: {\"done\":true}\n";
-        List<Envelope> envelopes = run(upstream);
-        assertThat(envelopes).hasSize(2);
-        for (Envelope e : envelopes) {
-            assertThat(e.peerId())
-                .as("every envelope should carry the peerId we passed in")
-                .isEqualTo("alice");
-        }
+        List<Outbound> events = run(upstream);
+        assertThat(events).hasSize(2);
+        assertThat(events.get(0).text()).isEqualTo("ok");
+        assertThat(events.get(1).text()).isEqualTo(StreamingChatService.DONE_SENTINEL);
     }
 
     @Test
@@ -187,7 +165,31 @@ class StreamingChatServiceTest {
         ).isInstanceOf(IllegalArgumentException.class);
     }
 
-    private List<Envelope> run(String sse) throws IOException {
+    @Test
+    @DisplayName("outbound wire format is exactly data: <text>\\n\\n (Honcho native SSE)")
+    void outboundIsRawTextDataLine() throws Exception {
+        var upstream = ""
+            + "data: {\"delta\":{\"content\":\"Hello, world!\"},\"done\":false}\n"
+            + "data: {\"done\":true}\n";
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        long chunks = StreamingChatService.stream(
+            out,
+            new ByteArrayInputStream(upstream.getBytes(StandardCharsets.UTF_8)),
+            "alice",
+            mapper
+        );
+        String raw = out.toString(StandardCharsets.UTF_8);
+        // No JSON braces anywhere on the wire. SSE event
+        // terminator is exactly "\n\n", and each event is a
+        // single "data: <text>" line followed by a blank line.
+        assertThat(raw).contains("data: Hello, world!\n\n");
+        assertThat(raw).contains("data: [DONE]\n\n");
+        assertThat(raw).doesNotContain("{");
+        assertThat(raw).doesNotContain("}");
+        assertThat(chunks).isEqualTo(1L);
+    }
+
+    private List<Outbound> run(String sse) throws IOException {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         long chunks = StreamingChatService.stream(
             out,
@@ -196,25 +198,22 @@ class StreamingChatServiceTest {
             mapper
         );
         String raw = out.toString(StandardCharsets.UTF_8);
-        List<Envelope> result = new ArrayList<>();
-        for (String line : raw.split("\n\n")) {
-            if (line.isBlank()) continue;
-            String stripped = line.startsWith("data:") ? line.substring(5).trim() : line;
-            JsonNode envelope = mapper.readTree(stripped);
-            result.add(new Envelope(
-                envelope.path("data").path("text").asText(""),
-                envelope.path("meta").path("done").asBoolean(false),
-                envelope.path("meta").path("truncatedChars").isMissingNode() || envelope.path("meta").path("truncatedChars").isNull()
-                    ? null
-                    : envelope.path("meta").path("truncatedChars").asInt(),
-                envelope.path("meta").path("peerId").asText(null)
-            ));
+        List<Outbound> result = new ArrayList<>();
+        for (String event : raw.split("\n\n")) {
+            if (event.isBlank()) continue;
+            // Wire format: "data: <payload>" (single line per
+            // outbound event). Multi-line data: would be unusual
+            // here since we always emit a single line.
+            String stripped = event.startsWith("data:") ? event.substring(5).trim() : event;
+            boolean done = stripped.equals(StreamingChatService.DONE_SENTINEL);
+            result.add(new Outbound(stripped, done));
         }
+        long nonTerminal = result.stream().filter(o -> !o.done()).count();
         assertThat(chunks)
-            .as("chunk count returned by the service must equal the number of non-terminal envelopes")
-            .isEqualTo(result.stream().filter(e -> !e.done()).count());
+            .as("chunk count returned by the service must equal the number of non-terminal outbound events")
+            .isEqualTo(nonTerminal);
         return result;
     }
 
-    private record Envelope(String text, boolean done, Integer truncatedChars, String peerId) {}
+    private record Outbound(String text, boolean done) {}
 }

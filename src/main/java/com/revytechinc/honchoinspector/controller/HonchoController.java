@@ -239,10 +239,12 @@ public class HonchoController {
         summary = "Stream a chat reply from a peer",
         description = "Proxies `POST /v3/workspaces/{workspaceId}/peers/{peerId}/chat` "
             + "with `Accept: text/event-stream`. Reads Honcho's SSE chunks line by line, "
-            + "strips `...` chain-of-thought blocks, and emits one `{data, error, meta}` "
-            + "envelope per chunk as `data: {...}\\n\\n`. Terminal event: "
-            + "`data: {data:{text:\"\"}, meta:{done:true}}\\n\\n`. Recorded in the audit "
-            + "log as `chat.stream` AFTER the upstream response completes."
+            + "strips `<think>...</think>` chain-of-thought blocks, and forwards each "
+            + "visible chunk in Honcho's native SSE wire format: `data: <text>\\n\\n` per "
+            + "chunk, terminating with `data: [DONE]\\n\\n`. No JSON envelope is wrapped "
+            + "around the chunks; the chat popout consumes the raw `data:` lines directly. "
+            + "Recorded in the audit log as `chat.stream` AFTER the upstream response "
+            + "completes."
     )
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Stream of per-chunk SSE envelopes"),
