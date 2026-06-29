@@ -215,6 +215,25 @@ public class HonchoController {
         return call(req, (ctx, ws) -> honcho.listPeerConclusions(ctx, peerId, body));
     }
 
+    @PostMapping("/conclusions")
+    @Operation(
+        summary = "List workspace-wide conclusions (no peer filter)",
+        description = "Proxies `POST /v3/workspaces/{workspaceId}/conclusions/list` without injecting `observed_id`, so Honcho returns the latest conclusions across every peer in the workspace. The body should be Honcho's `ConclusionGet` envelope: `{filters: {...}}`; an empty/missing filter object returns the most-recent N conclusions workspace-wide."
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Page of workspace-wide conclusions from Honcho"),
+        @ApiResponse(responseCode = "400", description = "Missing `X-Honcho-Profile-Id` header",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "404", description = "Profile not found / not owned by current user",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    public ResponseEntity<?> workspaceConclusions(
+        HttpServletRequest req,
+        @RequestBody(required = false) Object body
+    ) {
+        return call(req, (ctx, ws) -> honcho.listWorkspaceConclusions(ctx, body));
+    }
+
     @GetMapping("/peers/{peerId}/sessions")
     @Operation(
         summary = "List sessions a peer participates in",

@@ -318,6 +318,33 @@ class HonchoControllerTest {
     }
 
     @Test
+    void workspaceConclusions_delegatesToHonchoListWorkspaceConclusions() throws Exception {
+        Object body = Map.of("filters", Map.of());
+        when(honchoProxy.listWorkspaceConclusions(any(), eq(body)))
+            .thenReturn(Map.of("items", "all"));
+
+        mvc.perform(withHeaders(post("/api/conclusions")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsBytes(body))))
+            .andExpect(status().isOk());
+
+        verify(honchoProxy).listWorkspaceConclusions(any(), eq(body));
+    }
+
+    @Test
+    void workspaceConclusions_acceptsMissingBody() throws Exception {
+        when(honchoProxy.listWorkspaceConclusions(any(), any()))
+            .thenReturn(Map.of("items", java.util.List.of()));
+
+        mvc.perform(withHeaders(post("/api/conclusions"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}"))
+            .andExpect(status().isOk());
+
+        verify(honchoProxy).listWorkspaceConclusions(any(), any());
+    }
+
+    @Test
     void peerSessions_delegatesToHonchoListPeerSessions() throws Exception {
         when(honchoProxy.listPeerSessions(any(), eq("p-1"), any()))
             .thenReturn(Map.of("items", "s"));
