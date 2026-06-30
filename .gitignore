@@ -2,6 +2,7 @@ target/
 .playwright-mcp/
 login-page.png
 *.class
+*.jar
 *.log
 .DS_Store
 /opencode-session.txt
@@ -49,3 +50,10 @@ login-page.png
 .env.*
 !.env.example
 /.omo/
+
+# Validation sandbox. Mirrors the OS layout (etc/ + var/lib + var/log)
+# inside the repo so live tests of UI/backend behavior run against a
+# project-local HONCHO_CONFIG_DIR + HONCHO_DB without touching the
+# operator's /etc/honcho-inspector/ or /var/lib/honcho-inspector/.
+# Wipe with `git clean -xdf .validation-test` to reset.
+.validation-test/
