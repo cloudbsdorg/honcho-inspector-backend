@@ -13,8 +13,13 @@ import java.util.stream.Collectors;
 
 /**
  * Logs the active externalized configuration once the application is ready.
- * Useful in containerized deployments where you want a single log line to confirm
- * which env vars / profiles / ports / CORS origins the process is actually using.
+ * Useful in containerized deployments where you want a single log line to
+ * confirm which env vars / profiles / ports the process is actually using.
+ *
+ * <p>CORS is intentionally <strong>not</strong> logged: there is no
+ * hardcoded CORS configuration. Cross-origin access is opt-in via the
+ * {@code CORS_ALLOWED_ORIGINS} env var, which is read by
+ * {@link CorsConfig}; same-origin (via the relay) is always allowed.
  */
 @Component
 public class StartupInfoLogger {
@@ -27,7 +32,6 @@ public class StartupInfoLogger {
     private final String honchoBaseUrl;
     private final String honchoApiVersion;
     private final long honchoTimeoutMs;
-    private final String corsOrigins;
     private final long sessionTtlMinutes;
     private final boolean chatEnabled;
 
@@ -38,7 +42,6 @@ public class StartupInfoLogger {
         @Value("${honcho.base-url:https://api.honcho.dev}") String honchoBaseUrl,
         @Value("${honcho.api-version:v3}") String honchoApiVersion,
         @Value("${honcho.request-timeout-ms:30000}") long honchoTimeoutMs,
-        @Value("${cors.allowed-origins:http://localhost:4200}") String corsOrigins,
         @Value("${session.ttl-minutes:0}") long sessionTtlMinutes,
         @Value("${honcho.ui.chat-enabled:false}") boolean chatEnabled
     ) {
@@ -48,7 +51,6 @@ public class StartupInfoLogger {
         this.honchoBaseUrl = honchoBaseUrl;
         this.honchoApiVersion = honchoApiVersion;
         this.honchoTimeoutMs = honchoTimeoutMs;
-        this.corsOrigins = corsOrigins;
         this.sessionTtlMinutes = sessionTtlMinutes;
         this.chatEnabled = chatEnabled;
     }
@@ -61,8 +63,8 @@ public class StartupInfoLogger {
         var profileStr = profiles.isEmpty() ? "default" : profiles;
         var configDirEntry = formatConfigDir(configDir);
         log.info(
-            "honcho-inspector backend ready: port={}, profiles=[{}], config-dir={}, honcho={} (api={}, timeout={}ms), cors={}, session-ttl={}m, chat-enabled={}",
-            port, profileStr, configDirEntry, honchoBaseUrl, honchoApiVersion, honchoTimeoutMs, corsOrigins, sessionTtlMinutes, chatEnabled
+            "honcho-inspector backend ready: port={}, profiles=[{}], config-dir={}, honcho={} (api={}, timeout={}ms), session-ttl={}m, chat-enabled={}",
+            port, profileStr, configDirEntry, honchoBaseUrl, honchoApiVersion, honchoTimeoutMs, sessionTtlMinutes, chatEnabled
         );
     }
 

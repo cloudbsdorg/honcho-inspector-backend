@@ -1,5 +1,10 @@
 server:
   port: ${PORT:8080}
+  # Loopback-only by default — the UI relay (port 4200) is the sole
+  # browser-facing entry point; the backend is not internet-reachable.
+  # Override with HONCHO_BIND_ADDRESS=0.0.0.0 only inside a trusted
+  # network namespace.
+  address: ${HONCHO_BIND_ADDRESS:127.0.0.1}
   forward-headers-strategy: framework
   error:
     include-message: always
@@ -124,6 +129,18 @@ honcho:
     # rough. Set HONCHO_UI_CHAT_ENABLED=true to surface the
     # button + popout + SSE endpoint.
     chat-enabled: ${HONCHO_UI_CHAT_ENABLED:false}
+    # Default true: non-admin users can view / change / test the
+    # stored Honcho API key on a profile (matches the original
+    # product behavior). Set HONCHO_UI_API_KEY_VISIBLE_TO_NON_ADMIN=false
+    # for product demos where a shared "demo" account is handed
+    # out to attendees — the flag hides the Reveal API Key
+    # button + the API-key edit field on the profile-selector
+    # form, and the controller rejects /reveal, the apiKey half
+    # of PUT, and /test with 403 for non-admin callers. Admins
+    # always have full access regardless of the flag. Other
+    # profile fields (label, baseUrl, workspaceId, honchoUserName)
+    # remain editable for non-admins when the flag is off.
+    api-key-visible-to-non-admin: ${HONCHO_UI_API_KEY_VISIBLE_TO_NON_ADMIN:true}
     # Path to the static Angular dist when running in the
     # all-in-one image (Containerfile.all-in-one). When the
     # directory does not exist (standalone backend image with a
@@ -134,9 +151,9 @@ honcho:
     # HONCHO_UI_DIST=/srv/ui.
     dist: ${HONCHO_UI_DIST:/usr/local/share/honcho-inspector/ui}
 
-# CORS allowed origins. Comma-separated list.
-cors:
-  allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:4200,http://127.0.0.1:4200}
+# CORS is enforced by CorsConfig.java (per-request via CorsFilter bean).
+# Cross-origin access is opt-in via CORS_ALLOWED_ORIGINS env var (comma-separated).
+# Same-origin requests (Origin host == Host header) are always allowed — works for any deployment hostname.
 
 # Session config. ttl-minutes=0 means sessions never expire (current in-memory behavior).
 session:
