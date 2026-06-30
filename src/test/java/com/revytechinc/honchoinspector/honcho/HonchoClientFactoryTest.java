@@ -51,6 +51,7 @@ class HonchoClientFactoryTest {
         @Override public Object searchMessages(HonchoContext ctx, Object searchRequest) { return null; }
         @Override public Object scheduleDream(HonchoContext ctx, String peerId, Object dreamRequest) { return null; }
         @Override public Object getWorkspaceInfo(HonchoContext ctx) { return null; }
+        @Override public double totalWorkspaceMessages(HonchoContext ctx) { return 0.0; }
         @Override public Object updatePeer(HonchoContext ctx, String peerId, Object updatePeerRequest) { return null; }
         @Override public Object createConclusions(HonchoContext ctx, Object conclusionsBatch) { return null; }
         @Override public Object deleteConclusion(HonchoContext ctx, String conclusionId) { return null; }

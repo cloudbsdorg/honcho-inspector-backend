@@ -12,9 +12,11 @@ import static org.mockito.Mockito.when;
 
 /**
  * Contract test for {@link DreamsProviderV3}: the single-op provider
- * that handles {@code POST /v3/workspaces/{ws}/peers/{peerId}/dreams}.
- * The v2 legacy {@code /api/dream} was workspace-scoped and took the
- * peer id in the body; v3 promoted the peer id to a path variable.
+ * that handles {@code POST /v3/workspaces/{ws}/schedule_dream}. The
+ * v2 legacy {@code /api/dream} was workspace-scoped and took the peer
+ * id in the body; v3 reverts to a workspace-scoped endpoint with the
+ * peer passed in the body as {@code observer} (the translation happens
+ * in {@link HonchoV3Client#scheduleDream} before this provider runs).
  */
 class DreamsProviderV3Test {
 
@@ -29,7 +31,7 @@ class DreamsProviderV3Test {
         assertThat(provider.supportedVersions())
             .containsExactly(HonchoApiVersion.V3);
         assertThat(provider.pathTemplate(HonchoOperation.SCHEDULE_DREAM))
-            .isEqualTo("workspaces/{ws}/peers/{peerId}/dreams");
+            .isEqualTo("workspaces/{ws}/schedule_dream");
         assertThat(provider.httpMethod(HonchoOperation.SCHEDULE_DREAM))
             .isEqualTo(HttpMethod.POST);
     }

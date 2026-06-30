@@ -113,7 +113,7 @@ class MiscProvidersV3UnitTest {
             .as("DreamsProviderV3 is v3-only")
             .isEqualTo(Set.of(HonchoApiVersion.V3));
         assertThat(provider.pathTemplate(HonchoOperation.SCHEDULE_DREAM))
-            .isEqualTo("workspaces/{ws}/peers/{peerId}/dreams");
+            .isEqualTo("workspaces/{ws}/schedule_dream");
         assertThat(provider.httpMethod(HonchoOperation.SCHEDULE_DREAM))
             .isEqualTo(HttpMethod.POST);
     }

@@ -326,7 +326,29 @@ public class HonchoProxyService {
     }
 
     public Object scheduleDream(HonchoContext ctx, String peerId, Object dreamRequest) throws HonchoCallException {
-        return call(HonchoOperation.SCHEDULE_DREAM, ctx, dreamRequest, pathVar("peerId", peerId), null);
+        // HonchoController reaches the V3 client via this method, which then
+        // dispatches through the generic call() below — the typed
+        // HonchoV3Client.scheduleDream() is bypassed, so the body translation
+        // to ScheduleDreamRequest {observer, observed?, dream_type: "omni",
+        // session_id?} must happen here.
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("observer", peerId);
+        String observed = null;
+        String sessionId = null;
+        if (dreamRequest instanceof Map<?, ?> raw) {
+            Object o = raw.get("observed");
+            if (o != null && !o.toString().isBlank()) {
+                observed = o.toString();
+            }
+            Object s = raw.get("session");
+            if (s != null && !s.toString().isBlank()) {
+                sessionId = s.toString();
+            }
+        }
+        body.put("observed", observed != null ? observed : peerId);
+        body.put("dream_type", "omni");
+        body.put("session_id", sessionId);
+        return call(HonchoOperation.SCHEDULE_DREAM, ctx, body, null, null);
     }
 
     public Object getWorkspaceInfo(HonchoContext ctx) throws HonchoCallException {

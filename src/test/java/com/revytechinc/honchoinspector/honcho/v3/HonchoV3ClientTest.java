@@ -504,17 +504,60 @@ class HonchoV3ClientTest {
     }
 
     @Test
-    void scheduleDream_forwardsPeerIdAndBody() {
+    void scheduleDream_translatesBodyToScheduleDreamRequestShape() {
+        // Honcho v3 schedule_dream is workspace-scoped; peer moves from
+        // path into body as `observer`, and ScheduleDreamRequest requires
+        // {observer, observed?, dream_type: "omni", session_id?}. The
+        // frontend still sends {peerId, observed?, session?}; the client
+        // does the rename.
         CapturingProvider provider = newFixture();
-        Object body = Map.of("lookback", "7d");
+        Object body = Map.of("peerId", "alice", "observed", "bob", "session", "sid");
 
-        clientOf(provider).scheduleDream(CTX, "p-99", body);
+        clientOf(provider).scheduleDream(CTX, "alice", body);
 
         assertThat(provider.lastOp).isEqualTo(HonchoOperation.SCHEDULE_DREAM);
         assertThat(provider.lastPathVars)
-            .containsOnlyKeys("peerId")
-            .containsEntry("peerId", "p-99");
-        assertThat(provider.lastBody).isSameAs(body);
+            .as("peerId is no longer a path variable; endpoint is workspace-scoped")
+            .isNull();
+        assertThat((Map<String, Object>) provider.lastBody)
+            .as("body must be the translated ScheduleDreamRequest, not the frontend map verbatim")
+            .containsEntry("observer", "alice")
+            .containsEntry("observed", "bob")
+            .containsEntry("dream_type", "omni")
+            .containsEntry("session_id", "sid")
+            .doesNotContainKey("peerId")
+            .doesNotContainKey("session");
+    }
+
+    @Test
+    void scheduleDream_observedDefaultsToObserverWhenAbsent() {
+        // Per Honcho 3.0.9 ScheduleDreamRequest spec: "Observed peer name
+        // (defaults to observer if not specified)".
+        CapturingProvider provider = newFixture();
+        Object body = Map.of("peerId", "alice");
+
+        clientOf(provider).scheduleDream(CTX, "alice", body);
+
+        assertThat((Map<String, Object>) provider.lastBody)
+            .containsEntry("observer", "alice")
+            .containsEntry("observed", "alice")
+            .containsEntry("dream_type", "omni")
+            .containsEntry("session_id", null);
+    }
+
+    @Test
+    void scheduleDream_handlesNullRequestBody() {
+        // The controller may pass an empty body (no observed, no session);
+        // the client must still build a valid ScheduleDreamRequest.
+        CapturingProvider provider = newFixture();
+
+        clientOf(provider).scheduleDream(CTX, "alice", null);
+
+        assertThat((Map<String, Object>) provider.lastBody)
+            .containsEntry("observer", "alice")
+            .containsEntry("observed", "alice")
+            .containsEntry("dream_type", "omni")
+            .containsEntry("session_id", null);
     }
 
     @Test
