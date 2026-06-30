@@ -110,8 +110,10 @@ RUN apk add --no-cache \
         tini \
     && rm -rf /var/cache/apk/*
 
+# Tini is the entrypoint's PID 1 + signal forwarder; the JVM is
+# launched via entrypoint.sh (see below) so JVM flags can read from
+# env vars (the only cross-builder-portable knob).
 STOPSIGNAL SIGTERM
-ENTRYPOINT ["/sbin/tini", "--"]
 
 # Backend jar (from stage 1).
 COPY --from=backend-builder /build/honcho-inspector-backend.jar \
@@ -152,27 +154,33 @@ RUN ( addgroup -S www-data 2>/dev/null || true ) \
 
 COPY etc/systemd/honcho-inspector.service /etc/systemd/honcho-inspector.service
 
-# honcho.ui.dist is consumed by com.revytechinc.honchoinspector.config.UiStaticConfig
+# Same pattern as packaging/container/Containerfile: the runtime
+# entrypoint reads JVM tuning + filesystem layout from env, with
+# defaults baked in. The all-in-one difference is: SERVER_ADDRESS
+# defaults to all-interfaces (no reverse proxy in front), and
+# HONCHO_UI_DIST is set so the entrypoint's `${HONCHO_UI_DIST:+...}`
+# branch attaches `-Dhoncho.ui.dist=...`.
+STOPSIGNAL SIGTERM
+ENTRYPOINT ["/sbin/tini", "--", "/usr/local/bin/entrypoint.sh"]
+
+ENV JAVA_XMS=64m \
+    JAVA_XMX=256m \
+    SERVER_ADDRESS=0.0.0.0 \
+    HONCHO_CONFIG_DIR=/etc/honcho-inspector \
+    HONCHO_LOG_FILE=/var/log/honcho-inspector/honcho-inspector-backend.log \
+    HONCHO_JAR_PATH=/usr/local/lib/honcho-inspector/honcho-inspector-backend.jar \
+    HONCHO_DB_PATH=jdbc:sqlite:/var/lib/honcho-inspector/honcho-inspector.db
+
+# HONCHO_UI_DIST is consumed by com.revytechinc.honchoinspector.config.UiStaticConfig
 # (a WebMvcConfigurer that mounts the Angular dist + SPA fallback at /).
-# When this directory is absent (standalone backend image), UiStaticConfig
-# short-circuits and the SPA-serving handler is a no-op.
-ENV HONCHO_DB_PATH=jdbc:sqlite:/var/lib/honcho-inspector/honcho-inspector.db
+ENV HONCHO_UI_DIST=/usr/local/share/honcho-inspector/ui
+
+COPY packaging/container/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod 0755 /usr/local/bin/entrypoint.sh
+
+EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
     CMD curl -fsS http://127.0.0.1:8080/api/health || exit 1
 
-# The all-in-one image is meant to be exposed via port-publishing
-# (`podman run -p 8080:8080 …`), so Spring binds to all container
-# interfaces (0.0.0.0, the default). The standalone backend
-# Containerfile explicitly binds to 127.0.0.1 because it expects a
-# reverse proxy / systemd socket-activation on the host's loopback;
-# we drop that here -- the all-in-one has no such reverse proxy.
-CMD ["java", \
-     "-Xms64m", "-Xmx256m", \
-     "-Dhoncho.config.dir=/etc/honcho-inspector", \
-     "-Dlogging.file.name=/var/log/honcho-inspector/honcho-inspector-backend.log", \
-     "-jar", "/usr/local/lib/honcho-inspector/honcho-inspector-backend.jar"]
-
 VOLUME ["/var/lib/honcho-inspector", "/etc/honcho-inspector", "/var/log/honcho-inspector"]
-
-EXPOSE 8080
