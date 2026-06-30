@@ -146,6 +146,13 @@ verify: ## Full verify (tests + integration)
 #   make image-push PLATFORMS=linux/amd64
 #   make image-push-all-in-one UI_GIT_REF=v0.1.0-SNAPSHOT
 #
+# Tune the JVM and the runtime layout when building the image:
+#   make image-build-backend-only JAVA_XMX=1g
+#   make image-push-all-in-one HONCHO_DB_PATH=jdbc:sqlite:/srv/data/hi.db
+#   make image-build-backend-only HTTP_PORT=9090
+# Defaults preserve the original behavior (64m/256m heap, port 8080,
+# FHS-canonical /etc + /var layout, SQLite at /var/lib/...).
+#
 # Override the build args to pick up a different source tree (the
 # script defaults to $PWD):
 #   make packages-debian BUILD_PACKAGE_EXTRA_ARGS="--no-cache"
@@ -208,6 +215,27 @@ packages-clean: ## Remove dist/packages/ (Linux package output)
 
 IMAGE_NAME      = honcho-inspector-backend
 IMAGE_BUILD_SCRIPT = packaging/scripts/build-image.sh
+
+# === Container image build-arg knobs ===
+# Each `?=` form resolves at make-parse time: a CLI override
+# (`make JAVA_XMX=1g …`) wins over the default, which wins over an
+# inherited env var. The script reads these from env, so `export` is
+# the bridge.
+#
+# Defaults mirror the previous hard-coded values in the Containerfile
+# so the image still "just works" with no flags.
+JAVA_XMS          ?= 64m
+JAVA_XMX          ?= 256m
+SERVER_ADDRESS    ?= 127.0.0.1
+HTTP_PORT         ?= 8080
+HONCHO_CONFIG_DIR ?= /etc/honcho-inspector
+HONCHO_LOG_FILE   ?= /var/log/honcho-inspector/honcho-inspector-backend.log
+HONCHO_JAR_PATH   ?= /usr/local/lib/honcho-inspector/honcho-inspector-backend.jar
+HONCHO_UI_DIST    ?= /usr/local/share/honcho-inspector/ui
+HONCHO_DB_PATH    ?= jdbc:sqlite:/var/lib/honcho-inspector/honcho-inspector.db
+export JAVA_XMS JAVA_XMX SERVER_ADDRESS HTTP_PORT \
+       HONCHO_CONFIG_DIR HONCHO_LOG_FILE HONCHO_JAR_PATH \
+       HONCHO_UI_DIST HONCHO_DB_PATH
 
 image-build: image-build-backend-only image-build-all-in-one ## Build both modes, multi-arch (no push)
 
