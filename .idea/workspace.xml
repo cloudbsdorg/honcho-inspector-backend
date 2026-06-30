@@ -4,10 +4,8 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="c21cec74-e712-417b-8444-415c14a5920b" name="Changes" comment="Remove outdated regression reports and add new IntelliJ run configurations for in-memory and jar execution">
+    <list default="true" id="c21cec74-e712-417b-8444-415c14a5920b" name="Changes" comment="chore: update run configs, update pom phase, revise build-info handling in application.yml&#10;&#10;- Removed outdated configs from `.idea/workspace.xml` and added IntelliJ run configurations for in-memory and JAR execution.  &#10;- Moved `write-build-info` phase to `process-resources` in `pom.xml` for earlier script execution.  &#10;- Updated `application.yml` to make `build-info.properties` import optional, improving IDE run configuration flexibility.  &#10;- Added new environment variable `HONCHO_UI_API_KEY_VISIBLE_TO_NON_ADMIN` and adjusted IntelliJ and SpringBoot run parameters.">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/pom.xml" beforeDir="false" afterPath="$PROJECT_DIR$/pom.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/resources/application.yml" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/application.yml" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -27,23 +25,23 @@
   </component>
   <component name="NextEditCompletionFeaturesState">
     <decayedCancelled>
-      <entry key="MS100" value="1.4886617907688178" />
-      <entry key="MS500" value="3.8345944157882204" />
-      <entry key="S2" value="5.898320546231054" />
-      <entry key="S5" value="6.525593590019732" />
-      <entry key="S10" value="6.756746840838543" />
-      <entry key="S30" value="6.917528820871113" />
-      <entry key="S60" value="6.958588342825391" />
-      <entry key="M2" value="6.979284750482379" />
-      <entry key="M5" value="7.079759673687749" />
-      <entry key="M10" value="9.705690225009992" />
-      <entry key="M15" value="16.035389578436074" />
-      <entry key="M30" value="38.86864839919973" />
-      <entry key="H1" value="70.4288205548915" />
-      <entry key="H2" value="99.51757232660019" />
-      <entry key="H4" value="120.18557579746712" />
-      <entry key="D1" value="142.01115784442052" />
-      <entry key="W1" value="146.2731138919351" />
+      <entry key="MS100" value="1.1983011591854196" />
+      <entry key="MS500" value="4.079745716225661" />
+      <entry key="S2" value="9.598496297725585" />
+      <entry key="S5" value="11.969694772203283" />
+      <entry key="S10" value="12.932871842154372" />
+      <entry key="S30" value="13.631994170857073" />
+      <entry key="S60" value="13.814410733370089" />
+      <entry key="M2" value="13.906839549039635" />
+      <entry key="M5" value="14.05046184010433" />
+      <entry key="M10" value="16.68754304053609" />
+      <entry key="M15" value="23.017680428468534" />
+      <entry key="M30" value="45.84967383024033" />
+      <entry key="H1" value="77.41233882326449" />
+      <entry key="H2" value="106.50610794305133" />
+      <entry key="H4" value="127.17869839743385" />
+      <entry key="D1" value="149.00981004963643" />
+      <entry key="W1" value="153.2729157269774" />
     </decayedCancelled>
     <decayedSelected>
       <entry key="MS100" value="0.0" />
@@ -51,37 +49,37 @@
       <entry key="S2" value="0.0" />
       <entry key="S5" value="0.0" />
       <entry key="S10" value="0.0" />
-      <entry key="S30" value="5.457286427516647E-124" />
-      <entry key="S60" value="2.3360835660388192E-62" />
-      <entry key="M2" value="1.5284251915088326E-31" />
-      <entry key="M5" value="4.717345386601891E-13" />
-      <entry key="M10" value="6.868293373613196E-7" />
-      <entry key="M15" value="7.78453289693468E-5" />
-      <entry key="M30" value="0.00882299999826288" />
-      <entry key="H1" value="0.0939308256019446" />
-      <entry key="H2" value="0.30648136256866326" />
-      <entry key="H4" value="0.553607588973148" />
-      <entry key="D1" value="0.9061505098617926" />
-      <entry key="W1" value="0.9860200877847597" />
+      <entry key="S30" value="5.314069511577573E-124" />
+      <entry key="S60" value="2.3052265640447514E-62" />
+      <entry key="M2" value="1.5182972581298908E-31" />
+      <entry key="M5" value="4.704816864112505E-13" />
+      <entry key="M10" value="6.859166759973476E-7" />
+      <entry key="M15" value="7.77763529137159E-5" />
+      <entry key="M30" value="0.008819090254312848" />
+      <entry key="H1" value="0.09391001147009247" />
+      <entry key="H2" value="0.3064474040844404" />
+      <entry key="H4" value="0.553576917947668" />
+      <entry key="D1" value="0.9061421425611023" />
+      <entry key="W1" value="0.9860187870927315" />
     </decayedSelected>
     <decayedShown>
-      <entry key="MS100" value="1.4350708018290808" />
-      <entry key="MS500" value="3.7942097473013554" />
-      <entry key="S2" value="5.881846890745572" />
-      <entry key="S5" value="6.518253328756451" />
-      <entry key="S10" value="6.752939570331729" />
-      <entry key="S30" value="6.916228053087671" />
-      <entry key="S60" value="6.957933921733596" />
-      <entry key="M2" value="6.9789565215639655" />
-      <entry key="M5" value="7.079624452416725" />
-      <entry key="M10" value="9.705554873560011" />
-      <entry key="M15" value="16.035237280840047" />
-      <entry key="M30" value="38.87692227949944" />
-      <entry key="H1" value="70.52192894566375" />
-      <entry key="H2" value="99.8232700487335" />
-      <entry key="H4" value="120.73862791335358" />
-      <entry key="D1" value="142.91718274386827" />
-      <entry key="W1" value="147.2591150465275" />
+      <entry key="MS100" value="1.166356182751696" />
+      <entry key="MS500" value="3.9780117663372843" />
+      <entry key="S2" value="9.533081635582521" />
+      <entry key="S5" value="11.93748039922965" />
+      <entry key="S10" value="12.915581157222919" />
+      <entry key="S30" value="13.625948891644217" />
+      <entry key="S60" value="13.811351640477692" />
+      <entry key="M2" value="13.905300790521318" />
+      <entry key="M5" value="14.049840438688951" />
+      <entry key="M10" value="16.68716435587582" />
+      <entry key="M15" value="23.01736586963978" />
+      <entry key="M30" value="45.857862818961856" />
+      <entry key="H1" value="77.50538596279408" />
+      <entry key="H2" value="106.81175148215866" />
+      <entry key="H4" value="127.7317097169609" />
+      <entry key="D1" value="149.91582489019984" />
+      <entry key="W1" value="154.25891533908083" />
     </decayedShown>
   </component>
   <component name="ProjectColorInfo">{
@@ -175,25 +173,10 @@
         <option name="Make" enabled="true" />
       </method>
     </configuration>
-    <configuration name="DashboardApplication (in-memory)" type="SpringBootApplicationConfigurationType" factoryName="Spring Boot">
-      <option name="ALTERNATIVE_JRE_PATH" value="25" />
-      <envs>
-        <env name="HONCHO_CONFIG_DIR" value=".run-data-inmem" />
-        <env name="HONCHO_DB_PATH" value="jdbc:sqlite::memory:" />
-      </envs>
-      <module name="dashboard-backend" />
-      <option name="SPRING_BOOT_MAIN_CLASS" value="com.revytechinc.honchoinspector.DashboardApplication" />
-      <option name="VM_PARAMETERS" value="-Xms64m -Xmx256m" />
-      <option name="WORKING_DIRECTORY" value="file://$PROJECT_DIR$" />
-      <method v="2">
-        <option name="Make" enabled="true" />
-      </method>
-    </configuration>
     <list>
       <item itemvalue="Shell Script.make run-jar" />
       <item itemvalue="Shell Script.make start" />
       <item itemvalue="Spring Boot.DashboardApplication (dev)" />
-      <item itemvalue="Spring Boot.DashboardApplication (in-memory)" />
     </list>
   </component>
   <component name="SharedIndexes">
@@ -239,7 +222,15 @@
       <option name="project" value="LOCAL" />
       <updated>1782776241998</updated>
     </task>
-    <option name="localTasksCounter" value="4" />
+    <task id="LOCAL-00004" summary="chore: update run configs, update pom phase, revise build-info handling in application.yml&#10;&#10;- Removed outdated configs from `.idea/workspace.xml` and added IntelliJ run configurations for in-memory and JAR execution.  &#10;- Moved `write-build-info` phase to `process-resources` in `pom.xml` for earlier script execution.  &#10;- Updated `application.yml` to make `build-info.properties` import optional, improving IDE run configuration flexibility.  &#10;- Added new environment variable `HONCHO_UI_API_KEY_VISIBLE_TO_NON_ADMIN` and adjusted IntelliJ and SpringBoot run parameters.">
+      <option name="closed" value="true" />
+      <created>1782815571251</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1782815571251</updated>
+    </task>
+    <option name="localTasksCounter" value="5" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -251,7 +242,8 @@
     <MESSAGE value="add: portable Makefile with help menu and key build/test operations&#10;&#10;- Supports both GNU Make and BSD Make&#10;- Includes self-documenting `help` target&#10;- Defines core targets for building, testing, running, and packaging&#10;- Implements database utilities (shell, vacuum, reset) for SQLite&#10;- Provides OS-specific install targets (Linux, FreeBSD, macOS)" />
     <MESSAGE value="Updated .gitignore" />
     <MESSAGE value="Remove outdated regression reports and add new IntelliJ run configurations for in-memory and jar execution" />
-    <option name="LAST_COMMIT_MESSAGE" value="Remove outdated regression reports and add new IntelliJ run configurations for in-memory and jar execution" />
+    <MESSAGE value="chore: update run configs, update pom phase, revise build-info handling in application.yml&#10;&#10;- Removed outdated configs from `.idea/workspace.xml` and added IntelliJ run configurations for in-memory and JAR execution.  &#10;- Moved `write-build-info` phase to `process-resources` in `pom.xml` for earlier script execution.  &#10;- Updated `application.yml` to make `build-info.properties` import optional, improving IDE run configuration flexibility.  &#10;- Added new environment variable `HONCHO_UI_API_KEY_VISIBLE_TO_NON_ADMIN` and adjusted IntelliJ and SpringBoot run parameters." />
+    <option name="LAST_COMMIT_MESSAGE" value="chore: update run configs, update pom phase, revise build-info handling in application.yml&#10;&#10;- Removed outdated configs from `.idea/workspace.xml` and added IntelliJ run configurations for in-memory and JAR execution.  &#10;- Moved `write-build-info` phase to `process-resources` in `pom.xml` for earlier script execution.  &#10;- Updated `application.yml` to make `build-info.properties` import optional, improving IDE run configuration flexibility.  &#10;- Added new environment variable `HONCHO_UI_API_KEY_VISIBLE_TO_NON_ADMIN` and adjusted IntelliJ and SpringBoot run parameters." />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
