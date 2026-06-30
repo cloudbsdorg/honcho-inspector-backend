@@ -1,7 +1,5 @@
 # honcho-inspector-backend
 
-[![CI](https://github.com/cloudbsdorg/honcho-inspector-backend/actions/workflows/ci.yml/badge.svg)](https://github.com/cloudbsdorg/honcho-inspector-backend/actions/workflows/ci.yml)
-
 Java 25 / Spring Boot 3.5.0 backend for [honcho-inspector](../honcho-inspector-ui).
 
 Sits between the Angular UI and one or more Honcho instances. Keeps the Honcho API key off the browser, externalizes config per-OS convention, and serves a multi-user multi-profile admin surface (one SQLite DB, no external service to run).
@@ -103,6 +101,7 @@ All config is externalized. Priority (high → low):
 | `HONCHO_AUDIT_MAX_ROWS`         | `1000000`                              | Size cap; if `COUNT(*) > max-rows`, oldest rows are deleted until the cap is satisfied |
 | `HONCHO_AUDIT_PURGE_CRON`       | `0 0 3 * * *`                          | Cron for the retention sweep (3:00 AM local). Manual trigger via `POST /api/admin/maintenance/audit/purge` |
 | `HONCHO_UI_CHAT_ENABLED`        | `false`                                | UI feature toggle. When `false` (the default), the chat popout + chat button are hidden in the UI and `POST /api/peers/{peerId}/chat/stream` returns 404. Set `true` to surface the chat feature. The flag is exposed via `GET /api/health` as `chatEnabled` so the UI can hide the button. |
+| `HONCHO_UI_API_KEY_VISIBLE_TO_NON_ADMIN` | `true`                     | Presentation-mode safety toggle. When `true` (the default), non-admin users can view / change / test the stored Honcho API key on a profile — matches the original behavior. Set `false` for product demos where a shared "demo" account is handed out to attendees: the API-key Reveal button + edit field are hidden in the profile selector, and `GET /api/profiles/{id}/reveal`, `PUT /api/profiles/{id}` (when body contains `apiKey`), and `POST /api/profiles/{id}/test` return 403 for non-admin callers. Admins always have full access regardless. Other profile fields (label, baseUrl, workspaceId, honchoUserName) remain editable for non-admins. Exposed via `GET /api/health` as `apiKeyVisibleToNonAdmin` so the frontend can hide the UI affordances. |
 
 Logs are emitted as **structured JSONL** (one JSON event per line) to
 `$HONCHO_CONFIG_DIR/logs/honcho-inspector.jsonl` and stdout, with API
@@ -428,7 +427,7 @@ docs/
     admin-rbac-rollout.md          — 13 lessons from the admin RBAC + first-run + CLI rollout
     installer-and-packaging.md     — 18 lessons from the macOS/Linux/FreeBSD install + meta-port rollout
 .github/workflows/
-  ci.yml                           — mvn test + OpenAPI drift check on push/PR
+  ci.yml                           — (workflow removed; tests run locally)
 ```
 
 ## License
