@@ -19,10 +19,12 @@ import java.util.Set;
  * V3 provider for scheduling a memory-consolidation dream on a peer.
  *
  * <p>Maps {@link HonchoOperation#SCHEDULE_DREAM} to a
- * {@code POST /v3/workspaces/{ws}/peers/{peerId}/dreams} call. The
- * legacy {@code /api/dream} endpoint was workspace-scoped (and took
- * the peer id in the body); v3 made the peer id an explicit path
- * variable, so the pathVars map must contain {@code peerId}.
+ * {@code POST /v3/workspaces/{ws}/schedule_dream} call. The legacy
+ * {@code /api/dream} endpoint took the peer id in the body; v3 reverts
+ * to a workspace-scoped endpoint with the peer passed in the body as
+ * {@code observer}, so the pathVars map for this op is empty and the
+ * observer/observed/session translation happens in
+ * {@link HonchoV3Client#scheduleDream} before this provider is invoked.
  */
 @Component
 public class DreamsProviderV3 implements HonchoProvider {
@@ -45,7 +47,7 @@ public class DreamsProviderV3 implements HonchoProvider {
 
     @Override
     public String pathTemplate(HonchoOperation op) {
-        return "workspaces/{ws}/peers/{peerId}/dreams";
+        return "workspaces/{ws}/schedule_dream";
     }
 
     @Override

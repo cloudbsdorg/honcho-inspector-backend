@@ -1,6 +1,8 @@
 package com.revytechinc.honchoinspector.honcho.v3;
 
+import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -240,12 +242,124 @@ public class HonchoV3Client implements HonchoClient {
 
     @Override
     public Object scheduleDream(HonchoContext ctx, String peerId, Object dreamRequest) throws HonchoCallException {
-        return call(HonchoOperation.SCHEDULE_DREAM, ctx, dreamRequest, pathVars("peerId", peerId), null);
+        // Honcho 3.x schedule_dream is workspace-scoped; peer moves from path
+        // into the body as `observer`. Translate frontend shape {peerId,
+        // observed?, session?} to ScheduleDreamRequest {observer, observed?,
+        // dream_type: "omni", session_id?}; per spec, observed defaults to
+        // observer when absent.
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("observer", peerId);
+        String observed = null;
+        String sessionId = null;
+        if (dreamRequest instanceof Map<?, ?> raw) {
+            Object o = raw.get("observed");
+            if (o != null && !o.toString().isBlank()) {
+                observed = o.toString();
+            }
+            Object s = raw.get("session");
+            if (s != null && !s.toString().isBlank()) {
+                sessionId = s.toString();
+            }
+        }
+        body.put("observed", observed != null ? observed : peerId);
+        body.put("dream_type", "omni");
+        body.put("session_id", sessionId);
+        return call(HonchoOperation.SCHEDULE_DREAM, ctx, body, null, null);
     }
 
     @Override
     public Object getWorkspaceInfo(HonchoContext ctx) throws HonchoCallException {
         return call(HonchoOperation.GET_WORKSPACE_INFO, ctx, null, null, null);
+    }
+
+    @Override
+    public double totalWorkspaceMessages(HonchoContext ctx) throws HonchoCallException {
+        // Step 1: list every session in the workspace. Honcho caps `size`
+        // at 100, so we ask for exactly that. For v1 a workspace with
+        // >100 sessions under-counts — documented on the HonchoClient
+        // interface. The full KPI card path goes through HonchoMetrics'
+        // 60s cache so re-querying Honcho once-per-minute is cheap.
+        Object sessionsEnvelope = call(
+            HonchoOperation.LIST_SESSIONS, ctx, null, null,
+            Map.of("size", SESSIONS_PAGE_SIZE)
+        );
+        List<String> sessionIds = extractSessionIds(sessionsEnvelope);
+        if (sessionIds.isEmpty()) {
+            return 0.0;
+        }
+
+        // Step 2: for each session, issue a count-only list call and
+        // accumulate the Page[Message].total. size=1 keeps the wire
+        // payload small — we only need the metadata.
+        long total = 0L;
+        for (String sid : sessionIds) {
+            Object messagesEnvelope = call(
+                HonchoOperation.LIST_SESSION_MESSAGES,
+                ctx,
+                null,
+                pathVars("sessionId", sid),
+                Map.of("size", MESSAGES_COUNT_PAGE_SIZE)
+            );
+            total += extractMessagesPageTotal(messagesEnvelope);
+        }
+        return (double) total;
+    }
+
+    /**
+     * Honcho caps {@code size} at 100 on sessions/list. The single page
+     * will under-count only for workspaces with &gt;100 sessions; see the
+     * HonchoClient.totalWorkspaceMessages Javadoc for the v1 caveat.
+     */
+    private static final int SESSIONS_PAGE_SIZE = 100;
+
+    /**
+     * size=1 for messages/list because we read only the
+     * {@code Page[Message].total} field. Honcho still does the COUNT(*) on
+     * its end regardless of page size, so this minimizes wire payload.
+     */
+    private static final int MESSAGES_COUNT_PAGE_SIZE = 1;
+
+    /**
+     * Pull the {@code items[].id} list out of a {@code Page[Session]}
+     * envelope. Returns an empty list on any shape mismatch (Honcho
+     * changed the envelope shape, transport error filled the envelope
+     * with a non-Map, etc.) — defensive because the caller already
+     * surfaces HonchoCallException separately.
+     */
+    @SuppressWarnings("unchecked")
+    private static List<String> extractSessionIds(Object envelope) {
+        if (envelope instanceof Map<?, ?> m) {
+            Object items = m.get("items");
+            if (items instanceof List<?> list) {
+                List<String> out = new ArrayList<>(list.size());
+                for (Object item : list) {
+                    if (item instanceof Map<?, ?> session) {
+                        Object id = ((Map<String, Object>) session).get("id");
+                        if (id != null) {
+                            out.add(id.toString());
+                        }
+                    }
+                }
+                return out;
+            }
+        }
+        return List.of();
+    }
+
+    /**
+     * Pull the {@code total} field out of a {@code Page[Message]} envelope.
+     * Returns 0 on any shape mismatch (defensive — the {@code total} field
+     * missing means the envelope didn't carry a real count, but we'd rather
+     * under-count by zero than NPE the dashboard).
+     */
+    private static long extractMessagesPageTotal(Object envelope) {
+        if (envelope instanceof Map<?, ?> m) {
+            Object total = ((Map<String, Object>) m).get("total");
+            if (total instanceof Number n) {
+                return n.longValue();
+            }
+        }
+        return 0L;
     }
 
     // ------------------------------------------------------------------

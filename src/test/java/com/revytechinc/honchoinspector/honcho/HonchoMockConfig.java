@@ -209,6 +209,22 @@ public class HonchoMockConfig {
         @Override public Object searchMessages(HonchoContext ctx, Object searchRequest)                       { return load(SEARCH_MESSAGES); }
         @Override public Object scheduleDream(HonchoContext ctx, String peerId, Object dreamRequest)          { return load(SCHEDULE_DREAM); }
         @Override public Object getWorkspaceInfo(HonchoContext ctx)                                           { return load(GET_WORKSPACE_INFO); }
+        @Override
+        public double totalWorkspaceMessages(HonchoContext ctx) {
+            // Single-fixture short-circuit: load the LIST_SESSIONS
+            // fixture (cheaper than a per-session fan-out through the
+            // fixture loader) and treat the number of session rows as
+            // the workspace message total. Tests that care about the
+            // exact number use the workspace message count via the
+            // dashboard's counters endpoint; this stub gives any test
+            // that exercises the cache a stable, non-zero number to
+            // assert against.
+            Object sessions = load(LIST_SESSIONS);
+            if (sessions instanceof Map<?, ?> m && m.get("items") instanceof java.util.List<?> list) {
+                return list.size();
+            }
+            return 0.0;
+        }
         @Override public Object createConclusions(HonchoContext ctx, Object conclusionsBatch)                 { return load(CREATE_CONCLUSIONS); }
         @Override public Object deleteConclusion(HonchoContext ctx, String conclusionId)                       { return load(DELETE_CONCLUSION); }
 

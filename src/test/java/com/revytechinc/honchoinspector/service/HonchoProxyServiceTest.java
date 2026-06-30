@@ -676,17 +676,34 @@ class HonchoProxyServiceTest {
     }
 
     @Test
-    void typed_scheduleDream_passesPeerIdAndBody() {
+    void typed_scheduleDream_translatesBodyToScheduleDreamRequestShape() {
+        // Honcho 3.x schedule_dream is workspace-scoped; the proxy must
+        // translate the frontend body {peerId, observed?, session?} into
+        // ScheduleDreamRequest {observer, observed?, dream_type: "omni",
+        // session_id?}, with peerId moving from pathVars into the body.
         HonchoClientFactory factory = v3Factory();
         HonchoProxyService svc = service(factory);
-        Object body = Map.of("lookback", "7d");
+        Object body = Map.of("peerId", "p-1", "observed", "p-2", "session", "s-9");
 
         svc.scheduleDream(CTX_V3, "p-1", body);
 
+        ArgumentCaptor<Object> bodyCaptor = ArgumentCaptor.forClass(Object.class);
         verify(clientOf(factory)).call(
-            HonchoOperation.SCHEDULE_DREAM, CTX_V3, body,
-            Map.of("peerId", "p-1"), null
+            org.mockito.ArgumentMatchers.eq(HonchoOperation.SCHEDULE_DREAM),
+            org.mockito.ArgumentMatchers.eq(CTX_V3),
+            bodyCaptor.capture(),
+            org.mockito.ArgumentMatchers.isNull(),
+            org.mockito.ArgumentMatchers.isNull()
         );
+        @SuppressWarnings("unchecked")
+        Map<String, Object> sent = (Map<String, Object>) bodyCaptor.getValue();
+        org.assertj.core.api.Assertions.assertThat(sent)
+            .containsEntry("observer", "p-1")
+            .containsEntry("observed", "p-2")
+            .containsEntry("dream_type", "omni")
+            .containsEntry("session_id", "s-9")
+            .doesNotContainKey("peerId")
+            .doesNotContainKey("session");
     }
 
     @Test
