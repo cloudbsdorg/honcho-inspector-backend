@@ -6,26 +6,8 @@
   <component name="ChangeListManager">
     <list default="true" id="c21cec74-e712-417b-8444-415c14a5920b" name="Changes" comment="Remove outdated regression reports and add new IntelliJ run configurations for in-memory and jar execution">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/openapi.generated.json" beforeDir="false" afterPath="$PROJECT_DIR$/docs/openapi.generated.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/openapi.yaml" beforeDir="false" afterPath="$PROJECT_DIR$/docs/openapi.yaml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/revytechinc/honchoinspector/auth/ProfileController.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/revytechinc/honchoinspector/auth/ProfileController.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/revytechinc/honchoinspector/config/CorsConfig.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/revytechinc/honchoinspector/config/CorsConfig.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/revytechinc/honchoinspector/config/StartupInfoLogger.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/revytechinc/honchoinspector/config/StartupInfoLogger.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/revytechinc/honchoinspector/controller/HonchoController.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/revytechinc/honchoinspector/controller/HonchoController.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/revytechinc/honchoinspector/honcho/HonchoClient.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/revytechinc/honchoinspector/honcho/HonchoClient.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/revytechinc/honchoinspector/honcho/HonchoMetrics.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/revytechinc/honchoinspector/honcho/HonchoMetrics.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/revytechinc/honchoinspector/honcho/v3/DreamsProviderV3.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/revytechinc/honchoinspector/honcho/v3/DreamsProviderV3.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/revytechinc/honchoinspector/honcho/v3/HonchoV3Client.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/revytechinc/honchoinspector/honcho/v3/HonchoV3Client.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/revytechinc/honchoinspector/service/HonchoProxyService.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/revytechinc/honchoinspector/service/HonchoProxyService.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/pom.xml" beforeDir="false" afterPath="$PROJECT_DIR$/pom.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/resources/application.yml" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/application.yml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/com/revytechinc/honchoinspector/config/CorsConfigTest.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/java/com/revytechinc/honchoinspector/config/CorsConfigTest.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/com/revytechinc/honchoinspector/honcho/HonchoClientFactoryTest.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/java/com/revytechinc/honchoinspector/honcho/HonchoClientFactoryTest.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/com/revytechinc/honchoinspector/honcho/HonchoMetricsTest.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/java/com/revytechinc/honchoinspector/honcho/HonchoMetricsTest.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/com/revytechinc/honchoinspector/honcho/HonchoMockConfig.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/java/com/revytechinc/honchoinspector/honcho/HonchoMockConfig.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/com/revytechinc/honchoinspector/honcho/v3/DreamsProviderV3Test.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/java/com/revytechinc/honchoinspector/honcho/v3/DreamsProviderV3Test.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/com/revytechinc/honchoinspector/honcho/v3/HonchoV3ClientTest.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/java/com/revytechinc/honchoinspector/honcho/v3/HonchoV3ClientTest.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/com/revytechinc/honchoinspector/honcho/v3/MiscProvidersV3UnitTest.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/java/com/revytechinc/honchoinspector/honcho/v3/MiscProvidersV3UnitTest.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/com/revytechinc/honchoinspector/service/HonchoProxyServiceTest.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/java/com/revytechinc/honchoinspector/service/HonchoProxyServiceTest.java" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -131,7 +113,7 @@
     &quot;git-widget-placeholder&quot;: &quot;main&quot;,
     &quot;junie.onboarding.icon.badge.shown&quot;: &quot;true&quot;,
     &quot;kotlin-language-version-configured&quot;: &quot;true&quot;,
-    &quot;last_opened_file_path&quot;: &quot;/Users/mlapointe/git/honcho-self-backend&quot;,
+    &quot;last_opened_file_path&quot;: &quot;/Users/mlapointe/git/honcho-self-backend/.run-data&quot;,
     &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
     &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
     &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
@@ -141,6 +123,11 @@
     &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
   }
 }</component>
+  <component name="RecentsManager">
+    <key name="CopyFile.RECENT_KEYS">
+      <recent name="$PROJECT_DIR$/.run-data" />
+    </key>
+  </component>
   <component name="RunManager" selected="Spring Boot.DashboardApplication (dev)">
     <configuration name="make run-jar" type="ShConfigurationType">
       <option name="SCRIPT_TEXT" value="make run-jar" />
@@ -175,9 +162,10 @@
     <configuration name="DashboardApplication (dev)" type="SpringBootApplicationConfigurationType" factoryName="Spring Boot">
       <envs>
         <env name="HONCHO_CONFIG_DIR" value=".etc" />
-        <env name="HONCHO_DB_PATH" value="jdbc:sqlite:.run-data/honcho-inspector.db" />
+        <env name="HONCHO_DB_PATH" value="jdbc:sqlite:honcho-inspector.db" />
         <env name="HONCHO_LOG_DIR" value=".var-log" />
-        <env name="server.address" value="127.0.0.1" />
+        <env name="HONCHO_BIND_ADDRESS" value="127.0.0.1" />
+        <env name="HONCHO_UI_API_KEY_VISIBLE_TO_NON_ADMIN" value="false" />
       </envs>
       <module name="dashboard-backend" />
       <option name="SPRING_BOOT_MAIN_CLASS" value="com.revytechinc.honchoinspector.DashboardApplication" />
@@ -192,7 +180,6 @@
       <envs>
         <env name="HONCHO_CONFIG_DIR" value=".run-data-inmem" />
         <env name="HONCHO_DB_PATH" value="jdbc:sqlite::memory:" />
-        <env name="HONCHO_CRYPTO_KEY" value="dsS5YEomp9AYvwLdTHhhARr1uZKzRR+Ydvui+Z/FoXM=" />
       </envs>
       <module name="dashboard-backend" />
       <option name="SPRING_BOOT_MAIN_CLASS" value="com.revytechinc.honchoinspector.DashboardApplication" />
