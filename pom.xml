@@ -173,7 +173,7 @@
                 <executions>
                     <execution>
                         <id>write-build-info</id>
-                        <phase>prepare-package</phase>
+                        <phase>process-resources</phase>
                         <goals><goal>exec</goal></goals>
                         <configuration>
                             <executable>bash</executable>
