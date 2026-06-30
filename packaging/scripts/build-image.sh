@@ -191,13 +191,26 @@ build_one() {
     # fetches the foreign-arch manifest. --pull=false would block
     # the cross-arch fetch and fail with "image not known".
     #
-    # The Containerfile may have build-arg-unique requirements.
-    # Today only the all-in-one Containerfile takes UI_GIT_REPO /
-    # UI_GIT_REF; we forward them unconditionally so a single script
-    # works for both modes (the backend-only Containerfile ignores
-    # unknown ARGs without crashing).
+    # Forward build-time overrides; the standalone backend Containerfile
+    # ignores the UI-specific ones (UI_GIT_*, HONCHO_UI_DIST) without
+    # error, so a single command line drives both modes.
+    # Per-mode mapping:
+    #   JAVA_XMS, JAVA_XMX, SERVER_ADDRESS, HTTP_PORT,
+    #     HONCHO_CONFIG_DIR, HONCHO_LOG_FILE, HONCHO_JAR_PATH,
+    #     HONCHO_DB_PATH         -- both Containerfiles
+    #   HONCHO_UI_DIST           -- all-in-one only (-Dhoncho.ui.dist)
+    #   UI_GIT_REPO, UI_GIT_REF  -- all-in-one only (UI pin)
     "$RUNTIME" build --pull=missing \
         --platform "$platform" \
+        --build-arg "JAVA_XMS=${JAVA_XMS:-64m}" \
+        --build-arg "JAVA_XMX=${JAVA_XMX:-256m}" \
+        --build-arg "SERVER_ADDRESS=${SERVER_ADDRESS:-127.0.0.1}" \
+        --build-arg "HTTP_PORT=${HTTP_PORT:-8080}" \
+        --build-arg "HONCHO_CONFIG_DIR=${HONCHO_CONFIG_DIR:-/etc/honcho-inspector}" \
+        --build-arg "HONCHO_LOG_FILE=${HONCHO_LOG_FILE:-/var/log/honcho-inspector/honcho-inspector-backend.log}" \
+        --build-arg "HONCHO_JAR_PATH=${HONCHO_JAR_PATH:-/usr/local/lib/honcho-inspector/honcho-inspector-backend.jar}" \
+        --build-arg "HONCHO_UI_DIST=${HONCHO_UI_DIST:-/usr/local/share/honcho-inspector/ui}" \
+        --build-arg "HONCHO_DB_PATH=${HONCHO_DB_PATH:-jdbc:sqlite:/var/lib/honcho-inspector/honcho-inspector.db}" \
         --build-arg "UI_GIT_REPO=${UI_GIT_REPO:-https://github.com/cloudbsdorg/honcho-inspector-ui.git}" \
         --build-arg "UI_GIT_REF=${UI_GIT_REF:-main}" \
         -f "$CONTAINERFILE" \
