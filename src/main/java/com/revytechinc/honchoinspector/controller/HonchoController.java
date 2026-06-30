@@ -108,7 +108,11 @@ public class HonchoController {
     public ResponseEntity<?> listPeers(HttpServletRequest req,
                                        @Parameter(description = "Forwarded as query string to Honcho")
                                        @RequestParam(required = false) Map<String, String> allParams) {
-        return call(req, (ctx, ws) -> honcho.listPeers(ctx, allParams));
+        ResponseEntity<?> result = call(req, (ctx, ws) -> honcho.listPeers(ctx, allParams));
+        if (result.getStatusCode().is2xxSuccessful()) {
+            metrics.recordPeersListed();
+        }
+        return result;
     }
 
     @PostMapping("/peers")
@@ -528,7 +532,11 @@ public class HonchoController {
     public ResponseEntity<?> listSessions(HttpServletRequest req,
                                           @Parameter(description = "Forwarded as query string to Honcho")
                                           @RequestParam(required = false) Map<String, String> allParams) {
-        return call(req, (ctx, ws) -> honcho.listSessions(ctx, allParams));
+        ResponseEntity<?> result = call(req, (ctx, ws) -> honcho.listSessions(ctx, allParams));
+        if (result.getStatusCode().is2xxSuccessful()) {
+            metrics.recordSessionsListed();
+        }
+        return result;
     }
 
     @PostMapping("/sessions")
