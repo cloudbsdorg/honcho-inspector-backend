@@ -354,6 +354,41 @@ paths:
             '*/*':
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /api/auth/me/password:
+    post:
+      tags:
+      - auth
+      summary: Change the currently authenticated user's own password
+      description: 'Accepts the current password plus a new password and
+        rotates the session credential. On success the server returns
+        the updated user record.
+        '
+      operationId: authChangeOwnPassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Password changed
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '400':
+          description: Validation error (missing fields, weak new password)
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: No valid session or wrong current password
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   # -----------------------------------------------------------------------
   # Profiles (CRUD on Honcho profiles owned by the current user)
   # -----------------------------------------------------------------------
@@ -576,6 +611,37 @@ paths:
             '*/*':
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /api/profiles/validate:
+    post:
+      tags:
+      - profiles
+      summary: Validate a not-yet-saved profile's Honcho connectivity
+      description: 'Accepts a `baseUrl` + `apiKey` + `workspaceId` triple in
+        the request body and probes `GET {baseUrl}/v3/workspaces/{workspaceId}`
+        with `Authorization: Bearer <apiKey>`. Does NOT persist the
+        profile. Useful for the create-profile wizard to surface bad
+        credentials before the user submits the form.
+        '
+      operationId: validate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Result of the connectivity check
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ProfileTestResult'
+        '400':
+          description: Missing or malformed input
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   # -----------------------------------------------------------------------
   # Honcho proxy - peers
   # -----------------------------------------------------------------------
@@ -644,6 +710,50 @@ paths:
             '*/*':
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /api/peers/{peerId}:
+    put:
+      tags:
+      - honcho-proxy
+      summary: Update an existing peer
+      description: 'Proxies `PUT /v3/workspaces/{workspaceId}/peers/{peerId}`.
+
+        Body (the edited peer fields) forwarded to Honcho unchanged.
+
+        '
+      operationId: updatePeer
+      parameters:
+      - name: peerId
+        in: path
+        description: Honcho peer id
+        required: true
+        schema:
+          type: string
+        example: alice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Honcho response
+          content:
+            '*/*':
+              schema:
+                type: object
+        '400':
+          description: Missing `X-Honcho-Profile-Id` header
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Profile not found / not owned by current user
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /api/peers/{peerId}/card:
     get:
       tags:
@@ -682,11 +792,11 @@ paths:
             '*/*':
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-    post:
+    put:
       tags:
       - honcho-proxy
       summary: Replace a peer's card
-      description: 'Proxies `POST /v3/workspaces/{workspaceId}/peers/{peerId}/card`.
+      description: 'Proxies `PUT /v3/workspaces/{workspaceId}/peers/{peerId}/card`.
 
         The body (an array of fact strings) is forwarded to Honcho.
 
@@ -719,15 +829,15 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
   /api/peers/{peerId}/representation:
-    get:
+    post:
       tags:
       - honcho-proxy
       summary: Get a peer's representation
       description: 'Proxies `GET /v3/workspaces/{workspaceId}/peers/{peerId}/representation`.
 
-        Returns a Honcho-formatted text representation of what the peer
+        Body forwarded to Honcho unchanged; returns a Honcho-formatted
 
-        knows or believes.
+        text representation of what the peer knows or believes.
 
         '
       operationId: peerRepresentation
@@ -896,13 +1006,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
   /api/peers/{peerId}/conclusions:
-    get:
+    post:
       tags:
       - honcho-proxy
       summary: List a peer's conclusions
-      description: 'Proxies `GET /v3/workspaces/{workspaceId}/peers/{peerId}/conclusions`.
+      description: 'Proxies `POST /v3/workspaces/{workspaceId}/peers/{peerId}/conclusions`.
 
-        Query params (e.g. `limit`, `page`) forwarded to Honcho.
+        Body (filter / pagination payload) forwarded to Honcho unchanged.
 
         '
       operationId: peerConclusions
@@ -914,6 +1024,12 @@ paths:
         schema:
           type: string
         example: alice
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
       responses:
         '200':
           description: Page of conclusions from Honcho
@@ -1147,6 +1263,42 @@ paths:
             '*/*':
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+    put:
+      tags:
+      - honcho-proxy
+      summary: Update an existing session
+      description: 'Proxies `PUT /v3/workspaces/{workspaceId}/sessions/{sessionId}`.
+
+        Body (metadata, etc.) forwarded to Honcho unchanged.
+
+        '
+      operationId: updateSession
+      parameters: *id003
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Honcho response
+          content:
+            '*/*':
+              schema:
+                type: object
+        '400':
+          description: Missing `X-Honcho-Profile-Id` header
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Profile not found / not owned by current user
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /api/sessions/{sessionId}/messages:
     get:
       tags:
@@ -1196,6 +1348,57 @@ paths:
         '
       operationId: addMessages
       parameters: *id004
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Honcho response
+          content:
+            '*/*':
+              schema:
+                type: object
+        '400':
+          description: Missing `X-Honcho-Profile-Id` header
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Profile not found / not owned by current user
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/sessions/{sessionId}/messages/{messageId}:
+    put:
+      tags:
+      - honcho-proxy
+      summary: Update a single message in a session
+      description: 'Proxies `PUT /v3/workspaces/{workspaceId}/sessions/{sessionId}/messages/{messageId}`.
+
+        Body (the edited message fields) forwarded to Honcho unchanged.
+
+        '
+      operationId: updateMessage
+      parameters:
+      - name: sessionId
+        in: path
+        description: Honcho session id
+        required: true
+        schema:
+          type: string
+        example: sess_abc123
+      - name: messageId
+        in: path
+        description: Honcho message id
+        required: true
+        schema:
+          type: string
+        example: msg_abc123
       requestBody:
         required: true
         content:
@@ -1378,6 +1581,114 @@ paths:
   # -----------------------------------------------------------------------
   # Honcho proxy - workspace, queue, search, dream
   # -----------------------------------------------------------------------
+  /api/conclusions:
+    post:
+      tags:
+      - honcho-proxy
+      summary: List workspace-wide conclusions (no peer filter)
+      description: 'Proxies `POST /v3/workspaces/{workspaceId}/conclusions`.
+
+        Body (filter / pagination payload) forwarded to Honcho unchanged.
+
+        '
+      operationId: workspaceConclusions
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Page of conclusions from Honcho
+          content:
+            '*/*':
+              schema:
+                type: object
+        '400':
+          description: Missing `X-Honcho-Profile-Id` header
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Profile not found / not owned by current user
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/conclusions/create:
+    post:
+      tags:
+      - honcho-proxy
+      summary: Batch-create conclusions in the workspace
+      description: 'Proxies `POST /v3/workspaces/{workspaceId}/conclusions/create`.
+
+        Body (the array of conclusions to create) forwarded to Honcho.
+
+        '
+      operationId: createConclusions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Honcho response
+          content:
+            '*/*':
+              schema:
+                type: object
+        '400':
+          description: Missing `X-Honcho-Profile-Id` header
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Profile not found / not owned by current user
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/conclusions/{conclusionId}:
+    delete:
+      tags:
+      - honcho-proxy
+      summary: Delete a single conclusion by id
+      description: 'Proxies `DELETE /v3/workspaces/{workspaceId}/conclusions/{conclusionId}`.
+
+        '
+      operationId: deleteConclusion
+      parameters:
+      - name: conclusionId
+        in: path
+        description: Honcho conclusion id
+        required: true
+        schema:
+          type: string
+        example: concl_abc123
+      responses:
+        '200':
+          description: Honcho response (typically empty on success)
+          content:
+            '*/*':
+              schema:
+                type: object
+        '400':
+          description: Missing `X-Honcho-Profile-Id` header
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Profile not found / not owned by current user
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /api/queue-status:
     get:
       tags:
@@ -2330,6 +2641,93 @@ paths:
                     example: '2026-06-29T22:00:00Z'
         '401':
           description: Missing or invalid session id
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/admin/diagnostics:
+    get:
+      tags:
+      - admin
+      summary: Server diagnostics envelope
+      description: 'Admin-only snapshot of the server process: hostname, JVM
+        version, uptime, active profile count, build info. Useful for
+        triage when a customer reports a problem.
+        '
+      operationId: get_2
+      responses:
+        '200':
+          description: Diagnostics envelope
+          content:
+            '*/*':
+              schema:
+                type: object
+        '401':
+          description: Missing or invalid session id
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Caller is not an admin
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/admin/test/seed:
+    post:
+      tags:
+      - admin
+      summary: Seed the regression test fixture (peers, sessions, messages, peer cards)
+      description: 'Admin-only. Populates the active workspace with a
+        deterministic fixture (peers, sessions, messages, peer cards)
+        used by the regression test suite. Idempotent within a single
+        seed call.
+        '
+      operationId: seed
+      responses:
+        '200':
+          description: Seed completed
+          content:
+            '*/*':
+              schema:
+                type: object
+        '401':
+          description: Missing or invalid session id
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Caller is not an admin
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags:
+      - admin
+      summary: Tear down the regression test fixture (sessions only — peers are not deletable via Honcho v3)
+      description: 'Admin-only. Removes the sessions created by the seed
+        endpoint. Peers are intentionally left in place because Honcho
+        v3 does not expose a peer-delete endpoint.
+        '
+      operationId: cleanup
+      responses:
+        '200':
+          description: Teardown completed
+          content:
+            '*/*':
+              schema:
+                type: object
+        '401':
+          description: Missing or invalid session id
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Caller is not an admin
           content:
             '*/*':
               schema:
