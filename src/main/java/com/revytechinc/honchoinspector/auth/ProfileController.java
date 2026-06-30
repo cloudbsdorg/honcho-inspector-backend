@@ -3,6 +3,7 @@ package com.revytechinc.honchoinspector.auth;
 import com.revytechinc.honchoinspector.config.OpenApiConfig;
 import com.revytechinc.honchoinspector.filter.SessionAuthFilter;
 import com.revytechinc.honchoinspector.honcho.HonchoCallException;
+import com.revytechinc.honchoinspector.honcho.HonchoMetrics;
 import com.revytechinc.honchoinspector.model.ErrorResponse;
 import com.revytechinc.honchoinspector.model.HonchoContext;
 import com.revytechinc.honchoinspector.service.HonchoProxyService;
@@ -38,10 +39,30 @@ public class ProfileController {
 
     private final ProfileService profiles;
     private final HonchoProxyService honcho;
+    private final HonchoMetrics metrics;
+    /**
+     * When false, non-admin users cannot view the plaintext API
+     * key via {@code /reveal}, change the API key via {@code PUT}
+     * (other fields like label/baseUrl/workspaceId/honchoUserName
+     * remain editable), or call {@code /test} (which decrypts the
+     * key for a live connectivity check). Admins always have full
+     * access. Mirrors {@code honcho.ui.api-key-visible-to-non-admin}
+     * in {@code application.yml}; operators flip it via
+     * {@code HONCHO_UI_API_KEY_VISIBLE_TO_NON_ADMIN} for product
+     * demos where a shared account is handed out to attendees.
+     */
+    private final boolean apiKeyVisibleToNonAdmin;
 
-    public ProfileController(ProfileService profiles, HonchoProxyService honcho) {
+    public ProfileController(
+        ProfileService profiles,
+        HonchoProxyService honcho,
+        HonchoMetrics metrics,
+        @org.springframework.beans.factory.annotation.Value("${honcho.ui.api-key-visible-to-non-admin:true}") boolean apiKeyVisibleToNonAdmin
+    ) {
         this.profiles = profiles;
         this.honcho = honcho;
+        this.metrics = metrics;
+        this.apiKeyVisibleToNonAdmin = apiKeyVisibleToNonAdmin;
     }
 
     @Schema(
@@ -160,11 +181,13 @@ public class ProfileController {
     @GetMapping("/{id}/reveal")
     @Operation(
         summary = "Decrypt and return the profile's API key",
-        description = "Decrypts the stored API key blob and returns it alongside the profile record. **Use sparingly** — the plaintext key should only be exposed when the UI needs to display or copy it."
+        description = "Decrypts the stored API key blob and returns it alongside the profile record. **Use sparingly** — the plaintext key should only be exposed when the UI needs to display or copy it. When the operator has set `HONCHO_UI_API_KEY_VISIBLE_TO_NON_ADMIN=false` (presentation mode), non-admin callers receive 403; admins always have full access."
     )
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Plaintext key returned",
             content = @Content(schema = @Schema(implementation = ProfileWithKeyDto.class))),
+        @ApiResponse(responseCode = "403", description = "API key access disabled for non-admin users (presentation mode)",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
         @ApiResponse(responseCode = "404", description = "Profile not found or not owned by current user",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
@@ -174,6 +197,9 @@ public class ProfileController {
         @PathVariable String id
     ) {
         var current = currentUser(req);
+        if (!current.user().isAdmin() && !apiKeyVisibleToNonAdmin) {
+            return ResponseEntity.status(403).body(new ErrorResponse("api key access disabled for non-admin users"));
+        }
         return profiles.getWithKey(current.user().id(), id)
             .map(pwk -> ResponseEntity.ok((Object) new ProfileWithKeyDto(pwk.profile(), pwk.apiKey())))
             .orElseGet(() -> ResponseEntity.status(404).body(new ErrorResponse("profile not found")));
@@ -182,11 +208,13 @@ public class ProfileController {
     @PutMapping("/{id}")
     @Operation(
         summary = "Update a profile (partial)",
-        description = "Updates only the fields present in the body. Passing a new `apiKey` re-encrypts and overwrites the stored blob; omitting it leaves the existing key intact."
+        description = "Updates only the fields present in the body. Passing a new `apiKey` re-encrypts and overwrites the stored blob; omitting it leaves the existing key intact. Other fields (label, baseUrl, workspaceId, honchoUserName, apiVersion) are always updatable by the owner. When the operator has set `HONCHO_UI_API_KEY_VISIBLE_TO_NON_ADMIN=false` (presentation mode), non-admin callers may NOT change the `apiKey` field — the request is rejected with 403 if `apiKey` is present in the body. Admins always have full access."
     )
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Profile updated",
             content = @Content(schema = @Schema(implementation = Profile.class))),
+        @ApiResponse(responseCode = "403", description = "API key change blocked for non-admin users (presentation mode)",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
         @ApiResponse(responseCode = "404", description = "Profile not found or not owned by current user",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
@@ -197,6 +225,9 @@ public class ProfileController {
         @RequestBody ProfileUpdateDto body
     ) {
         var current = currentUser(req);
+        if (!current.user().isAdmin() && !apiKeyVisibleToNonAdmin && body.apiKey() != null) {
+            return ResponseEntity.status(403).body(new ErrorResponse("api key cannot be changed for non-admin users"));
+        }
         return profiles.update(
             current.user().id(), id,
             body.label(), body.apiKey(), body.baseUrl(),
@@ -231,11 +262,13 @@ public class ProfileController {
     @PostMapping("/{id}/test")
     @Operation(
         summary = "Test that the profile can reach Honcho",
-        description = "Decrypts the API key, builds an `Authorization: Bearer …` header, and issues a `GET /v3/workspaces/{workspaceId}` against the profile's `baseUrl`. Returns `{ok: true, message: \"reachable\"}` on success or `{ok: false, error: …}` on any HTTP or transport failure."
+        description = "Decrypts the API key, builds an `Authorization: Bearer …` header, and issues a `GET /v3/workspaces/{workspaceId}` against the profile's `baseUrl`. Returns `{ok: true, message: \"reachable\"}` on success or `{ok: false, error: …}` on any HTTP or transport failure. When the operator has set `HONCHO_UI_API_KEY_VISIBLE_TO_NON_ADMIN=false` (presentation mode), non-admin callers receive 403 because the endpoint decrypts the key. Admins always have full access."
     )
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Result of the connectivity check",
             content = @Content(schema = @Schema(example = "{\"ok\":true,\"message\":\"reachable\"}"))),
+        @ApiResponse(responseCode = "403", description = "API key access disabled for non-admin users (presentation mode)",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
         @ApiResponse(responseCode = "404", description = "Profile not found or not owned by current user",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
@@ -245,6 +278,9 @@ public class ProfileController {
         @PathVariable String id
     ) {
         var current = currentUser(req);
+        if (!current.user().isAdmin() && !apiKeyVisibleToNonAdmin) {
+            return ResponseEntity.status(403).body(new ErrorResponse("api key access disabled for non-admin users"));
+        }
         var pwk = profiles.getWithKey(current.user().id(), id).orElse(null);
         if (pwk == null) {
             return ResponseEntity.status(404).body(new ErrorResponse("profile not found"));
@@ -253,6 +289,7 @@ public class ProfileController {
                                     pwk.profile().workspaceId(), pwk.profile().honchoUserName());
         try {
             honcho.testConnection(ctx);
+            metrics.recordProfilesTested();
             return ResponseEntity.ok(Map.of("ok", true, "message", "reachable"));
         } catch (HonchoCallException e) {
             return ResponseEntity.status(e.status() >= 500 ? 502 : e.status())

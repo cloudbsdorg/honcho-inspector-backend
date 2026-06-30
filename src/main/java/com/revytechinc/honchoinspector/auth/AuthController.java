@@ -44,6 +44,17 @@ public class AuthController {
      * {@code HONCHO_UI_CHAT_ENABLED=true}.
      */
     private final boolean chatEnabled;
+    /**
+     * Mirrors {@code honcho.ui.api-key-visible-to-non-admin} so
+     * the frontend knows whether non-admin users can view and
+     * edit the stored Honcho API key. Default true (current
+     * behavior preserved) — operators flip to {@code false} for
+     * product demos by setting
+     * {@code HONCHO_UI_API_KEY_VISIBLE_TO_NON_ADMIN=false}, which
+     * hides the Reveal API Key button + the API-key edit field
+     * in the profile selector. Admins always have full access.
+     */
+    private final boolean apiKeyVisibleToNonAdmin;
 
     public AuthController(
         AuthService auth,
@@ -51,7 +62,8 @@ public class AuthController {
         AuthSessionRepository sessions,
         ProfileRepository profiles,
         AdminAudit audit,
-        @org.springframework.beans.factory.annotation.Value("${honcho.ui.chat-enabled:false}") boolean chatEnabled
+        @org.springframework.beans.factory.annotation.Value("${honcho.ui.chat-enabled:false}") boolean chatEnabled,
+        @org.springframework.beans.factory.annotation.Value("${honcho.ui.api-key-visible-to-non-admin:true}") boolean apiKeyVisibleToNonAdmin
     ) {
         this.auth = auth;
         this.users = users;
@@ -59,6 +71,7 @@ public class AuthController {
         this.profiles = profiles;
         this.audit = audit;
         this.chatEnabled = chatEnabled;
+        this.apiKeyVisibleToNonAdmin = apiKeyVisibleToNonAdmin;
     }
 
     /**
@@ -225,17 +238,18 @@ public class AuthController {
     @GetMapping("/health")
     @Operation(
         summary = "Liveness / readiness probe",
-        description = "Public unauthenticated health endpoint. Returns the service status, a `first_run` boolean (and `needs_register` alias), and a `chat_enabled` boolean. The UI uses `first_run` to decide whether to render the bootstrap wizard on first launch. The UI uses `chat_enabled` to hide the chat button + popout when the server has chat disabled (the operator's `HONCHO_UI_CHAT_ENABLED` env var is false, which is the default). Once any user exists, both `firstRun` flags are false. The previous version leaked user/session/profile counts to unauthenticated callers; those have been moved to the admin-only dashboard overview."
+        description = "Public unauthenticated health endpoint. Returns the service status, a `first_run` boolean (and `needs_register` alias), a `chat_enabled` boolean, and an `api_key_visible_to_non_admin` boolean. The UI uses `first_run` to decide whether to render the bootstrap wizard on first launch. The UI uses `chat_enabled` to hide the chat button + popout when the server has chat disabled (the operator's `HONCHO_UI_CHAT_ENABLED` env var is false, which is the default). The UI uses `api_key_visible_to_non_admin` to hide the Reveal API Key button + the API-key edit field for non-admin users when the operator has set `HONCHO_UI_API_KEY_VISIBLE_TO_NON_ADMIN=false` (typically for product demos). Once any user exists, both `firstRun` flags are false. The previous version leaked user/session/profile counts to unauthenticated callers; those have been moved to the admin-only dashboard overview."
     )
     @ApiResponse(responseCode = "200", description = "Service is up",
-        content = @Content(schema = @Schema(example = "{\"ok\":true,\"firstRun\":false,\"needsRegister\":false,\"chatEnabled\":false}")))
+        content = @Content(schema = @Schema(example = "{\"ok\":true,\"firstRun\":false,\"needsRegister\":false,\"chatEnabled\":false,\"apiKeyVisibleToNonAdmin\":true}")))
     public ResponseEntity<?> health() {
         boolean firstRun = auth.isFirstUser();
         return ResponseEntity.ok(Map.of(
             "ok", true,
             "firstRun", firstRun,
             "needsRegister", firstRun,
-            "chatEnabled", chatEnabled
+            "chatEnabled", chatEnabled,
+            "apiKeyVisibleToNonAdmin", apiKeyVisibleToNonAdmin
         ));
     }
 }
