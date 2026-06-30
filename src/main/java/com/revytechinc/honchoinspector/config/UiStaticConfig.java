@@ -85,6 +85,27 @@ public class UiStaticConfig implements WebMvcConfigurer {
             .addResolver(new SpaFallbackResourceResolver(uiDistDir));
     }
 
+    @Override
+    public void addViewControllers(ViewControllerRegistry registry) {
+        // `addResourceHandler("/**")` catches /foo, /bar, etc. but NOT the
+        // empty path `/` -- Spring's handler chain only matches `/` when
+        // a view controller explicitly maps it, otherwise the request
+        // 404s. Forward `/` -> /index.html so a hard browser reload on
+        // the root URL serves the SPA shell.
+        //
+        // Same dist-presence gate as addResourceHandlers so the
+        // standalone-backend deployment behavior (default error page on
+        // `/`) is unchanged.
+        if (!uiDistDir.isDirectory()) {
+            return;
+        }
+        File indexHtml = new File(uiDistDir, "index.html");
+        if (!indexHtml.isFile()) {
+            return;
+        }
+        registry.addViewController("/").setViewName("forward:/index.html");
+    }
+
     /**
      * PathResourceResolver that serves index.html for any path that
      * doesn't resolve to a real file on disk. Required so Angular's
