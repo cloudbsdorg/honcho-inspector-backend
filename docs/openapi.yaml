@@ -2286,6 +2286,54 @@ paths:
                     type: integer
                   ranAt:
                     type: string
+  /api/admin/metrics/counters:
+    get:
+      tags:
+      - admin
+      summary: First-class counter snapshot for the dashboard
+      description: |
+        Returns the six `honcho.inspector.*` proxy counters plus
+        `workspace.messageCount`, as a flat map keyed by counter name.
+        Tagged counters (`dreams.scheduled`, `messages.sent`) are returned
+        as the SUM across every distinct tag value. Sourced directly from
+        the in-memory Micrometer registry via `HonchoMetrics` -- no
+        `/actuator` loopback.
+
+        Key order in `counters` matches the dashboard's stat-card
+        order: searches, dreams.scheduled, messages.sent,
+        peers.listed, sessions.listed, profiles.tested,
+        workspace.messageCount.
+
+        Authenticated users only -- not admin-gated. The values surfaced
+        here are workspace-level aggregates that any signed-in user can
+        already reach via `/api/peers`, `/api/sessions`, and the Honcho
+        proxy; admin gating was unjustified and was previously 403'ing
+        non-admin users the moment the dashboard bootstrap fired
+        `metrics.service.load()`.
+      operationId: counters
+      responses:
+        '200':
+          description: Counter snapshot with a `counters` map of seven named counters and an ISO-8601 `capturedAt` timestamp.
+          content:
+            '*/*':
+              schema:
+                type: object
+                properties:
+                  counters:
+                    type: object
+                    description: Seven named counters; tagged counters are summed.
+                    additionalProperties:
+                      type: number
+                  capturedAt:
+                    type: string
+                    description: Server-clock ISO-8601 instant the snapshot was taken.
+                    example: '2026-06-29T22:00:00Z'
+        '401':
+          description: Missing or invalid session id
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 components:
   schemas:
     # ------------------------------------------------------------------

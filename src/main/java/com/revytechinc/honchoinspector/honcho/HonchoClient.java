@@ -226,6 +226,41 @@ public interface HonchoClient {
     Object getWorkspaceInfo(HonchoContext ctx) throws HonchoCallException;
 
     /**
+     * Sum the total message count across every session in the workspace
+     * addressed by {@code ctx}. Implementation strategy: list sessions
+     * ({@code POST /v3/workspaces/{ws}/sessions/list} with {@code size=100}),
+     * iterate their ids, and for each one issue
+     * {@code POST /v3/workspaces/{ws}/sessions/{sid}/messages/list} with
+     * {@code size=1} (small wire payload) so the only field the caller
+     * reads is the {@code Page[Message]}'s {@code total}.
+     *
+     * <p>This is a derived aggregate, not a single
+     * {@link HonchoOperation}. It does NOT map to any one upstream
+     * endpoint — it composes {@link #listSessions(HonchoContext, Map)}
+     * with {@link #listSessionMessages(HonchoContext, String, Map)} —
+     * so it intentionally does not live on the
+     * {@link HonchoOperation} enum.
+     *
+     * <p>The returned value reflects the LIVE Honcho state — messages
+     * added by any path count (this backend, prior backend instances,
+     * direct Honcho API calls, other clients). The dashboard uses this
+     * for its "Messages in workspace" KPI card, replacing the older
+     * proxy-only counter which would show {@code 0} whenever the user
+     * added messages through any other path. See {@link HonchoMetrics}
+     * for the per-profile 60s cache that fronts this call.
+     *
+     * <p>Honcho caps {@code size} at 100; a workspace with more than
+     * 100 sessions will under-count this call. Acceptable for v1 — the
+     * operator dashboard is human-readable, not a billing source of
+     * truth. A future patch can iterate {@code page=1..N}.
+     *
+     * @throws HonchoCallException if any underlying Honcho call fails;
+     *         callers (e.g. {@link HonchoMetrics}) are expected to
+     *         translate this into a non-5xx dashboard response.
+     */
+    double totalWorkspaceMessages(HonchoContext ctx) throws HonchoCallException;
+
+    /**
      * Generic dispatch entry point used by {@code HonchoProxyService} (T15)
      * to forward any {@link HonchoOperation} without knowing which typed
      * convenience method maps to it.
