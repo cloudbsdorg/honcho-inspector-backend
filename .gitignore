@@ -50,6 +50,10 @@ login-page.png
 .env.*
 !.env.example
 /.omo/
+# Same tooling, second name. Ignoring one and not the other is how the other
+# survives a cleanup -- .sisyphus/ was committed here, 104 tracked files with
+# operator home paths, while /.omo/ above was already ignored.
+/.sisyphus/
 
 # Validation sandbox. Mirrors the OS layout (etc/ + var/lib + var/log)
 # inside the repo so live tests of UI/backend behavior run against a

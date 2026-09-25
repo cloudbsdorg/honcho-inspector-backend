@@ -1,3 +1,0 @@
-HTTP/1.1 302 
-Vary: Origin
-Vary: Access-Control-Request-Method
